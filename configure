@@ -1,0 +1,67 @@
+#!/bin/bash
+for v in "$@"
+do
+    if [ $v == "-bytecode" ]; then
+	BYTECODE="1"
+    else
+	if [ ${v:0:9} == "-qeditasdir=" ]; then
+            INSTALLDIR=${v:9}
+	    if [ ! -d $INSTALLDIR ]; then
+		echo "$INSTALLDIR is not a directory"
+	    fi
+	else
+	    echo "Unknown command line argument $v"
+	    echo "configure can be given -bytecode (to only build bytecode) or -qeditasdir=<dir> (to specify the install directory)"
+	    exit 1
+	fi
+    fi
+done
+if [ $BYTECODE ]; then
+    if [ $INSTALLDIR ]; then
+	echo "bytecode cannot be installed"
+	echo "configure failed"
+	exit 1
+    fi
+fi
+OCAMLC=`which ocamlc`
+if [ -z $OCAMLC ]; then
+    echo 'Could not find ocamlc'
+    echo 'configure failed'
+    exit 1
+fi
+echo OCAMLC=$OCAMLC > Makefile
+if [ $BYTECODE ]; then
+    echo 'all: bytecode' >> Makefile
+else
+    OCAMLOPT=`which ocamlopt`
+    if [ -z $OCAMLOPT ]; then
+	echo 'Could not find ocamlopt'
+	echo 'Only the bytecode will be created'
+	BYTECODE=1
+	INSTALLDIR=""
+	echo 'all: bytecode' >> Makefile
+    else
+	echo OCAMLOPT=$OCAMLOPT >> Makefile
+	echo 'all: opt' >> Makefile
+    fi
+fi
+cat Makefile.in >> Makefile
+if [ -z $INSTALLDIR ]; then
+    if [ -d /usr/local/bin ]; then
+	INSTALLDIR="/usr/local/bin"
+    else
+	if [ -d /usr/bin ]; then
+	    INSTALLDIR="/usr/bin"
+	else
+	    echo 'No installation directory could be determined'
+	    echo 'make install cannot be run'
+	    echo 'To resolve this give -qeditasdir=<dir> as an argument to configure.'
+	fi
+    fi
+fi
+if [ -n $INSTALLDIR ]; then
+    echo INSTALLDIR=$INSTALLDIR >> Makefile
+    echo '' >> Makefile
+    echo 'install:' >> Makefile
+    echo -e '\tcp bin/qeditas $(INSTALLDIR)' >> Makefile
+fi
