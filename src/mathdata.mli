@@ -165,6 +165,7 @@ val doc_uses_objs : doc -> (hashval * hashval) list
 val doc_uses_props : doc -> hashval list
 val doc_creates_objs : doc -> (hashval * hashval) list
 val doc_creates_props : doc -> hashval list
+val doc_creates_neg_props : doc -> hashval list
 val signaspec_stp_markers : hashval option -> signaspec -> hashval list
 val signaspec_known_markers : hashval option -> signaspec -> hashval list
 val doc_stp_markers : hashval option -> doc -> hashval list

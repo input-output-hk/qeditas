@@ -102,6 +102,18 @@ let nehlist_lookup_prop_owner hl =
   | NehCons(_,hr) -> hlist_lookup_prop_owner hr
   | _ -> None
 
+let rec hlist_lookup_neg_prop_owner hl =
+  match hl with
+  | HCons((_,_,_,OwnsNegProp),hr) -> true
+  | HCons(_,hr) -> hlist_lookup_neg_prop_owner hr
+  | _ -> false
+
+let nehlist_lookup_neg_prop_owner hl =
+  match hl with
+  | NehCons((_,_,_,OwnsNegProp),hr) -> true
+  | NehCons(_,hr) -> hlist_lookup_neg_prop_owner hr
+  | _ -> false
+
 type frame =
   | FHash
   | FAbbrev of frame
@@ -824,6 +836,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
   let createspropsaddrs1 = List.map (fun (th,h) -> hashval_term_addr h) createsprops in
   let createsobjsaddrs2 = List.map (fun (th,h,k) -> hashval_term_addr (hashtag (hashopair2 th (hashpair h k)) 32l)) createsobjs in
   let createspropsaddrs2 = List.map (fun (th,h) -> hashval_term_addr (hashtag (hashopair2 th h) 33l)) createsprops in
+  let createsnegpropsaddrs2 = List.map (fun (th,h) -> hashval_term_addr (hashtag (hashopair2 th h) 33l)) (output_creates_neg_props outpl) in
   (*** If an object or prop is included in a signaspec, then it must be royalty-free to use. ***)
   List.iter (fun (alphapure,alphathy) ->
     let hl = ctree_lookup_addr_assets tr (addr_bitseq (termaddr_addr alphapure)) in
@@ -978,11 +991,59 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
       | _ -> ()
     )
     outpl;
+  (*** If an ownership asset is spent in the input, then it must be included as an output.
+       Once a termaddr is owned by someone, it must remain owned by someone. ***)
+  List.iter
+    (fun (alpha,(h,bday,obl,u)) ->
+      match u with
+      | OwnsObj(beta,r) ->
+	  begin
+	    try
+	      ignore (List.find
+			(fun (alpha2,(obl2,u2)) ->
+			  alpha = alpha2 &&
+			  match u2 with
+			  | OwnsObj(beta2,r2) -> true
+			  | _ -> false)
+			outpl)
+	    with Not_found -> raise NotSupported
+	  end
+      | OwnsProp(beta,r) ->
+	  begin
+	    try
+	      ignore (List.find
+			(fun (alpha2,(obl2,u2)) ->
+			  alpha = alpha2 &&
+			  match u2 with
+			  | OwnsProp(beta2,r2) -> true
+			  | _ -> false)
+			outpl)
+	    with Not_found -> raise NotSupported
+	  end
+      | OwnsNegProp ->
+	  begin
+	    try
+	      ignore (List.find
+			(fun (alpha2,(obl2,u2)) ->
+			  alpha = alpha2 &&
+			  match u2 with
+			  | OwnsNegProp -> true
+			  | _ -> false)
+			outpl)
+	    with Not_found -> raise NotSupported
+	  end
+      | _ -> ()
+    )
+    aal;
   (*** newly claimed ownership must be new and supported by a document in the tx, and must not be claimed more than once
        (Since the publisher of the document must sign the tx, the publisher agrees to this ownership declaration.)
+       Also, ensure that each ownership asset has an explicit obligation for transfering it.
+       The p2pkh or p2sh addr in this obligation is the owner in the sense of who can transfer it and who can collect bounties.
+       The p2pkh or p2sh addr listed with the asset is the address which must be paid to buy rights to use the object or proposition.
    ***)
   let ownobjclaims = ref [] in
   let ownpropclaims = ref [] in
+  let ownnegpropclaims = ref [] in
   List.iter
     (fun (alpha,(obl,u)) ->
       match u with
@@ -1008,9 +1069,23 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	      match hlist_lookup_prop_owner hl with
 	      | Some(beta2,r2) -> raise NotSupported (*** already owned ***)
 	      | None ->
-		  match obl with (*** insist on an obligation, or the ownership will not be transferable ***)
+		  match obl with (*** insist on an obligation, or the ownership will not be transferable; note that a trivial transfer is made to collect bounties ***)
 		  | Some(_,_) -> ()
 		  | None -> raise NotSupported
+	    end
+	  else
+	    raise NotSupported
+      | OwnsNegProp -> 
+	  if (List.mem alpha createsnegpropsaddrs2) && not (List.mem alpha !ownnegpropclaims) then
+	    let hl = ctree_lookup_addr_assets tr (addr_bitseq alpha) in
+	    begin
+	      ownpropclaims := alpha::!ownpropclaims;
+	      if hlist_lookup_neg_prop_owner hl then
+		raise NotSupported (*** already owned ***)
+	      else
+		match obl with (*** insist on an obligation, or the ownership will not be transferable; note that a trivial transfer is made to collect bounties ***)
+		| Some(_,_) -> ()
+		| None -> raise NotSupported
 	    end
 	  else
 	    raise NotSupported
@@ -1057,7 +1132,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
     with Not_found -> raise NotSupported
     )
     createsprops;
-  (*** bounties can be collected by the owners of props
+  (*** bounties can be collected by the owners of props or negprops
        To make checking this easy, the ownership asset is spent and recreated unchanged (except the asset id).
        Note that the relevant signature is in the obligation of the ownership asset.
        Essentially the ownership gets trivially transfered when the bounty is collected.
@@ -1066,24 +1141,22 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
        Real bounties should only be placed on propositions within a theory.
    ***)
   List.iter
-    (fun (alpha,(h,bday,obl,u)) ->
+    (fun (alpha,(h,bday,obl,u)) -> 
       match u with
       | Bounty(v) ->
 	  begin
 	    try
-	      let (_,(h2,bday2,obl2,u2)) =
-		List.find
-		  (fun (alpha2,(h2,bday2,obl2,u2)) ->
-		    alpha = alpha2 &&
-		    match u2 with
-		    | OwnsProp(beta2,r2) -> true
-		    | _ -> false
-		  )
-		  aal
-	      in
-	      ignore (List.find
-			(fun (alpha3,(obl3,u3)) -> alpha3 = alpha && obl3 = obl2 && u3 = u2)
-			outpl)
+	      (*** ensure that an owner of the prop or negprop signed the tx because the ownership asset was an input value ***)
+	      ignore
+		(List.find
+		   (fun (alpha2,(h2,bday2,obl2,u2)) ->
+		     alpha = alpha2 &&
+		     match u2 with
+		     | OwnsProp(beta2,r2) -> true
+		     | OwnsNegProp -> true
+		     | _ -> false
+		   )
+		   aal)
 	    with Not_found -> raise NotSupported
 	  end
       | _ -> ()

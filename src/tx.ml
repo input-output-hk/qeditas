@@ -35,19 +35,24 @@ let tx_inputs_valid inpl =
   | _ -> no_dups inpl
 
 (*** Ensure at most one owner is declared for each object/proposition ***)
-let rec tx_outputs_valid_one_owner outpl ool pol =
+let rec tx_outputs_valid_one_owner outpl ool pol nol =
   match outpl with
-  | (_,(_,OwnsObj(beta,io)))::outpr ->
-      if List.mem beta ool then
+  | (alpha,(_,OwnsObj(beta,io)))::outpr ->
+      if List.mem alpha ool then
 	false
       else
-	tx_outputs_valid_one_owner outpr (beta::ool) pol
-  | (_,(_,OwnsProp(beta,io)))::outpr ->
-      if List.mem beta pol then
+	tx_outputs_valid_one_owner outpr (alpha::ool) pol nol
+  | (alpha,(_,OwnsProp(beta,io)))::outpr ->
+      if List.mem alpha pol then
 	false
       else
-	tx_outputs_valid_one_owner outpr ool (beta::pol)
-  | _::outpr -> tx_outputs_valid_one_owner outpr ool pol
+	tx_outputs_valid_one_owner outpr ool (alpha::pol) nol
+  | (alpha,(_,OwnsNegProp))::outpr ->
+      if List.mem alpha nol then
+	false
+      else
+	tx_outputs_valid_one_owner outpr ool pol (alpha::nol)
+  | _::outpr -> tx_outputs_valid_one_owner outpr ool pol nol
   | [] -> true
 
 (*** Ensure ownership deeds are sent to term addresses and publications are sent to publication addresses. ***)
@@ -55,6 +60,7 @@ let rec tx_outputs_valid_addr_cats outpl =
   match outpl with
   | (alpha,(_,OwnsObj(beta,u)))::outpr -> termaddr_p alpha && tx_outputs_valid_addr_cats outpr
   | (alpha,(_,OwnsProp(beta,u)))::outpr -> termaddr_p alpha && tx_outputs_valid_addr_cats outpr
+  | (alpha,(_,OwnsNegProp))::outpr -> termaddr_p alpha && tx_outputs_valid_addr_cats outpr
   | (alpha,(_,TheoryPublication(beta,h,dl)))::outpr -> pubaddr_p alpha && tx_outputs_valid_addr_cats outpr
   | (alpha,(_,SignaPublication(beta,h,th,dl)))::outpr -> pubaddr_p alpha && tx_outputs_valid_addr_cats outpr
   | (alpha,(_,DocPublication(beta,h,th,dl)))::outpr -> pubaddr_p alpha && tx_outputs_valid_addr_cats outpr
@@ -62,7 +68,7 @@ let rec tx_outputs_valid_addr_cats outpl =
   | [] -> true
 
 let tx_outputs_valid (outpl: addr_preasset list) =
-  tx_outputs_valid_one_owner outpl [] []
+  tx_outputs_valid_one_owner outpl [] [] []
     &&
   tx_outputs_valid_addr_cats outpl 
 

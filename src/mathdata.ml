@@ -638,6 +638,9 @@ let rec tm_hashroot m =
   | TTpLam(m) -> hashtag (tm_hashroot m) 103l
   | TTpAll(m) -> hashtag (tm_hashroot m) 104l
 
+(*** hashroot of negation (m -> False) of the term m ***)
+let neg_tm_hashroot m = tm_hashroot (Imp(m,All(Prop,DB(0))))
+
 let rec pf_hashroot d =
   match d with
   | Gpa(h) -> h
@@ -859,6 +862,29 @@ let rec doc_creates_props_aux (dl:doc) r : hashval list =
   | [] -> []
 
 let doc_creates_props (dl:doc) : hashval list = doc_creates_props_aux dl []
+
+let falsehashprop = tm_hashroot (All(Prop,DB(0)))
+let neghashprop = tm_hashroot (Lam(Prop,Imp(DB(0),TmH(falsehashprop))))
+
+let invert_neg_prop p =
+  match p with
+  | Imp(np,f) when tm_hashroot f = falsehashprop -> np
+  | Ap(n,np) when tm_hashroot n = neghashprop -> np
+  | _ -> raise Not_found
+
+let rec doc_creates_neg_props_aux (dl:doc) r : hashval list =
+  match dl with
+  | DocPfOf(p,d)::dr ->
+      begin
+	try
+	  let np = invert_neg_prop p in
+	  doc_creates_neg_props_aux dr (adj (tm_hashroot np) r)
+	with Not_found -> doc_creates_neg_props_aux dr r
+      end
+  | _::dr -> doc_creates_neg_props_aux dr r
+  | [] -> []
+
+let doc_creates_neg_props (dl:doc) : hashval list = doc_creates_neg_props_aux dl []
 
 let rec signaspec_stp_markers_aux th (dl:signaspec) r : hashval list =
   match dl with

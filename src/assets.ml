@@ -13,6 +13,7 @@ type preasset =
   | Bounty of int64
   | OwnsObj of payaddr * int64 option
   | OwnsProp of payaddr * int64 option
+  | OwnsNegProp
   | RightsObj of termaddr * int64
   | RightsProp of termaddr * int64
   | Marker
@@ -35,12 +36,13 @@ let hashpreasset u =
   | OwnsObj(a,Some(v)) -> hashtag (hashpair (hashpayaddr a) (hashint64 v)) 259l
   | OwnsProp(a,None) -> hashtag (hashpayaddr a) 260l
   | OwnsProp(a,Some(v)) -> hashtag (hashpair (hashpayaddr a) (hashint64 v)) 261l
-  | RightsObj(a,v) -> hashtag (hashpair (hashtermaddr a) (hashint64 v)) 262l
-  | RightsProp(a,v) -> hashtag (hashpair (hashtermaddr a) (hashint64 v)) 263l
-  | Marker -> hashint32 264l
-  | TheoryPublication(a,nonce,ths) -> hashtag (hashpair (hashpayaddr a) (hashpair nonce (hashtheoryspec ths))) 265l
-  | SignaPublication(a,nonce,th,s) -> hashtag (hashpair (hashpayaddr a) (hashpair nonce (hashopair2 th (hashsignaspec s)))) 266l
-  | DocPublication(a,nonce,th,d) -> hashtag (hashpair (hashpayaddr a) (hashpair nonce (hashopair2 th (hashdoc d)))) 267l
+  | OwnsNegProp -> hashint32 262l
+  | RightsObj(a,v) -> hashtag (hashpair (hashtermaddr a) (hashint64 v)) 263l
+  | RightsProp(a,v) -> hashtag (hashpair (hashtermaddr a) (hashint64 v)) 264l
+  | Marker -> hashint32 265l
+  | TheoryPublication(a,nonce,ths) -> hashtag (hashpair (hashpayaddr a) (hashpair nonce (hashtheoryspec ths))) 266l
+  | SignaPublication(a,nonce,th,s) -> hashtag (hashpair (hashpayaddr a) (hashpair nonce (hashopair2 th (hashsignaspec s)))) 267l
+  | DocPublication(a,nonce,th,d) -> hashtag (hashpair (hashpayaddr a) (hashpair nonce (hashopair2 th (hashdoc d)))) 268l
 
 let hashobligation (x:obligation) : hashval option =
   match x with
@@ -138,6 +140,13 @@ let rec output_creates_props (outpl:addr_preasset list) : (hashval option * hash
   | (_,(_,DocPublication(_,_,th,d)))::outpr ->
       List.map (fun h -> (th,h)) (doc_creates_props d) @ output_creates_props outpr
   | _::outpr -> output_creates_props outpr
+  | [] -> []
+
+let rec output_creates_neg_props (outpl:addr_preasset list) : (hashval option * hashval) list =
+  match outpl with
+  | (_,(_,DocPublication(_,_,th,d)))::outpr ->
+      List.map (fun h -> (th,h)) (doc_creates_neg_props d) @ output_creates_neg_props outpr
+  | _::outpr -> output_creates_neg_props outpr
   | [] -> []
 
 let rec output_markers outpl =
@@ -244,10 +253,13 @@ let seo_preasset o u c =
       let c = o 4 2 c in
       let c = seo_payaddr o alpha c in
       seo_option seo_int64 o r c
-  | OwnsProp(alpha,r) -> (** 010 1 **)
-      let c = o 4 10 c in
+  | OwnsProp(alpha,r) -> (** 010 10 **)
+      let c = o 5 18 c in
       let c = seo_payaddr o alpha c in
       seo_option seo_int64 o r c
+  | OwnsNegProp -> (** 010 11 **)
+      let c = o 5 26 c in
+      c
   | RightsObj(alpha,n) -> (** 011 0 **)
       let c = o 4 3 c in
       let c = seo_termaddr o alpha c in
@@ -287,12 +299,18 @@ let sei_preasset i c =
     (Bounty(v),c)
   else if x = 2 then
     let (y,c) = i 1 c in
-    let (alpha,c) = sei_payaddr i c in
-    let (r,c) = sei_option sei_int64 i c in
     if y = 0 then
+      let (alpha,c) = sei_payaddr i c in
+      let (r,c) = sei_option sei_int64 i c in
       (OwnsObj(alpha,r),c)
     else
-      (OwnsProp(alpha,r),c)
+      let (z,c) = i 1 c in
+      if z = 0 then
+	let (alpha,c) = sei_payaddr i c in
+	let (r,c) = sei_option sei_int64 i c in
+	(OwnsProp(alpha,r),c)
+      else
+	(OwnsNegProp,c)
   else if x = 3 then
     let (y,c) = i 1 c in
     let (alpha,c) = sei_termaddr i c in

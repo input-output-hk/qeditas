@@ -12,6 +12,7 @@ type preasset =
   | Bounty of int64
   | OwnsObj of payaddr * int64 option
   | OwnsProp of payaddr * int64 option
+  | OwnsNegProp
   | RightsObj of termaddr * int64
   | RightsProp of termaddr * int64
   | Marker
@@ -51,6 +52,7 @@ val output_doc_uses_objs : addr_preasset list -> (termaddr * termaddr) list
 val output_doc_uses_props : addr_preasset list -> (termaddr * termaddr) list
 val output_creates_objs : addr_preasset list -> (hashval option * hashval * hashval) list
 val output_creates_props : addr_preasset list -> (hashval option * hashval) list
+val output_creates_neg_props : addr_preasset list -> (hashval option * hashval) list
 val output_markers : addr_preasset list -> hashval list
 val rights_out_obj : addr_preasset list -> termaddr -> int64
 val rights_out_prop : addr_preasset list -> termaddr -> int64
