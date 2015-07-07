@@ -3,6 +3,7 @@
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 open Hash
+open Big_int
 open Mathdata
 open Assets
 open Signat
@@ -10,11 +11,13 @@ open Tx
 open Ctre
 open Ctregraft
 
-type targetinfo = unit (*** to do ***)
+type stakemod = int64 * int64 * int64 * int64
 
-type por =
-  | PorTrm of termaddr * hashval * tm
-  | PorDoc of pubaddr * hashval * pdoc
+type targetinfo = stakemod * stakemod * big_int
+
+type postor =
+  | PostorTrm of hashval option * tm * tp * hashval
+  | PostorDoc of payaddr * hashval * hashval option * pdoc * hashval
 
 type blockheader = {
     prevblockhash : hashval option;
@@ -24,8 +27,8 @@ type blockheader = {
     stake : int64;
     stakeaddr : p2pkhaddr;
     stakeassetid : hashval;
-    retrievable : por option;
-    timestamp : int64;
+    stored : postor option;
+    deltatime : int32;
     tinfo : targetinfo;
     prevledger : ctree;
     blocksignat : signat;

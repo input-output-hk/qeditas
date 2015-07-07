@@ -2,13 +2,17 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Sha256
 open Hash
+open Big_int
 open Mathdata
 open Assets
 open Signat
 open Tx
 open Ctre
 open Ctregraft
+
+let genesisledgerroot : hashval = (0l,0l,0l,0l,0l)
 
 let maturation_post_staking = 144L
 let maturation_pre_staking = 36L
@@ -24,22 +28,79 @@ let rewfn blkh =
   else
     0L
 
-type targetinfo = unit (* to do *)
+(*** 256 bits ***)
+type stakemod = int64 * int64 * int64 * int64
 
-let hashtargetinfo ti = hashint64 256L (* to do *)
+let hashstakemod sm =
+  let (m3,m2,m1,m0) = sm in
+  hashtag (hashlist [hashint64 m3;hashint64 m2;hashint64 m1;hashint64 m0]) 240l
 
-type por =
-  | PorTrm of termaddr * hashval * tm
-  | PorDoc of pubaddr * hashval * pdoc
+(*** drop most significant bit of m3, shift everything, b is the new least siginificant bit of m0 ***)
+let stakemod_pushbit b sm =
+  let (m3,m2,m1,m0) = sm in
+  let z3 = Int64.shift_left m3 1 in
+  let z2 = Int64.shift_left m2 1 in
+  let z1 = Int64.shift_left m1 1 in
+  let z0 = Int64.shift_left m0 1 in
+  ((if m2 < 0L then Int64.logor z3 1L else z3),
+   (if m1 < 0L then Int64.logor z2 1L else z2),
+   (if m0 < 0L then Int64.logor z1 1L else z1),
+   (if b then Int64.logor z0 1L else z0))
 
-let hashpor r =
+let stakemod_lastbit sm =
+  let (m3,_,_,_) = sm in
+  m3 < 0L
+
+let stakemod_firstbit sm =
+  let (_,_,_,m0) = sm in
+  Int64.logand m0 1L = 1L
+
+(*** one round of sha256 combining the delta time, the hash value of the stake's assetid and the stake modifier, then converted to a big_int to do arithmetic ***)
+let hitval deltm h sm =
+  let (x0,x1,x2,x3,x4) = h in
+  let (m3,m2,m1,m0) = sm in
+  sha256init();
+  currblock.(0) <- deltm;
+  currblock.(1) <- x0;
+  currblock.(2) <- x1;
+  currblock.(3) <- x2;
+  currblock.(4) <- x3;
+  currblock.(5) <- x4;
+  currblock.(6) <- Int64.to_int32 (Int64.shift_right_logical m3 32);
+  currblock.(7) <- Int64.to_int32 m3;
+  currblock.(8) <- Int64.to_int32 (Int64.shift_right_logical m2 32);
+  currblock.(9) <- Int64.to_int32 m2;
+  currblock.(10) <- Int64.to_int32 (Int64.shift_right_logical m1 32);
+  currblock.(11) <- Int64.to_int32 m1;
+  currblock.(12) <- Int64.to_int32 (Int64.shift_right_logical m0 32);
+  currblock.(13) <- Int64.to_int32 m0;
+  currblock.(14) <- 0x80000000l;
+  currblock.(15) <- 448l;
+  sha256round();
+  md256_big_int (getcurrmd256())
+
+(*** current stake modifier, future stake modifier, target (big_int, but assumed to be at most 256 bits ***)
+type targetinfo = stakemod * stakemod * big_int
+
+let hashtargetinfo ti =
+  let (csm,fsm,tar) = ti in
+  hashpair (hashstakemod csm)
+    (hashpair (hashstakemod fsm)
+       (big_int_hashval tar))
+
+type postor =
+  | PostorTrm of hashval option * tm * tp * hashval
+  | PostorDoc of payaddr * hashval * hashval option * pdoc * hashval
+
+let hashpostor r =
   match r with
-  | PorTrm(k,h,m) -> hashtag (hashpair k (hashpair h (hashtm m))) 192l
-  | PorDoc(k,h,d) -> hashtag (hashpair k (hashpair h (hashpdoc d))) 193l
+  | PostorTrm(th,m,a,h) -> hashtag (hashopair2 th (hashpair (hashpair (hashtm m) (hashtp a)) h)) 192l
+  | PostorDoc(gamma,nonce,th,d,h) ->
+      hashtag (hashpair (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (hashpdoc d)))) h) 193l
 
-let hashopor r =
+let hashopostor r =
   match r with
-  | Some(r) -> Some(hashpor r)
+  | Some(r) -> Some(hashpostor r)
   | None -> None
 
 type blockheader = {
@@ -50,8 +111,8 @@ type blockheader = {
     stake : int64;
     stakeaddr : p2pkhaddr;
     stakeassetid : hashval;
-    retrievable : por option;
-    timestamp : int64;
+    stored : postor option;
+    deltatime : int32;
     tinfo : targetinfo;
     prevledger : ctree;
     blocksignat : signat;
@@ -68,7 +129,134 @@ type blockdelta = {
 
 type block = blockheader * blockdelta
 
-let check_hit blkh bh = true (* to do *)
+(*** multiply stake by 1.25 ***)
+let incrstake s =
+  Int64.add s (Int64.shift_right s 2)
+
+exception InappropriatePostor
+
+(*** m should be a term abbreviated except for one leaf ***)
+let rec check_postor_tm_r m =
+  match m with
+  | TmH(h) -> raise InappropriatePostor
+  | DB(i) -> hashtm m
+  | Prim(i) -> hashtm m
+  | Ap(m,TmH(k)) -> check_postor_tm_r m
+  | Ap(TmH(h),m) -> check_postor_tm_r m
+  | Ap(_,_) -> raise InappropriatePostor
+  | Imp(m,TmH(k)) -> check_postor_tm_r m
+  | Imp(TmH(h),m) -> check_postor_tm_r m
+  | Imp(_,_) -> raise InappropriatePostor
+  | Lam(a,m) -> check_postor_tm_r m
+  | All(a,m) -> check_postor_tm_r m
+  | TTpAp(m,a) -> check_postor_tm_r m
+  | TTpLam(m) -> check_postor_tm_r m
+  | TTpAll(m) -> check_postor_tm_r m
+
+(*** alpha is a p2pkhaddr, beta is a termaddr, and these types are both the same as hashval ***)
+let check_postor_tm deltm csm mtar alpha beta m =
+  try
+    let h = check_postor_tm_r m in
+    let betah = hashpair beta h in
+    let (x,_,_,_,_) = hashpair alpha betah in
+    Int32.logand x 0xffffl  = 0l (*** one of every 65536 (beta,h) pairs can be used by each address alpha ***)
+      &&
+    lt_big_int (hitval deltm betah csm) mtar
+  with InappropriatePostor -> false
+
+(*** d should be a proof with everything abbreviated except for one leaf ***)
+let rec check_postor_pf_r d =
+  match d with
+  | Gpa(_) -> raise InappropriatePostor
+  | Hyp(i) -> hashpf d
+  | Known(h) -> hashpf d
+  | PLam(TmH(_),d) -> check_postor_pf_r d
+  | PLam(m,Gpa(_)) -> check_postor_tm_r m
+  | PLam(_,_) -> raise InappropriatePostor
+  | TLam(_,d) -> check_postor_pf_r d
+  | PTmAp(Gpa(_),m) -> check_postor_tm_r m
+  | PTmAp(d,TmH(_)) -> check_postor_pf_r d
+  | PTmAp(_,_) -> raise InappropriatePostor
+  | PPfAp(Gpa(_),d) -> check_postor_pf_r d
+  | PPfAp(d,Gpa(_)) -> check_postor_pf_r d
+  | PPfAp(_,_) -> raise InappropriatePostor
+  | PTpAp(d,_) -> check_postor_pf_r d
+  | PTpLam(d) -> check_postor_pf_r d
+
+(*** ensure there's no extra information: nil or hash of the rest ***)
+let check_postor_pdoc_e d =
+  match d with
+  | PDocNil -> ()
+  | PDocHash(_) -> ()
+  | _ -> raise InappropriatePostor
+
+(*** d should be a partial doc abbreviated except for one leaf ***)
+let rec check_postor_pdoc_r d =
+  match d with
+  | PDocNil -> raise InappropriatePostor
+  | PDocHash(_) -> raise InappropriatePostor
+  | PDocSigna(h,dr) -> check_postor_pdoc_r dr
+  | PDocParam(h,a,dr) ->
+      check_postor_pdoc_e dr;
+      hashpair h (hashtp a)
+  | PDocParamHash(h,dr) -> check_postor_pdoc_r dr
+  | PDocDef(_,m,dr) ->
+      check_postor_pdoc_e dr;
+      check_postor_tm_r m
+  | PDocDefHash(h,dr) -> check_postor_pdoc_r dr
+  | PDocKnown(TmH(h),dr) -> check_postor_pdoc_r dr
+  | PDocKnown(m,dr) ->
+      check_postor_pdoc_e dr;
+      check_postor_tm_r m
+  | PDocConj(TmH(h),dr) -> check_postor_pdoc_r dr
+  | PDocConj(m,dr) ->
+      check_postor_pdoc_e dr;
+      check_postor_tm_r m
+  | PDocPfOf(TmH(_),d,dr) ->
+      check_postor_pdoc_e dr;
+      check_postor_pf_r d
+  | PDocPfOf(m,Gpa(_),dr) ->
+      check_postor_pdoc_e dr;
+      check_postor_tm_r m
+  | PDocPfOf(_,_,dr) -> raise InappropriatePostor
+  | PDocPfOfHash(h,dr) -> check_postor_pdoc_r dr
+
+(*** alpha is a p2pkhaddr, beta is a pubaddr, and these types are both the same as hashval ***)
+let check_postor_pdoc deltm csm mtar alpha beta m =
+  try
+    let h = check_postor_pdoc_r m in
+    let betah = hashpair beta h in
+    let (_,_,_,_,x) = hashpair alpha betah in
+    Int32.logand x 0xffffl  = 0l (*** one of every 65536 (beta,h) pairs can be used by each address alpha ***)
+      &&
+    lt_big_int (hitval deltm betah csm) mtar
+  with InappropriatePostor -> false
+
+(***
+ hitval computes a big_int by hashing the deltatime (seconds since the previous block), the stake's asset id and the current stake modifier.
+ If there is no proof of storage, then there's a hit if the hitval is less than the target times the stake.
+ With a proof of storage, the stake is multiplied by 1.25 before the comparison is made.
+ A proof of storage is either a term or partial document which abbreviates everything except one
+ leaf. That leaf hashed with the hash of the root of the term/pdoc should hash with the stake address
+ in a way that has 16 0 bits as the least significant bits.
+ That is, for each stake address there are 0.0015% of proofs-of-storage that can be used by that address.
+***)
+let check_hit blkh bh =
+  let (csm,fsm,tar) = bh.tinfo in
+  match bh.stored with
+  | None -> lt_big_int (hitval bh.deltatime bh.stakeassetid csm) (mult_big_int tar (big_int_of_int64 bh.stake))
+  | Some(PostorTrm(th,m,a,h)) -> (*** h is not relevant here; it is the asset id to look it up in the ctree ***)
+      let beta = hashopair2 th (hashpair (tm_hashroot m) (hashtp a)) in
+      let mtar = (mult_big_int tar (big_int_of_int64 (incrstake bh.stake))) in
+      lt_big_int (hitval bh.deltatime bh.stakeassetid csm) mtar
+	&&
+      check_postor_tm bh.deltatime csm mtar bh.stakeaddr beta m
+  | Some(PostorDoc(gamma,nonce,th,d,h)) -> (*** h is not relevant here; it is the asset id to look it up in the ctree ***)
+      let prebeta = hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (pdoc_hashroot d))) in
+      let mtar = (mult_big_int tar (big_int_of_int64 (incrstake bh.stake))) in
+      lt_big_int (hitval bh.deltatime bh.stakeassetid csm) mtar
+	&&
+      check_postor_pdoc bh.deltatime csm mtar bh.stakeaddr prebeta d
 
 let coinstake b =
   let (bh,bd) = b in
@@ -83,28 +271,48 @@ let hash_blockheader bh =
        (hashpair
 	  (hashpair (hashint64 bh.stake) (hashpair bh.stakeaddr bh.stakeassetid))
 	  (hashopair2
-	     (hashopor bh.retrievable)
+	     (hashopostor bh.stored)
 	     (hashpair
 		(hashtargetinfo bh.tinfo)
-		(hashpair (hashint64 bh.timestamp) (ctree_hashroot bh.prevledger))))))
+		(hashpair (hashint32 bh.deltatime) (ctree_hashroot bh.prevledger))))))
 
 let valid_blockheader blkh bh =
   verify_p2pkhaddr_signat (hashval_big_int (hash_blockheader bh)) bh.stakeaddr bh.blocksignat bh.blocksignatrecid bh.blocksignatfcomp
     &&
   check_hit blkh bh
     &&
+  bh.deltatime > 0l
+    &&
   begin
     match ctree_lookup_asset bh.stakeassetid bh.prevledger (addr_bitseq (p2pkhaddr_addr bh.stakeaddr)) with
     | Some(aid,bday,None,Currency(v)) when v = bh.stake -> (*** stake belongs to staker ***)
-	Int64.add bday maturation_pre_staking <= blkh || bday = 0L
+	Int64.add bday maturation_pre_staking <= blkh || bday = 0L (*** either it has aged enough or its part of the initial distribution (for bootstrapping) ***)
     | Some(aid,bday,Some(beta,n),Currency(v)) when v = bh.stake -> (*** stake is on loan for staking ***)
 	Int64.add bday maturation_pre_staking <= blkh
 	  &&
 	n > Int64.add blkh not_close_to_mature
     | _ -> false
   end
-
-
+    &&
+  begin
+    match bh.stored with
+    | None -> true
+    | Some(PostorTrm(th,m,a,h)) ->
+	let beta = hashopair2 th (hashpair (tm_hashroot m) (hashtp a)) in
+	begin
+	  match ctree_lookup_asset h bh.prevledger (addr_bitseq (termaddr_addr beta)) with
+	  | Some(_,_,_,OwnsObj(_,_)) -> true
+	  | _ -> false
+	end
+    | Some(PostorDoc(gamma,nonce,th,d,h)) ->
+	let prebeta = hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (pdoc_hashroot d))) in
+	let beta = hashval_pub_addr prebeta in
+	begin
+	  match ctree_lookup_asset h bh.prevledger (addr_bitseq beta) with
+	  | Some(_,_,_,DocPublication(_,_,_,_)) -> true
+	  | _ -> false
+	end
+  end
 
 let ctree_of_block b =
   let (bh,bd) = b in
@@ -180,7 +388,7 @@ let valid_block tht sigt blkh b =
   end
     &&
   (*** No distinct transactions try to spend the same asset. ***)
-  (*** Also, wnership is not created for the same address alpha by two txs in the block. ***)
+  (*** Also, ownership is not created for the same address alpha by two txs in the block. ***)
   begin
     try
       let stxlr = ref bd.blockdelta_stxl in
@@ -289,23 +497,35 @@ let ledgerroot_of_blockchain bc =
   let ((bh,bd),bl) = bc in
   bh.newledgerroot
 
+let blockheader_succ bh1 bh2 =
+  bh2.prevblockhash = Some (hash_blockheader bh1)
+    &&
+  let (csm1,fsm1,tar1) = bh1.tinfo in
+  let (csm2,fsm2,tar2) = bh2.tinfo in
+  stakemod_pushbit (stakemod_lastbit fsm1) csm1 = csm2 (*** new stake modifier is old one shifted with one new bit from the future stake modifier ***)
+    &&
+  stakemod_pushbit (stakemod_firstbit fsm2) fsm1 = fsm2 (*** the new bit of the new future stake modifier fsm2 is freely chosen by the staker ***)
+    &&
+  tar2 = div_big_int (add_big_int (mult_big_int tar1 (big_int_of_int (255*600))) (mult_big_int tar1 (big_int_of_int32 bh2.deltatime))) (big_int_of_int (256*600)) (*** retargeting ***)
+
 let rec valid_blockchain_aux blkh bl =
   match bl with
-  | (b::br) ->
-      if blkh > 0L then
-	let (tht,sigt) = valid_blockchain_aux (Int64.sub blkh 1L) br in
-	if valid_block tht sigt blkh b then
-	  (txout_update_ottree (tx_outputs (tx_of_block b)) tht,
-	   txout_update_ostree (tx_outputs (tx_of_block b)) sigt)
+  | ((bh,bd)::(pbh,pbd)::br) ->
+      if blkh > 1L then
+	let (tht,sigt) = valid_blockchain_aux (Int64.sub blkh 1L) ((pbh,pbd)::br) in
+	if blockheader_succ pbh bh && valid_block tht sigt blkh (bh,bd) then
+	  (txout_update_ottree (tx_outputs (tx_of_block (bh,bd))) tht,
+	   txout_update_ostree (tx_outputs (tx_of_block (bh,bd))) sigt)
 	else
 	  raise NotSupported
       else
 	raise NotSupported
-  | [] ->
-      if blkh = 0L then
+  | [(bh,bd)] ->
+      if blkh = 1L && valid_block None None blkh (bh,bd) && ctree_hashroot bh.prevledger = genesisledgerroot then
 	(None,None)
       else
 	raise NotSupported
+  | [] -> raise NotSupported
 
 let valid_blockchain blkh bc =
   try
@@ -316,13 +536,15 @@ let valid_blockchain blkh bc =
 
 let rec valid_blockheaderchain_aux blkh bhl =
   match bhl with
-  | (bh::bhr) ->
-      if blkh > 0L then
-	valid_blockheaderchain_aux (Int64.sub blkh 1L) bhr
+  | (bh::pbh::bhr) ->
+      if blkh > 1L then
+	valid_blockheaderchain_aux (Int64.sub blkh 1L) (pbh::bhr)
+	  && blockheader_succ pbh bh
 	  && valid_blockheader blkh bh
       else
 	false
-  | [] -> blkh = 0L
+  | [bh] -> blkh = 1L && valid_blockheader blkh bh && ctree_hashroot bh.prevledger = genesisledgerroot
+  | [] -> false
 
 let valid_blockheaderchain blkh bhc =
   match bhc with
