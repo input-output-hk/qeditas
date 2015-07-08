@@ -66,8 +66,8 @@ let set_genesis_stakemods x =
  ***)
 set_genesis_stakemods "0000000000000000000000000000000000000000";;
 
-let genesistarget = big_int_of_string "1000000000"
-let genesisledgerroot : hashval = (0l,0l,0l,0l,0l)
+let genesistarget = ref (big_int_of_string "1000000000")
+let genesisledgerroot : hashval ref = ref (0l,0l,0l,0l,0l)
 
 let maturation_post_staking = 144L
 let maturation_pre_staking = 36L
@@ -575,8 +575,8 @@ let rec valid_blockchain_aux blkh bl =
   | [(bh,bd)] ->
       if blkh = 1L && valid_block None None blkh (bh,bd)
 	  && bh.prevblockhash = None
-	  && ctree_hashroot bh.prevledger = genesisledgerroot
-	  && bh.tinfo = (!genesiscurrentstakemod,!genesisfuturestakemod,genesistarget)
+	  && ctree_hashroot bh.prevledger = !genesisledgerroot
+	  && bh.tinfo = (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
       then
 	(txout_update_ottree (tx_outputs (tx_of_block (bh,bd))) None,
 	 txout_update_ostree (tx_outputs (tx_of_block (bh,bd))) None)
@@ -602,8 +602,8 @@ let rec valid_blockheaderchain_aux blkh bhl =
 	false
   | [bh] -> blkh = 1L && valid_blockheader blkh bh
 	&& bh.prevblockhash = None
-	&& ctree_hashroot bh.prevledger = genesisledgerroot
-	&& bh.tinfo = (!genesiscurrentstakemod,!genesisfuturestakemod,genesistarget)
+	&& ctree_hashroot bh.prevledger = !genesisledgerroot
+	&& bh.tinfo = (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
   | [] -> false
 
 let valid_blockheaderchain blkh bhc =
