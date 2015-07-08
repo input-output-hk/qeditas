@@ -155,7 +155,7 @@ let hashopostor r =
   | Some(r) -> Some(hashpostor r)
   | None -> None
 
-type blockheader = {
+type blockheaderdata = {
     prevblockhash : hashval option;
     newtheoryroot : hashval option;
     newsignaroot : hashval option;
@@ -167,10 +167,15 @@ type blockheader = {
     deltatime : int32;
     tinfo : targetinfo;
     prevledger : ctree;
+  }
+
+type blockheadersig = {
     blocksignat : signat;
     blocksignatrecid : int;
     blocksignatfcomp : bool;
   }
+
+type blockheader = blockheaderdata * blockheadersig
 
 type blockdelta = {
     stakeoutput : addr_preasset list;
@@ -311,10 +316,10 @@ let check_hit blkh bh =
       check_postor_pdoc bh.deltatime csm mtar bh.stakeaddr prebeta d
 
 let coinstake b =
-  let (bh,bd) = b in
-  ([(p2pkhaddr_addr bh.stakeaddr,bh.stakeassetid)],bd.stakeoutput)
+  let ((bhd,bhs),bd) = b in
+  ([(p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)],bd.stakeoutput)
 
-let hash_blockheader bh =
+let hash_blockheaderdata bh =
   hashopair2 bh.prevblockhash
     (hashpair
        (hashopair2 bh.newtheoryroot
@@ -328,18 +333,18 @@ let hash_blockheader bh =
 		(hashtargetinfo bh.tinfo)
 		(hashpair (hashint32 bh.deltatime) (ctree_hashroot bh.prevledger))))))
 
-let valid_blockheader blkh bh =
-  verify_p2pkhaddr_signat (hashval_big_int (hash_blockheader bh)) bh.stakeaddr bh.blocksignat bh.blocksignatrecid bh.blocksignatfcomp
+let valid_blockheader blkh (bhd,bhs) =
+  verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) bhd.stakeaddr bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
     &&
-  check_hit blkh bh
+  check_hit blkh bhd
     &&
-  bh.deltatime > 0l
+  bhd.deltatime > 0l
     &&
   begin
-    match ctree_lookup_asset bh.stakeassetid bh.prevledger (addr_bitseq (p2pkhaddr_addr bh.stakeaddr)) with
-    | Some(aid,bday,None,Currency(v)) when v = bh.stake -> (*** stake belongs to staker ***)
+    match ctree_lookup_asset bhd.stakeassetid bhd.prevledger (addr_bitseq (p2pkhaddr_addr bhd.stakeaddr)) with
+    | Some(aid,bday,None,Currency(v)) when v = bhd.stake -> (*** stake belongs to staker ***)
 	Int64.add bday maturation_pre_staking <= blkh || bday = 0L (*** either it has aged enough or its part of the initial distribution (for bootstrapping) ***)
-    | Some(aid,bday,Some(beta,n),Currency(v)) when v = bh.stake -> (*** stake is on loan for staking ***)
+    | Some(aid,bday,Some(beta,n),Currency(v)) when v = bhd.stake -> (*** stake is on loan for staking ***)
 	Int64.add bday maturation_pre_staking <= blkh
 	  &&
 	n > Int64.add blkh not_close_to_mature
@@ -347,12 +352,12 @@ let valid_blockheader blkh bh =
   end
     &&
   begin
-    match bh.stored with
+    match bhd.stored with
     | None -> true
     | Some(PostorTrm(th,m,a,h)) ->
 	let beta = hashopair2 th (hashpair (tm_hashroot m) (hashtp a)) in
 	begin
-	  match ctree_lookup_asset h bh.prevledger (addr_bitseq (termaddr_addr beta)) with
+	  match ctree_lookup_asset h bhd.prevledger (addr_bitseq (termaddr_addr beta)) with
 	  | Some(_,_,_,OwnsObj(_,_)) -> true
 	  | _ -> false
 	end
@@ -360,15 +365,15 @@ let valid_blockheader blkh bh =
 	let prebeta = hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (pdoc_hashroot d))) in
 	let beta = hashval_pub_addr prebeta in
 	begin
-	  match ctree_lookup_asset h bh.prevledger (addr_bitseq beta) with
+	  match ctree_lookup_asset h bhd.prevledger (addr_bitseq beta) with
 	  | Some(_,_,_,DocPublication(_,_,_,_)) -> true
 	  | _ -> false
 	end
   end
 
-let ctree_of_block b =
-  let (bh,bd) = b in
-  ctree_cgraft bd.prevledgergraft bh.prevledger
+let ctree_of_block (b:block) =
+  let ((bhd,bhs),bd) = b in
+  ctree_cgraft bd.prevledgergraft bhd.prevledger
 
 let rec stxs_allinputs stxl =
   match stxl with
@@ -381,13 +386,13 @@ let rec stxs_alloutputs stxl =
   | [] -> []
 
 let tx_of_block b =
-  let (bh,bd) = b in
+  let ((bh,_),bd) = b in
   ((p2pkhaddr_addr bh.stakeaddr,bh.stakeassetid)::stxs_allinputs bd.blockdelta_stxl,bd.stakeoutput @ stxs_alloutputs bd.blockdelta_stxl)
 
 let valid_block tht sigt blkh b =
-  let (bh,bd) = b in
+  let ((bhd,bhs),bd) = b in
   (*** The header is valid. ***)
-  valid_blockheader blkh bh
+  valid_blockheader blkh (bhd,bhs)
     &&
   tx_outputs_valid bd.stakeoutput
     &&
@@ -415,8 +420,8 @@ let valid_block tht sigt blkh b =
   (*** The cgraft is valid. ***)
   cgraft_valid bd.prevledgergraft
     &&
-  let stakealpha1 = p2pkhaddr_addr bh.stakeaddr in
-  let stakein = (stakealpha1,bh.stakeassetid) in
+  let stakealpha1 = p2pkhaddr_addr bhd.stakeaddr in
+  let stakein = (stakealpha1,bhd.stakeassetid) in
   (*** Each transaction in the delta has supported elaborated assets and is appropriately signed. ***)
   (*** Also, each transaction in the delta is valid and supported without a reward. ***)
   (*** Also, no transaction has the stake asset as an input. ***)
@@ -531,11 +536,11 @@ let valid_block tht sigt blkh b =
    ***)
   match tx_octree_trans blkh tau (Some(tr)) with
   | Some(tr2) ->
-      bh.newledgerroot = ctree_hashroot tr2
+      bhd.newledgerroot = ctree_hashroot tr2
 	&&
-      bh.newtheoryroot = ottree_hashroot (txout_update_ottree outpl tht)
+      bhd.newtheoryroot = ottree_hashroot (txout_update_ottree outpl tht)
 	&&
-      bh.newsignaroot = ostree_hashroot (txout_update_ostree outpl sigt)
+      bhd.newsignaroot = ostree_hashroot (txout_update_ostree outpl sigt)
   | None -> false
 
 type blockchain = block * block list
@@ -546,19 +551,21 @@ let blockchain_headers bc =
   (bh,List.map (fun b -> let (bh,bd) = b in bh) bl)
 
 let ledgerroot_of_blockchain bc =
-  let ((bh,bd),bl) = bc in
-  bh.newledgerroot
+  let (((bhd,bhs),bd),bl) = bc in
+  bhd.newledgerroot
 
 let blockheader_succ bh1 bh2 =
-  bh2.prevblockhash = Some (hash_blockheader bh1)
+  let (bhd1,bhs1) = bh1 in
+  let (bhd2,bhs2) = bh2 in
+  bhd2.prevblockhash = Some (hash_blockheaderdata bhd1)
     &&
-  let (csm1,fsm1,tar1) = bh1.tinfo in
-  let (csm2,fsm2,tar2) = bh2.tinfo in
+  let (csm1,fsm1,tar1) = bhd1.tinfo in
+  let (csm2,fsm2,tar2) = bhd2.tinfo in
   stakemod_pushbit (stakemod_lastbit fsm1) csm1 = csm2 (*** new stake modifier is old one shifted with one new bit from the future stake modifier ***)
     &&
   stakemod_pushbit (stakemod_firstbit fsm2) fsm1 = fsm2 (*** the new bit of the new future stake modifier fsm2 is freely chosen by the staker ***)
     &&
-  tar2 = div_big_int (add_big_int (mult_big_int tar1 (big_int_of_int (255*600))) (mult_big_int tar1 (big_int_of_int32 bh2.deltatime))) (big_int_of_int (256*600)) (*** retargeting ***)
+  tar2 = div_big_int (add_big_int (mult_big_int tar1 (big_int_of_int (255*600))) (mult_big_int tar1 (big_int_of_int32 bhd2.deltatime))) (big_int_of_int (256*600)) (*** retargeting ***)
 
 let rec valid_blockchain_aux blkh bl =
   match bl with
@@ -573,10 +580,11 @@ let rec valid_blockchain_aux blkh bl =
       else
 	raise NotSupported
   | [(bh,bd)] ->
+      let (bhd,bhs) = bh in
       if blkh = 1L && valid_block None None blkh (bh,bd)
-	  && bh.prevblockhash = None
-	  && ctree_hashroot bh.prevledger = !genesisledgerroot
-	  && bh.tinfo = (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
+	  && bhd.prevblockhash = None
+	  && ctree_hashroot bhd.prevledger = !genesisledgerroot
+	  && bhd.tinfo = (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
       then
 	(txout_update_ottree (tx_outputs (tx_of_block (bh,bd))) None,
 	 txout_update_ostree (tx_outputs (tx_of_block (bh,bd))) None)
@@ -600,10 +608,10 @@ let rec valid_blockheaderchain_aux blkh bhl =
 	  && valid_blockheader blkh bh
       else
 	false
-  | [bh] -> blkh = 1L && valid_blockheader blkh bh
-	&& bh.prevblockhash = None
-	&& ctree_hashroot bh.prevledger = !genesisledgerroot
-	&& bh.tinfo = (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
+  | [(bhd,bhs)] -> blkh = 1L && valid_blockheader blkh (bhd,bhs)
+	&& bhd.prevblockhash = None
+	&& ctree_hashroot bhd.prevledger = !genesisledgerroot
+	&& bhd.tinfo = (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
   | [] -> false
 
 let valid_blockheaderchain blkh bhc =

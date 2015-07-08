@@ -13,13 +13,25 @@ open Ctregraft
 
 type stakemod = int64 * int64 * int64 * int64
 
+val set_genesis_stakemods : string -> unit
+val genesiscurrentstakemod : stakemod ref
+val genesisfuturestakemod : stakemod ref
+val genesisledgerroot : hashval ref
+val genesistarget : big_int ref
+
+val stakemod_pushbit : bool -> stakemod -> stakemod
+val stakemod_lastbit : stakemod -> bool
+val stakemod_firstbit : stakemod -> bool
+
 type targetinfo = stakemod * stakemod * big_int
+
+val hitval : int32 -> hashval -> stakemod -> big_int
 
 type postor =
   | PostorTrm of hashval option * tm * tp * hashval
   | PostorDoc of payaddr * hashval * hashval option * pdoc * hashval
 
-type blockheader = {
+type blockheaderdata = {
     prevblockhash : hashval option;
     newtheoryroot : hashval option;
     newsignaroot : hashval option;
@@ -31,10 +43,15 @@ type blockheader = {
     deltatime : int32;
     tinfo : targetinfo;
     prevledger : ctree;
+  }
+
+type blockheadersig = {
     blocksignat : signat;
     blocksignatrecid : int;
     blocksignatfcomp : bool;
   }
+
+type blockheader = blockheaderdata * blockheadersig
 
 type blockdelta = {
     stakeoutput : addr_preasset list;
@@ -47,7 +64,7 @@ type block = blockheader * blockdelta
 
 val coinstake : block -> tx
 
-val hash_blockheader : blockheader -> hashval
+val hash_blockheaderdata : blockheaderdata -> hashval
 
 val valid_blockheader : int64 -> blockheader -> bool
 
