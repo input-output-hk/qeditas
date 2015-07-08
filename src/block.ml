@@ -12,6 +12,61 @@ open Tx
 open Ctre
 open Ctregraft
 
+(*** 256 bits ***)
+type stakemod = int64 * int64 * int64 * int64
+
+let genesiscurrentstakemod : stakemod ref = ref (0L,0L,0L,0L)
+let genesisfuturestakemod : stakemod ref = ref (0L,0L,0L,0L)
+
+let set_genesis_stakemods x =
+  let (x4,x3,x2,x1,x0) = hexstring_hashval x in
+  sha256init();
+  currblock.(0) <- x4;
+  currblock.(1) <- x3;
+  currblock.(2) <- x2;
+  currblock.(3) <- x1;
+  currblock.(4) <- x0;
+  currblock.(5) <- 0x80000000l;
+  for i = 6 to 14 do
+    currblock.(i) <- 0l;
+  done;
+  currblock.(15) <- 160l;
+  sha256round();
+  let (y0,y1,y2,y3,y4,y5,y6,y7) = getcurrmd256() in
+  sha256init();
+  currblock.(0) <- y0;
+  currblock.(1) <- y1;
+  currblock.(2) <- y2;
+  currblock.(3) <- y3;
+  currblock.(4) <- y4;
+  currblock.(5) <- y5;
+  currblock.(6) <- y6;
+  currblock.(7) <- y7;
+  currblock.(8) <- 0x80000000l;
+  for i = 9 to 14 do
+    currblock.(i) <- 0l;
+  done;
+  currblock.(15) <- 256l;
+  sha256round();
+  let (z0,z1,z2,z3,z4,z5,z6,z7) = getcurrmd256() in
+  let c a b =
+    Int64.logor
+      (Int64.shift_left (Int64.of_int32 (Int32.logand (Int32.shift_right_logical a 16) 0xffl)) 48)
+      (Int64.logor
+	 (Int64.shift_left (Int64.of_int32 (Int32.logand a 0xffl)) 32)
+	 (Int64.logor
+	    (Int64.shift_left (Int64.of_int32 (Int32.logand (Int32.shift_right_logical b 16) 0xffl)) 16)
+	    (Int64.of_int32 (Int32.logand b 0xffl))))
+  in
+  genesiscurrentstakemod := (c y0 y1,c y2 y3,c y4 y5,c y6 y7);
+  genesisfuturestakemod := (c z0 z1,c z2 z3,c z4 z5,c z6 z7);;
+  
+(*** Here the last 20 bytes (40 hex chars) of the block hash for a particular bitcoin block should be included.
+ sha256 is used to extract 512 bits to set the genesis current and future stake modifiers.
+ ***)
+set_genesis_stakemods "0000000000000000000000000000000000000000";;
+
+let genesistarget = big_int_of_string "1000000000"
 let genesisledgerroot : hashval = (0l,0l,0l,0l,0l)
 
 let maturation_post_staking = 144L
@@ -27,9 +82,6 @@ let rewfn blkh =
     Int64.shift_right basereward ((blki + 350000) / 210000)
   else
     0L
-
-(*** 256 bits ***)
-type stakemod = int64 * int64 * int64 * int64
 
 let hashstakemod sm =
   let (m3,m2,m1,m0) = sm in
@@ -521,8 +573,13 @@ let rec valid_blockchain_aux blkh bl =
       else
 	raise NotSupported
   | [(bh,bd)] ->
-      if blkh = 1L && valid_block None None blkh (bh,bd) && ctree_hashroot bh.prevledger = genesisledgerroot then
-	(None,None)
+      if blkh = 1L && valid_block None None blkh (bh,bd)
+	  && bh.prevblockhash = None
+	  && ctree_hashroot bh.prevledger = genesisledgerroot
+	  && bh.tinfo = (!genesiscurrentstakemod,!genesisfuturestakemod,genesistarget)
+      then
+	(txout_update_ottree (tx_outputs (tx_of_block (bh,bd))) None,
+	 txout_update_ostree (tx_outputs (tx_of_block (bh,bd))) None)
       else
 	raise NotSupported
   | [] -> raise NotSupported
@@ -543,7 +600,10 @@ let rec valid_blockheaderchain_aux blkh bhl =
 	  && valid_blockheader blkh bh
       else
 	false
-  | [bh] -> blkh = 1L && valid_blockheader blkh bh && ctree_hashroot bh.prevledger = genesisledgerroot
+  | [bh] -> blkh = 1L && valid_blockheader blkh bh
+	&& bh.prevblockhash = None
+	&& ctree_hashroot bh.prevledger = genesisledgerroot
+	&& bh.tinfo = (!genesiscurrentstakemod,!genesisfuturestakemod,genesistarget)
   | [] -> false
 
 let valid_blockheaderchain blkh bhc =
