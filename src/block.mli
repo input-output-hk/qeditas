@@ -64,6 +64,8 @@ type block = blockheader * blockdelta
 
 val coinstake : block -> tx
 
+val check_hit : int64 -> blockheaderdata -> bool
+
 val hash_blockheaderdata : blockheaderdata -> hashval
 
 val valid_blockheader : int64 -> blockheader -> bool
@@ -72,7 +74,11 @@ val ctree_of_block : block -> ctree
 
 val tx_of_block : block -> tx
 
+val retarget : big_int -> int32 -> big_int
+
 val valid_block : ttree option -> stree option -> int64 -> block -> bool
+
+val blockheader_succ : blockheader -> blockheader -> bool
 
 type blockchain = block * block list
 type blockheaderchain = blockheader * blockheader list
@@ -84,5 +90,3 @@ val ledgerroot_of_blockchain : blockchain -> hashval
 val valid_blockchain : int64 -> blockchain -> bool
 
 val valid_blockheaderchain : int64 -> blockheaderchain -> bool
-
-

@@ -69,9 +69,9 @@ set_genesis_stakemods "0000000000000000000000000000000000000000";;
 let genesistarget = ref (big_int_of_string "1000000000")
 let genesisledgerroot : hashval ref = ref (0l,0l,0l,0l,0l)
 
-let maturation_post_staking = 144L
-let maturation_pre_staking = 36L
-let not_close_to_mature = 144L
+let maturation_post_staking = 512L
+let maturation_pre_staking = 512L
+let not_close_to_mature = 32L
 
 (*** base reward of 50 fraenks (50 trillion cants) like bitcoin, but assume the first 350000 blocks have passed. ***)
 let basereward = 50000000000000000L
@@ -333,22 +333,25 @@ let hash_blockheaderdata bh =
 		(hashtargetinfo bh.tinfo)
 		(hashpair (hashint32 bh.deltatime) (ctree_hashroot bh.prevledger))))))
 
-let valid_blockheader blkh (bhd,bhs) =
+let valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v) =
   verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) bhd.stakeaddr bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
+    &&
+  bhd.stakeassetid = aid
     &&
   check_hit blkh bhd
     &&
   bhd.deltatime > 0l
     &&
   begin
-    match ctree_lookup_asset bhd.stakeassetid bhd.prevledger (addr_bitseq (p2pkhaddr_addr bhd.stakeaddr)) with
-    | Some(aid,bday,None,Currency(v)) when v = bhd.stake -> (*** stake belongs to staker ***)
-	Int64.add bday maturation_pre_staking <= blkh || bday = 0L (*** either it has aged enough or its part of the initial distribution (for bootstrapping) ***)
-    | Some(aid,bday,Some(beta,n),Currency(v)) when v = bhd.stake -> (*** stake is on loan for staking ***)
+    match obl with
+    | None -> (*** stake belongs to staker ***)
+	v = bhd.stake && (Int64.add bday maturation_pre_staking <= blkh || bday = 0L) (*** either it has aged enough or its part of the initial distribution (for bootstrapping) ***)
+    | Some(beta,n) -> (*** stake may be on loan for staking ***)
+	v = bhd.stake
+	  &&
 	Int64.add bday maturation_pre_staking <= blkh
 	  &&
 	n > Int64.add blkh not_close_to_mature
-    | _ -> false
   end
     &&
   begin
@@ -369,7 +372,13 @@ let valid_blockheader blkh (bhd,bhs) =
 	  | Some(_,_,_,DocPublication(_,_,_,_)) -> true
 	  | _ -> false
 	end
-  end
+  end  
+
+let valid_blockheader blkh (bhd,bhs) =
+  match ctree_lookup_asset bhd.stakeassetid bhd.prevledger (addr_bitseq (p2pkhaddr_addr bhd.stakeaddr)) with
+  | Some(aid,bday,obl,Currency(v)) -> (*** stake belongs to staker ***)
+      valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v)
+  | _ -> false
 
 let ctree_of_block (b:block) =
   let ((bhd,bhs),bd) = b in
@@ -389,19 +398,38 @@ let tx_of_block b =
   let ((bh,_),bd) = b in
   ((p2pkhaddr_addr bh.stakeaddr,bh.stakeassetid)::stxs_allinputs bd.blockdelta_stxl,bd.stakeoutput @ stxs_alloutputs bd.blockdelta_stxl)
 
-let valid_block tht sigt blkh b =
+let valid_block_a tht sigt blkh b (aid,bday,obl,v) =
   let ((bhd,bhs),bd) = b in
   (*** The header is valid. ***)
-  valid_blockheader blkh (bhd,bhs)
+  valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v)
     &&
   tx_outputs_valid bd.stakeoutput
+    &&
+   (*** ensure that if the stake has an explicit obligation (e.g., it is borrowed for staking), then the obligation isn't changed; otherwise the staker could steal the borrowed stake; unchanged copy should be first output ***)
+   begin
+     match ctree_lookup_asset bhd.stakeassetid bhd.prevledger (addr_bitseq (p2pkhaddr_addr bhd.stakeaddr)) with
+     | Some(_,_,Some(beta,n),Currency(v)) -> (*** stake may be on loan for staking ***)
+	 begin
+	   match bd.stakeoutput with
+	   | (alpha2,(Some(beta2,n2),Currency(v2)))::_ ->
+	       alpha2 = p2pkhaddr_addr bhd.stakeaddr
+		 &&
+	       beta2 = beta
+		 &&
+	       n2 = n
+		 &&
+	       v2 = v
+	   | _ -> false
+	 end
+     | _ -> true
+   end
     &&
   List.fold_left
     (fun b (alpha,(obl,u)) ->
       b &&
       match obl with
       | Some(a,n) -> n > Int64.add blkh maturation_post_staking
-      | None -> false
+      | None -> true (*** This is different from the Coq formal specification. In practice we allow the default obligation and rely on maturation_pre_staking to ensure the stake is old enough before staking again. ***)
     )
     true
     bd.stakeoutput
@@ -543,6 +571,13 @@ let valid_block tht sigt blkh b =
       bhd.newsignaroot = ostree_hashroot (txout_update_ostree outpl sigt)
   | None -> false
 
+let valid_block tht sigt blkh (b:block) =
+  let ((bhd,_),_) = b in
+  match ctree_lookup_asset bhd.stakeassetid bhd.prevledger (addr_bitseq (p2pkhaddr_addr bhd.stakeaddr)) with
+  | Some(aid,bday,obl,Currency(v)) -> (*** stake belongs to staker ***)
+      valid_block_a tht sigt blkh b (aid,bday,obl,v)
+  | _ -> false
+
 type blockchain = block * block list
 type blockheaderchain = blockheader * blockheader list
 
@@ -553,6 +588,14 @@ let blockchain_headers bc =
 let ledgerroot_of_blockchain bc =
   let (((bhd,bhs),bd),bl) = bc in
   bhd.newledgerroot
+
+(*** retargeting at each step ***)
+let retarget tar deltm =
+  (div_big_int
+     (add_big_int
+	(mult_big_int tar (big_int_of_int (255*600)))
+	(mult_big_int tar (big_int_of_int32 deltm)))
+     (big_int_of_int (256*600)))
 
 let blockheader_succ bh1 bh2 =
   let (bhd1,bhs1) = bh1 in
@@ -565,7 +608,7 @@ let blockheader_succ bh1 bh2 =
     &&
   stakemod_pushbit (stakemod_firstbit fsm2) fsm1 = fsm2 (*** the new bit of the new future stake modifier fsm2 is freely chosen by the staker ***)
     &&
-  tar2 = div_big_int (add_big_int (mult_big_int tar1 (big_int_of_int (255*600))) (mult_big_int tar1 (big_int_of_int32 bhd2.deltatime))) (big_int_of_int (256*600)) (*** retargeting ***)
+  eq_big_int tar2 (retarget tar1 bhd1.deltatime)
 
 let rec valid_blockchain_aux blkh bl =
   match bl with
