@@ -591,11 +591,11 @@ let ledgerroot_of_blockchain bc =
 
 (*** retargeting at each step ***)
 let retarget tar deltm =
-  (div_big_int
-     (add_big_int
-	(mult_big_int tar (big_int_of_int (255*600)))
-	(mult_big_int tar (big_int_of_int32 deltm)))
-     (big_int_of_int (256*600)))
+  div_big_int
+    (add_big_int
+       (mult_big_int tar (big_int_of_int 600))
+       (mult_big_int tar (big_int_of_int32 deltm)))
+    (big_int_of_int (2*600))
 
 let blockheader_succ bh1 bh2 =
   let (bhd1,bhs1) = bh1 in
