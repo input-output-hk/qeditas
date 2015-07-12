@@ -65,6 +65,14 @@ type payaddr = bool * int32 * int32 * int32 * int32 * int32
 type termaddr = int32 * int32 * int32 * int32 * int32
 type pubaddr = int32 * int32 * int32 * int32 * int32
 
+let p2pkhaddr_payaddr x =
+  let (x0,x1,x2,x3,x4) = x in
+  (false,x0,x1,x2,x3,x4)
+
+let p2shaddr_payaddr x =
+  let (x0,x1,x2,x3,x4) = x in
+  (true,x0,x1,x2,x3,x4)
+
 let p2pkhaddr_addr x =
   let (x0,x1,x2,x3,x4) = x in
   (0,x0,x1,x2,x3,x4)

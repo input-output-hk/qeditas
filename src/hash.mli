@@ -15,6 +15,9 @@ type pubaddr = int32 * int32 * int32 * int32 * int32
 
 val hash160 : string -> hashval
 
+val p2pkhaddr_payaddr : p2pkhaddr -> payaddr
+val p2shaddr_payaddr : p2shaddr -> payaddr
+
 val p2pkhaddr_addr : p2pkhaddr -> addr
 val p2shaddr_addr : p2shaddr -> addr
 val payaddr_addr : payaddr -> addr
