@@ -94,7 +94,7 @@ let inv_gen x q =
   let (u,v) = eea q (mod_big_int x q) in
   mod_big_int v q
 
-let sign_big_int e privk randk =
+let signat_big_int e privk randk =
   match smulp randk _g with
   | Some(xr,yr) ->
       let r = mod_big_int xr _n in
@@ -115,7 +115,7 @@ let verify_signed_big_int e q (r,s) =
   else
     false
 
-let sign_hashval h privk randk = sign_big_int (hashval_big_int h) privk randk
+let signat_hashval h privk randk = signat_big_int (hashval_big_int h) privk randk
 
 let verify_signed_hashval h q (r,s) = verify_signed_big_int (hashval_big_int h) q (r,s)
 
