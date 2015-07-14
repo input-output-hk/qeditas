@@ -286,6 +286,11 @@ let tx_octree_trans bh tx c =
     (add_vout bh (hashtx tx) outpl)
     c
 
+let rec txl_octree_trans bh txl c =
+  match txl with
+  | (tx::txr) -> txl_octree_trans bh txr (tx_octree_trans bh tx c)
+  | [] -> c
+
 (** * serialization **)
 let rec seo_hlist o hl c =
   match hl with

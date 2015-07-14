@@ -394,9 +394,18 @@ let rec stxs_alloutputs stxl =
   | ((_,outpl),_)::stxr -> outpl @ stxs_alloutputs stxr
   | [] -> []
 
+(*** all txs of the block combined into one big transaction; used for checking validity of blocks ***)
 let tx_of_block b =
-  let ((bh,_),bd) = b in
-  ((p2pkhaddr_addr bh.stakeaddr,bh.stakeassetid)::stxs_allinputs bd.blockdelta_stxl,bd.stakeoutput @ stxs_alloutputs bd.blockdelta_stxl)
+  let ((bhd,_),bd) = b in
+  ((p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)::stxs_allinputs bd.blockdelta_stxl,bd.stakeoutput @ stxs_alloutputs bd.blockdelta_stxl)
+
+let coinstake b =
+  let ((bhd,_),bd) = b in
+  ([(p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)],bd.stakeoutput)
+
+let txl_of_block b =
+  let (_,bd) = b in
+  coinstake b::List.map (fun (tx,_) -> tx) bd.blockdelta_stxl
 
 let valid_block_a tht sigt blkh b (aid,bday,obl,v) =
   let ((bhd,bhs),bd) = b in
@@ -552,7 +561,7 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) =
   end
     &&
   (*** The total inputs and outputs match up with the declared fee. ***)
-  let tau = tx_of_block b in (*** let tau be the tx of the block ***)
+  let tau = tx_of_block b in (*** let tau be the combined tx of the block ***)
   let (inpl,outpl) = tau in
   let aal = ctree_lookup_input_assets inpl tr in
   let al = List.map (fun (_,a) -> a) aal in

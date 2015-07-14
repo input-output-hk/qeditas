@@ -72,7 +72,7 @@ val valid_blockheader : int64 -> blockheader -> bool
 
 val ctree_of_block : block -> ctree
 
-val tx_of_block : block -> tx
+val txl_of_block : block -> tx list
 
 val retarget : big_int -> int32 -> big_int
 

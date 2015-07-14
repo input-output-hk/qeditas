@@ -44,6 +44,7 @@ val ctree_supports_tx : ttree option -> stree option -> int64 -> tx -> ctree -> 
 val ctree_supports_tx_2 : ttree option -> stree option -> int64 -> tx -> (addr * asset) list -> asset list -> ctree -> int64
 
 val tx_octree_trans : int64 -> tx -> ctree option -> ctree option
+val txl_octree_trans : int64 -> tx list -> ctree option -> ctree option
 
 val octree_lub : ctree option -> ctree option -> ctree option
 val get_supporting_octree : tx -> ctree option -> ctree option
