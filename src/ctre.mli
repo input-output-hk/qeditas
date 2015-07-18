@@ -39,6 +39,13 @@ val ctree_lookup_asset : hashval -> ctree -> bool list -> asset option
 
 exception NotSupported
 
+val get_ctree_abbrev : hashval -> ctree
+
+val strip_bitseq_true : (bool list * 'a) list -> (bool list * 'a) list
+val strip_bitseq_false : (bool list * 'a) list -> (bool list * 'a) list
+val strip_bitseq_true0 : bool list list -> bool list list
+val strip_bitseq_false0 : bool list list -> bool list list
+
 val ctree_lookup_input_assets : addr_assetid list -> ctree -> (addr * asset) list
 val ctree_supports_tx : ttree option -> stree option -> int64 -> tx -> ctree -> int64
 val ctree_supports_tx_2 : ttree option -> stree option -> int64 -> tx -> (addr * asset) list -> asset list -> ctree -> int64
@@ -47,7 +54,10 @@ val tx_octree_trans : int64 -> tx -> ctree option -> ctree option
 val txl_octree_trans : int64 -> tx list -> ctree option -> ctree option
 
 val octree_lub : ctree option -> ctree option -> ctree option
-val get_supporting_octree : tx -> ctree option -> ctree option
+
+val full_needed : addr_preasset list -> bool list list
+val get_tx_supporting_octree : tx -> ctree option -> ctree option
+val get_txl_supporting_octree : tx list -> ctree option -> ctree option
 
 val seo_hlist : (int -> int -> 'a -> 'a) -> hlist -> 'a -> 'a
 val sei_hlist : (int -> 'a -> int * 'a) -> 'a -> hlist * 'a

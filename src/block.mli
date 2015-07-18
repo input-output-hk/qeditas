@@ -25,7 +25,9 @@ val stakemod_firstbit : stakemod -> bool
 
 type targetinfo = stakemod * stakemod * big_int
 
-val hitval : int32 -> hashval -> stakemod -> big_int
+val coinage : int64 -> int64 -> int64 -> int64
+
+val hitval : int64 -> hashval -> stakemod -> big_int
 
 type postor =
   | PostorTrm of hashval option * tm * tp * hashval
@@ -39,7 +41,9 @@ type blockheaderdata = {
     stake : int64;
     stakeaddr : p2pkhaddr;
     stakeassetid : hashval;
+    stakebday : int64;
     stored : postor option;
+    timestamp : int64;
     deltatime : int32;
     tinfo : targetinfo;
     prevledger : ctree;
@@ -53,9 +57,11 @@ type blockheadersig = {
 
 type blockheader = blockheaderdata * blockheadersig
 
+type poforfeit = blockheader * blockheader * blockheaderdata list * blockheaderdata list * int64 * hashval list
+
 type blockdelta = {
     stakeoutput : addr_preasset list;
-    totalfees : int64;
+    forfeiture : poforfeit option;
     prevledgergraft : cgraft;
     blockdelta_stxl : stx list
   }
@@ -74,7 +80,7 @@ val ctree_of_block : block -> ctree
 
 val txl_of_block : block -> tx list
 
-val retarget : big_int -> int32 -> big_int
+val retarget : big_int -> float -> big_int
 
 val valid_block : ttree option -> stree option -> int64 -> block -> bool
 

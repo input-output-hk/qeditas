@@ -141,6 +141,28 @@ let rec print_ctree_r c n =
 
 let print_ctree c = print_ctree_r c 0
 
+let rec print_hlist hl =
+  match hl with
+  | HHash(h) -> Printf.printf "...%s...\n" (hashval_hexstring h)
+  | HNil -> ()
+  | HCons((aid,bday,obl,v),hr) ->
+      begin
+	Printf.printf "%s [%Ld]\n" (hashval_hexstring aid) bday;
+	print_hlist hr
+      end
+
+let rec print_ctree_all_r c n =
+  for i = 1 to n do Printf.printf " " done;
+  match c with
+  | CLeaf(bl,hl) -> Printf.printf "Leaf\n"; print_hlist (nehlist_hlist hl)
+  | CHash(h) -> Printf.printf "H %s\n" (hashval_hexstring h)
+  | CAbbrev(h) -> Printf.printf "A %s\n" (hashval_hexstring h)
+  | CLeft(c0) -> Printf.printf "L\n"; print_ctree_all_r c0 (n+1)
+  | CRight(c1) -> Printf.printf "R\n"; print_ctree_all_r c1 (n+1)
+  | CBin(c0,c1) -> Printf.printf "B\n"; print_ctree_all_r c0 (n+1); print_ctree_all_r c1 (n+1)
+
+let print_ctree_all c = print_ctree_all_r c 0
+
 let rec ctree_hashroot c =
   match c with
   | CLeaf(bl,hl) ->
@@ -1362,9 +1384,19 @@ let full_needed outpl =
     (output_doc_uses_props outpl);
   !r
 
-let get_supporting_octree (inpl,outpl) oc =
+let get_tx_supporting_octree (inpl,outpl) oc =
   octree_reduce_to_min_support
     (List.map (fun (alpha,z) -> (addr_bitseq alpha,z)) inpl)
     (List.map (fun (alpha,(_,_)) -> addr_bitseq alpha) outpl)
     (full_needed outpl)
     oc
+
+let rec get_txl_supporting_octree txl oc =
+  match txl with
+  | (tx::txr) ->
+      octree_lub (get_tx_supporting_octree tx oc) (get_txl_supporting_octree txr oc)
+  | [] -> 
+      match oc with
+      | Some(c) -> Some(CHash(ctree_hashroot c))
+      | None -> None
+
