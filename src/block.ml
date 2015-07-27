@@ -8,6 +8,7 @@ open Big_int
 open Mathdata
 open Assets
 open Signat
+open Cryptocurr
 open Tx
 open Ctre
 open Ctregraft
@@ -69,12 +70,15 @@ set_genesis_stakemods "0000000000000000000000000000000000000000";;
 let genesistarget = ref (big_int_of_string "1000000000")
 let genesisledgerroot : hashval ref = ref (0l,0l,0l,0l,0l)
 
-let maturation_post_staking = 512L
-let maturation_pre_staking = 512L
+let sqr512 x = let y = big_int_of_int64 (Int64.shift_right x 9) in mult_big_int y y
+
+let maximum_age = 16384L
+let maximum_age_sqr = sqr512 maximum_age
+let maturation = 512L
 let not_close_to_mature = 32L
 
 (*** base reward of 50 fraenks (50 trillion cants) like bitcoin, but assume the first 350000 blocks have passed. ***)
-let basereward = 50000000000000000L
+let basereward = 50000000000000L
 
 let rewfn blkh =
   if blkh < 11410000L then
@@ -160,10 +164,8 @@ type blockheaderdata = {
     newtheoryroot : hashval option;
     newsignaroot : hashval option;
     newledgerroot : hashval;
-    stake : int64;
     stakeaddr : p2pkhaddr;
     stakeassetid : hashval;
-    stakebday : int64;
     stored : postor option;
     timestamp : int64;
     deltatime : int32;
@@ -293,16 +295,33 @@ let check_postor_pdoc tm csm mtar alpha beta m =
     lt_big_int (hitval tm betah csm) mtar
   with InappropriatePostor -> false
 
+let sqr512_int64 (x:int64) =
+  let y = ref x in
+  let i = ref 0 in
+  while !y > 0L do
+    incr i;
+    y := Int64.shift_right_logical !y 1
+  done;
+  !i
+
 (*** coinage experiment ***)
-let coinage blkh bday v =
-  if v >= 562949953421311L then (*** stakes larger than 562 fraenks do not age, to prevent int64 overflow **)
-    v
+let coinage blkh bday obl v =
+  if bday = 0L then (*** coins in the initial distribution start out at maximum age ***)
+    mult_big_int maximum_age_sqr (big_int_of_int64 v)
   else
-    let a = Int64.sub blkh bday in
-    if a < 16384L then (*** coins stop aging in approximately 113 days ***)
-      Int64.mul a v
+    let mday = Int64.add bday maturation in
+    if mday >= blkh then (*** only start aging after it is mature -- initial distribution starts as mature ***)
+      zero_big_int
     else
-      Int64.mul 16384L v
+      match obl with
+  | None ->
+      let a = Int64.sub blkh mday in
+      let a2 = if a < maximum_age then a else maximum_age in
+      mult_big_int (sqr512 a2) (big_int_of_int64 v)
+  | Some(_,_,_) -> (*** in this case it's locked until block height n ***)
+      let a = Int64.shift_left (Int64.sub blkh mday) 1 in (*** age twice as fast ***)
+      let a2 = if a < maximum_age then a else maximum_age in
+      mult_big_int (sqr512 a2) (big_int_of_int64 v)
 
 (***
  hitval computes a big_int by hashing the deltatime (seconds since the previous block), the stake's asset id and the current stake modifier.
@@ -313,26 +332,33 @@ let coinage blkh bday v =
  in a way that has 16 0 bits as the least significant bits.
  That is, for each stake address there are 0.0015% of proofs-of-storage that can be used by that address.
 ***)
-let check_hit blkh bh =
-  let (csm,fsm,tar) = bh.tinfo in
-  match bh.stored with
-  | None -> lt_big_int (hitval bh.timestamp bh.stakeassetid csm) (mult_big_int tar (big_int_of_int64 (coinage blkh bh.stakebday bh.stake)))
+let check_hit_a blkh bday obl v tinf tmstmp stkid stkaddr strd =
+  let (csm,fsm,tar) = tinf in
+  match strd with
+  | None -> lt_big_int (hitval tmstmp stkid csm) (mult_big_int tar (coinage blkh bday obl v))
   | Some(PostorTrm(th,m,a,h)) -> (*** h is not relevant here; it is the asset id to look it up in the ctree ***)
       let beta = hashopair2 th (hashpair (tm_hashroot m) (hashtp a)) in
-      let mtar = (mult_big_int tar (big_int_of_int64 (coinage blkh bh.stakebday (incrstake bh.stake)))) in
-      lt_big_int (hitval bh.timestamp bh.stakeassetid csm) mtar
+      let mtar = (mult_big_int tar (coinage blkh bday obl (incrstake v))) in
+      lt_big_int (hitval tmstmp stkid csm) mtar
 	&&
-      check_postor_tm bh.timestamp csm mtar bh.stakeaddr beta m
+      check_postor_tm tmstmp csm mtar stkaddr beta m
   | Some(PostorDoc(gamma,nonce,th,d,h)) -> (*** h is not relevant here; it is the asset id to look it up in the ctree ***)
       let prebeta = hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (pdoc_hashroot d))) in
-      let mtar = (mult_big_int tar (big_int_of_int64 (coinage blkh bh.stakebday (incrstake bh.stake)))) in
-      lt_big_int (hitval bh.timestamp bh.stakeassetid csm) mtar
+      let mtar = (mult_big_int tar (coinage blkh bday obl (incrstake v))) in
+      lt_big_int (hitval tmstmp stkid csm) mtar
 	&&
-      check_postor_pdoc bh.timestamp csm mtar bh.stakeaddr prebeta d
+      check_postor_pdoc tmstmp csm mtar stkaddr prebeta d
+
+let check_hit blkh bh bday obl v =
+  check_hit_a blkh bday obl v bh.tinfo bh.timestamp bh.stakeassetid bh.stakeaddr bh.stored
 
 let coinstake b =
   let ((bhd,bhs),bd) = b in
-  ([(p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)],bd.stakeoutput)
+  match bd.forfeiture with
+  | None -> ([p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid],bd.stakeoutput)
+  | Some((bhd1,_),_,_,_,_,fal) ->
+      let a = p2pkhaddr_addr bhd1.stakeaddr in
+      ((p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)::List.map (fun fid -> (a,fid)) fal,bd.stakeoutput)
 
 let hash_blockheaderdata bh =
   hashopair2 bh.prevblockhash
@@ -341,7 +367,7 @@ let hash_blockheaderdata bh =
 	  (hashopair2 bh.newsignaroot
 	     bh.newledgerroot))
        (hashpair
-	  (hashpair (hashint64 bh.stake) (hashpair bh.stakeaddr bh.stakeassetid))
+	  (hashpair bh.stakeaddr bh.stakeassetid)
 	  (hashopair2
 	     (hashopostor bh.stored)
 	     (hashpair
@@ -355,20 +381,16 @@ let valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v) =
     &&
   bhd.stakeassetid = aid
     &&
-  bhd.stakebday = bday
-    &&
-  check_hit blkh bhd
+  check_hit blkh bhd bday obl v
     &&
   bhd.deltatime > 0l
     &&
   begin
     match obl with
     | None -> (*** stake belongs to staker ***)
-	v = bhd.stake && (Int64.add bday maturation_pre_staking <= blkh || bday = 0L) (*** either it has aged enough or its part of the initial distribution (for bootstrapping) ***)
-    | Some(beta,n) -> (*** stake may be on loan for staking ***)
-	v = bhd.stake
-	  &&
-	Int64.add bday maturation_pre_staking <= blkh
+	(Int64.add bday maturation <= blkh || bday = 0L) (*** either it has aged enough or its part of the initial distribution (for bootstrapping) ***)
+    | Some(beta,n,_) -> (*** stake may be on loan for staking ***)
+	Int64.add bday maturation <= blkh
 	  &&
 	n > Int64.add blkh not_close_to_mature
   end
@@ -418,10 +440,6 @@ let tx_of_block b =
   let ((bhd,_),bd) = b in
   ((p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)::stxs_allinputs bd.blockdelta_stxl,bd.stakeoutput @ stxs_alloutputs bd.blockdelta_stxl)
 
-let coinstake b =
-  let ((bhd,_),bd) = b in
-  ([(p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)],bd.stakeoutput)
-
 let txl_of_block b =
   let (_,bd) = b in
   coinstake b::List.map (fun (tx,_) -> tx) bd.blockdelta_stxl
@@ -438,15 +456,14 @@ let rec check_bhl pbh bhl oth =
 	else
 	  raise Not_found
 
-let rec check_poforfeit_a blkh alphabs v fal tr =
+let rec check_poforfeit_a blkh alpha alphabs v fal tr =
   Printf.printf "cpa v %Ld\n" v; flush stdout;
   match fal with
   | [] -> v = 0L
   | fa::far ->
       match ctree_lookup_asset fa tr alphabs with
-      | Some(_,bday,_,Currency(u)) when Int64.add bday 6L >= blkh ->
-	  Printf.printf "cpa u %Ld\n" u; flush stdout;
-	  check_poforfeit_a blkh alphabs (Int64.sub v u) far tr
+      | Some(_,bday,Some(alpha2,_,r),Currency(u)) when r && Int64.add bday 6L >= blkh && payaddr_addr alpha2 = alpha ->
+	  check_poforfeit_a blkh alpha alphabs (Int64.sub v u) far tr
       | _ -> false
 
 let check_poforfeit blkh ((bhd1,bhs1),(bhd2,bhs2),bhl1,bhl2,v,fal) tr =
@@ -463,7 +480,8 @@ let check_poforfeit blkh ((bhd1,bhs1),(bhd2,bhs2),bhl1,bhl2,v,fal) tr =
       try
 	begin
 	  if check_bhl (bhd1.prevblockhash) bhl1 bhd2h = check_bhl (bhd2.prevblockhash) bhl2 bhd1h then (*** bhd1.stakeaddr signed in two different forks within six blocks of fbh1 ***)
-	    check_poforfeit_a blkh (addr_bitseq (p2pkhaddr_addr bhd1.stakeaddr)) v fal tr
+	    let alpha = p2pkhaddr_addr bhd1.stakeaddr in
+	    check_poforfeit_a blkh alpha (addr_bitseq alpha) v fal tr
 	  else
 	    false
 	end
@@ -471,7 +489,7 @@ let check_poforfeit blkh ((bhd1,bhs1),(bhd2,bhs2),bhl1,bhl2,v,fal) tr =
     else
       false
 
-let valid_block_a tht sigt blkh b (aid,bday,obl,v) =
+let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
   let ((bhd,bhs),bd) = b in
   (*** The header is valid. ***)
   valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v)
@@ -480,12 +498,12 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) =
     &&
    (*** ensure that if the stake has an explicit obligation (e.g., it is borrowed for staking), then the obligation isn't changed; otherwise the staker could steal the borrowed stake; unchanged copy should be first output ***)
    begin
-     match ctree_lookup_asset bhd.stakeassetid bhd.prevledger (addr_bitseq (p2pkhaddr_addr bhd.stakeaddr)) with
-     | Some(_,_,Some(beta,n),Currency(v)) -> (*** stake may be on loan for staking ***)
+     match ctree_lookup_asset bhd.stakeassetid bhd.prevledger stkaddrbs with
+     | Some(_,_,Some(beta,n,_),Currency(v)) -> (*** stake may be on loan for staking ***)
 	 begin
 	   match bd.stakeoutput with
-	   | (alpha2,(Some(beta2,n2),Currency(v2)))::(alpha3,(_,Currency(vs)))::_ -> (*** the first output must recreate the loaned asset and the second output must be the stake reward ***)
-	       alpha2 = p2pkhaddr_addr bhd.stakeaddr
+	   | (alpha2,(Some(beta2,n2,r),Currency(v2)))::remouts when not r -> (*** the first output must recreate the loaned asset. It's not a reward. The remaining outputs are marked as rewards and are subject to forfeiture. ***)
+	       alpha2 = stkaddr
 		 &&
 	       beta2 = beta
 		 &&
@@ -493,31 +511,36 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) =
 		 &&
 	       v2 = v
 		 &&
-	       alpha3 = p2pkhaddr_addr bhd.stakeaddr
-		 &&
-	       vs >= rewfn blkh
-	   | _ -> false
+	       begin
+		 try (*** all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for maturation many blocks ***)
+		   ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh maturation -> false | _ -> true) remouts);
+		   false
+		 with Not_found -> true
+	       end
+	   | _ ->
+	       false
 	 end
-     | _ ->
-	 begin
+     | _ -> (*** stake has the default obligation ***)
+	 begin (*** the first output is optionally the stake with the default obligation (not a reward, immediately spendable) with all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for maturation many blocks ***)
 	   match bd.stakeoutput with
-	   | (alpha3,(_,Currency(vs)))::_ -> (*** the first asset must be the stake reward, possibly with fees. fees can optionally be sent to other addresses in the rest of the output ***)
-	       alpha3 = p2pkhaddr_addr bhd.stakeaddr
-		 &&
-	       vs >= rewfn blkh
-	   | _ -> false
+	   | (alpha2,(None,Currency(v2)))::remouts ->
+	       begin
+		 alpha2 = stkaddr
+		   &&
+		 v2 = v
+		   &&
+		 try
+		   ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh maturation -> false | _ -> true) remouts);
+		   false
+		 with Not_found -> true
+	       end
+	   | _ ->
+	       try
+		 ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh maturation -> false | _ -> true) bd.stakeoutput);
+		 false
+	       with Not_found -> true
 	 end
    end
-    &&
-  List.fold_left
-    (fun b (alpha,(obl,u)) ->
-      b &&
-      match obl with
-      | Some(a,n) -> n > Int64.add blkh maturation_post_staking
-      | None -> true (*** This is different from the Coq formal specification. In practice we allow the default obligation and rely on maturation_pre_staking to ensure the stake is old enough before staking again. ***)
-    )
-    true
-    bd.stakeoutput
     &&
   let tr = ctree_of_block b in (*** let tr be the ctree of the block, used often below ***)
   begin
@@ -527,26 +550,40 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) =
     with NotSupported -> false
   end
     &&
-  (*** There are no duplicate transactions. ***)
-  no_dups bd.blockdelta_stxl
+  (*** There are no duplicate transactions. (Comparing the signatures would be an error since they contain abstract values.) ***)
+  no_dups (List.map (fun (tau,_) -> tau) bd.blockdelta_stxl)
     &&
   (*** The cgraft is valid. ***)
   cgraft_valid bd.prevledgergraft
     &&
-  let stakealpha1 = p2pkhaddr_addr bhd.stakeaddr in
-  let stakein = (stakealpha1,bhd.stakeassetid) in
+  let stakein = (stkaddr,bhd.stakeassetid) in
   (*** Each transaction in the delta has supported elaborated assets and is appropriately signed. ***)
   (*** Also, each transaction in the delta is valid and supported without a reward. ***)
   (*** Also, no transaction has the stake asset as an input. ***)
+  (*** None of the outputs say they are rewards. ***)
   begin
     try
       List.fold_left
 	(fun sgvb stau ->
 	  match stau with
-	  | ((inpl,_) as tau,_) ->
+	  | ((inpl,outpl) as tau,_) ->
+	      let norew =
+		begin
+		  try
+		    ignore (List.find 
+			      (fun (a,(obl,v)) ->
+				match obl with
+				| Some(_,_,r) when r -> true
+				| _ -> false)
+			      outpl);
+		    false
+		  with Not_found -> true
+		end
+	      in
 	      let aal = ctree_lookup_input_assets inpl tr in
 	      let al = List.map (fun (_,a) -> a) aal in
-	      sgvb
+	      norew
+		&& sgvb
 		&& not (List.mem stakein inpl)
 		&& tx_signatures_valid blkh al stau
 		&& tx_valid tau
@@ -562,7 +599,7 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) =
   begin
     try
       let stxlr = ref bd.blockdelta_stxl in
-      while !stxlr != [] do
+      while not (!stxlr = []) do
 	match !stxlr with
 	| ((inpl1,outpl1),_)::stxr ->
 	    let hl1 = List.map (fun (_,h) -> h) inpl1 in
@@ -652,6 +689,7 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) =
   let (inpl,outpl) = tau in
   let aal = ctree_lookup_input_assets inpl tr in
   let al = List.map (fun (_,a) -> a) aal in
+  (*** Originally I added totalfees to the out_cost, but this was wrong since the totalfees are in the stake output which is already counted in out_cost. I don't really need totalfees to be explicit. ***)
   out_cost outpl = Int64.add (asset_value_sum al) (Int64.add (rewfn blkh) forfeitval)
     &&
   (***
@@ -669,9 +707,11 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) =
 
 let valid_block tht sigt blkh (b:block) =
   let ((bhd,_),_) = b in
-  match ctree_lookup_asset bhd.stakeassetid bhd.prevledger (addr_bitseq (p2pkhaddr_addr bhd.stakeaddr)) with
+  let stkaddr = p2pkhaddr_addr bhd.stakeaddr in
+  let stkaddrbs = addr_bitseq stkaddr in
+  match ctree_lookup_asset bhd.stakeassetid bhd.prevledger stkaddrbs with
   | Some(aid,bday,obl,Currency(v)) -> (*** stake belongs to staker ***)
-      valid_block_a tht sigt blkh b (aid,bday,obl,v)
+      valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs
   | _ -> false
 
 type blockchain = block * block list
@@ -689,10 +729,8 @@ let ledgerroot_of_blockchain bc =
 let retarget tar deltm =
    div_big_int
      (mult_big_int tar
-       (big_int_of_int32
-	  (Int32.add 1000l
-	     (Int32.of_float (1000.0 *. (deltm /. 600.0) *. ((exp (1.0 /. deltm)) /. (exp (1.0 /. 600.0))))))))
-     (big_int_of_int 2000)
+       (big_int_of_int32 (Int32.add 9000l deltm)))
+     (big_int_of_int 9600);;
 
 let blockheader_succ bh1 bh2 =
   let (bhd1,bhs1) = bh1 in
@@ -707,7 +745,7 @@ let blockheader_succ bh1 bh2 =
     &&
   stakemod_pushbit (stakemod_firstbit fsm2) fsm1 = fsm2 (*** the new bit of the new future stake modifier fsm2 is freely chosen by the staker ***)
     &&
-  eq_big_int tar2 (retarget tar1 (Int32.to_float bhd1.deltatime))
+  eq_big_int tar2 (retarget tar1 bhd1.deltatime)
 
 let rec valid_blockchain_aux blkh bl =
   match bl with
