@@ -69,7 +69,7 @@ let ripemd160init () =
  However, ocaml compiles it to something quite slow.
  I attempted to write faster versions, but they were always slower.
  ***)
-let ripemd160round t =
+let ripemd160round () =
   let f0 x y z = Int32.logxor x (Int32.logxor y z) in
   let f1 x y z = Int32.logor (Int32.logand x y) (Int32.logand (Int32.lognot x) z) in
   let f2 x y z = Int32.logxor (Int32.logor x (Int32.lognot y)) z in
