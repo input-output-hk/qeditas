@@ -71,3 +71,5 @@ val sei_frame : (int -> 'a -> int * 'a) -> 'a -> frame * 'a
 val seo_ctree : (int -> int -> 'a -> 'a) -> ctree -> 'a -> 'a
 val sei_ctree : (int -> 'a -> int * 'a) -> 'a -> ctree * 'a
 
+val print_ctree : ctree -> unit
+val print_ctree_all : ctree -> unit

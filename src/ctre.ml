@@ -6,6 +6,7 @@ open Ser
 open Hash
 open Mathdata
 open Assets
+open Cryptocurr
 open Tx
 
 let qdcdir = "qdg/";;
@@ -151,17 +152,22 @@ let rec print_hlist hl =
 	print_hlist hr
       end
 
-let rec print_ctree_all_r c n =
+let rec print_ctree_all_r c n br =
   for i = 1 to n do Printf.printf " " done;
   match c with
-  | CLeaf(bl,hl) -> Printf.printf "Leaf\n"; print_hlist (nehlist_hlist hl)
+  | CLeaf(bl,hl) -> Printf.printf "Leaf %s\n" (addr_qedaddrstr (bitseq_addr ((List.rev br) @ bl))); print_hlist (nehlist_hlist hl)
   | CHash(h) -> Printf.printf "H %s\n" (hashval_hexstring h)
   | CAbbrev(h) -> Printf.printf "A %s\n" (hashval_hexstring h)
-  | CLeft(c0) -> Printf.printf "L\n"; print_ctree_all_r c0 (n+1)
-  | CRight(c1) -> Printf.printf "R\n"; print_ctree_all_r c1 (n+1)
-  | CBin(c0,c1) -> Printf.printf "B\n"; print_ctree_all_r c0 (n+1); print_ctree_all_r c1 (n+1)
+  | CLeft(c0) -> Printf.printf "L\n"; print_ctree_all_r c0 (n+1) (false::br)
+  | CRight(c1) -> Printf.printf "R\n"; print_ctree_all_r c1 (n+1) (true::br)
+  | CBin(c0,c1) -> Printf.printf "B\n"; print_ctree_all_r c0 (n+1) (false::br); print_ctree_all_r c1 (n+1) (true::br)
 
-let print_ctree_all c = print_ctree_all_r c 0
+let print_ctree_all c = print_ctree_all_r c 0 []
+
+let print_octree_all_r c n br =
+  match c with
+  | Some(c) -> print_ctree_all_r c n br
+  | None -> ()
 
 let rec ctree_hashroot c =
   match c with
@@ -284,7 +290,8 @@ let rec tx_octree_trans_ n inpl outpl c =
 	  | _ -> raise (Failure "not a ctree 0")
 	end
       in
-      match hlist_new_assets (List.map (fun (x,y) -> y) outpl) (remove_assets_hlist hl (List.map (fun (x,y) -> y) inpl)) with
+      let hl2 = hlist_new_assets (List.map (fun (x,y) -> y) outpl) (remove_assets_hlist hl (List.map (fun (x,y) -> y) inpl)) in
+      match hl2 with
       | HNil -> None
       | HHash(h) -> Some(CLeaf([],NehHash(h)))
       | HCons(a,hr) -> Some(CLeaf([],NehCons(a,hr)))
@@ -1083,7 +1090,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	      | Some(beta2,r2) -> raise NotSupported (*** already owned ***)
 	      | None ->
 		  match obl with (*** insist on an obligation, or the ownership will not be transferable ***)
-		  | Some(_,_) -> ()
+		  | Some(_,_,_) -> ()
 		  | None -> raise NotSupported
 	    end
 	  else
@@ -1097,7 +1104,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	      | Some(beta2,r2) -> raise NotSupported (*** already owned ***)
 	      | None ->
 		  match obl with (*** insist on an obligation, or the ownership will not be transferable; note that a trivial transfer is made to collect bounties ***)
-		  | Some(_,_) -> ()
+		  | Some(_,_,_) -> ()
 		  | None -> raise NotSupported
 	    end
 	  else
@@ -1111,7 +1118,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 		raise NotSupported (*** already owned ***)
 	      else
 		match obl with (*** insist on an obligation, or the ownership will not be transferable; note that a trivial transfer is made to collect bounties ***)
-		| Some(_,_) -> ()
+		| Some(_,_,_) -> ()
 		| None -> raise NotSupported
 	    end
 	  else
@@ -1289,7 +1296,7 @@ let rec hlist_reduce_to_min_support aidl hl =
       begin
 	match hl with
 	| HCons((h,bh,o,u),hr) ->
-	    HCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> z != h) aidl) hr)
+	    HCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr)
 	| _ -> hl
       end
 
@@ -1339,7 +1346,7 @@ let rec ctree_reduce_to_min_support n inpl outpl full c =
 	  if inpl = [] then
 	    CLeaf([],NehHash(nehlist_hashroot hl))
 	  else
-	    CLeaf([],NehCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> z != h) (List.map (fun (_,k) -> h) inpl)) hr))
+	    CLeaf([],NehCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) (List.map (fun (_,k) -> h) inpl)) hr))
       | _ -> raise (Failure "impossible")
     end
   else (*** At this point we are necessarily at a leaf. However, if the full hlist is not here, then it will not be fully supported. Not checking since we assume c supported before calling reduce_to_min. ***)
