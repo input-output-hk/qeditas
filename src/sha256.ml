@@ -41,7 +41,7 @@ let int32_odd x =
   Int32.logand x Int32.one = Int32.one
 
 let int32_right_rotation x n =
-  Int32.logor (Int32.shift_left x (32 - n)) (Int32.shift_right_logical x n)
+  Int32.logor (Int32.shift_right_logical x n) (Int32.shift_left x (32 - n))
 
 let a = ref 0l
 let b = ref 0l
