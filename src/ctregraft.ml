@@ -4,6 +4,7 @@
 
 open Ser
 open Hash
+open Assets
 open Tx
 open Ctre
 
@@ -94,3 +95,9 @@ let factor_tx_ctree_cgraft (inpl,outpl) c =
     (full_needed outpl)
     c
 
+let factor_assets_ctree_cgraft inpl c =
+  factor_ctree_cgraft
+    162
+    (List.map (fun (alpha,z) -> (addr_bitseq alpha,z)) inpl)
+    [] []
+    c

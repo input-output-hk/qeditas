@@ -3,6 +3,7 @@
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 open Hash
+open Assets
 open Tx
 open Ctre
 
@@ -12,3 +13,5 @@ val cgraft_valid : cgraft -> bool
 val ctree_cgraft : cgraft -> ctree -> ctree
 
 val factor_tx_ctree_cgraft : tx -> ctree -> ctree * cgraft
+
+val factor_assets_ctree_cgraft : addr_assetid list -> ctree -> ctree * cgraft
