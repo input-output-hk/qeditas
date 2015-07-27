@@ -10,12 +10,6 @@ open Hashaux
  With some constants taken from rosettacode.org/wiki/RIPEMD-160
  ***)
 
-let f0 x y z = Int32.logxor x (Int32.logxor y z)
-let f1 x y z = Int32.logor (Int32.logand x y) (Int32.logand (Int32.lognot x) z)
-let f2 x y z = Int32.logxor (Int32.logor x (Int32.lognot y)) z
-let f3 x y z = Int32.logor (Int32.logand x z) (Int32.logand y (Int32.lognot z))
-let f4 x y z = Int32.logxor x (Int32.logor y (Int32.lognot z))
-
 let ripemd160consts1 : int32 array = [| 0x00000000l; 0x5a827999l; 0x6ed9eba1l; 0x8f1bbcdcl; 0xa953fd4el |]
 let ripemd160consts2 : int32 array = [| 0x50a28be6l; 0x5c4dd124l; 0x6d703ef3l; 0x7a6d76e9l; 0x00000000l |]
 
@@ -70,7 +64,17 @@ let ripemd160init () =
   currmd.(3) <- 0x10325476l;
   currmd.(4) <- 0xc3d2e1f0l
 
+(***
+ This implementation of ripemd160round is closely based on the description.
+ However, ocaml compiles it to something quite slow.
+ I attempted to write faster versions, but they were always slower.
+ ***)
 let ripemd160round t =
+  let f0 x y z = Int32.logxor x (Int32.logxor y z) in
+  let f1 x y z = Int32.logor (Int32.logand x y) (Int32.logand (Int32.lognot x) z) in
+  let f2 x y z = Int32.logxor (Int32.logor x (Int32.lognot y)) z in
+  let f3 x y z = Int32.logor (Int32.logand x z) (Int32.logand y (Int32.lognot z)) in
+  let f4 x y z = Int32.logxor x (Int32.logor y (Int32.lognot z)) in
   a := currmd.(0);
   b := currmd.(1);
   c := currmd.(2);
