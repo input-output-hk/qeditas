@@ -39,6 +39,7 @@ val hashval_term_addr : hashval -> addr
 val hashval_pub_addr : hashval -> addr
 
 val addr_bitseq : addr -> bool list
+val bitseq_addr : bool list -> addr
 
 val hashval_hexstring : hashval -> string
 val hexstring_hashval : string -> hashval

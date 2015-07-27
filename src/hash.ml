@@ -166,6 +166,33 @@ let addr_bitseq x =
   else
     (true::true::r)
 
+let rec bitseq_int32 bl r i =
+  if i < 0 then
+    (r,bl)
+  else
+    match bl with
+    | (true::br) ->
+	bitseq_int32 br (Int32.logor (Int32.shift_left 1l i) r) (i-1)
+    | (false::br) ->
+	bitseq_int32 br r (i-1)
+    | _ -> raise (Failure "bitseq_int32 called with bitseq of insufficient length")
+
+let bitseq_addr bs =
+  let (p,bl) =
+    match bs with
+    | (false::false::bl) -> (0,bl)
+    | (false::true::bl) -> (1,bl)
+    | (true::false::bl) -> (2,bl)
+    | (true::true::bl) -> (3,bl)
+    | _ -> raise (Failure "bitseq too short")
+  in
+  let (x0,bl) = bitseq_int32 bl 0l 31 in
+  let (x1,bl) = bitseq_int32 bl 0l 31 in
+  let (x2,bl) = bitseq_int32 bl 0l 31 in
+  let (x3,bl) = bitseq_int32 bl 0l 31 in
+  let (x4,bl) = bitseq_int32 bl 0l 31 in
+  (p,x0,x1,x2,x3,x4)
+
 (*** x is an address, 32 bits, represented here as 32 int32s ***)
 let hashaddr x =
   let (p,x0,x1,x2,x3,x4) = x in
@@ -564,5 +591,3 @@ let seo_termaddr o alpha c = seo_hashval o alpha c
 let sei_termaddr i c = sei_hashval i c
 let seo_pubaddr o alpha c = seo_hashval o alpha c
 let sei_pubaddr i c = sei_hashval i c
-
-
