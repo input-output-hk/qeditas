@@ -6,7 +6,10 @@ open Ser
 open Hash
 open Mathdata
 
-type obligation = (payaddr * int64) option
+(*** If the obligation is Some(alpha,n,r), then the way to spend the asset is for alpha to sign after block n.
+ If r is true then the asset was a reward and can be forfeited as a consequence of double signing.
+ ***)
+type obligation = (payaddr * int64 * bool) option
 
 type preasset =
   | Currency of int64
@@ -47,7 +50,7 @@ let hashpreasset u =
 let hashobligation (x:obligation) : hashval option =
   match x with
   | None -> None
-  | Some(a,n) -> Some(hashpair (hashpayaddr a) (hashint64 n))
+  | Some(a,n,r) -> Some(hashpair (hashpayaddr a) (hashtag (hashint64 n) (if r then 1025l else 1024l)))
 
 let hashasset a =
   let (h,bh,obl,u) = a in
@@ -236,10 +239,10 @@ let rec out_cost outpl =
 (** * serialization **)
 
 let seo_obligation o obl c =
-  seo_option (seo_prod seo_payaddr seo_int64) o obl c
+  seo_option (seo_prod3 seo_payaddr seo_int64 seo_bool) o obl c
 
 let sei_obligation i c =
-  sei_option (sei_prod sei_payaddr sei_int64) i c
+  sei_option (sei_prod3 sei_payaddr sei_int64 sei_bool) i c
 
 let seo_preasset o u c =
   match u with
@@ -348,7 +351,3 @@ let seo_addr_preasset o u c = seo_prod seo_addr (seo_prod seo_obligation seo_pre
 let sei_addr_preasset i c = sei_prod sei_addr (sei_prod sei_obligation sei_preasset) i c
 let seo_addr_asset o a c = seo_prod seo_addr seo_asset o a c
 let sei_addr_asset i c = sei_prod sei_addr sei_asset i c
-
-
-
-

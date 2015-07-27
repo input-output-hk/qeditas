@@ -5,7 +5,7 @@
 open Hash
 open Mathdata
 
-type obligation = (payaddr * int64) option
+type obligation = (payaddr * int64 * bool) option
 
 type preasset =
   | Currency of int64
