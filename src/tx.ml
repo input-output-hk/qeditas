@@ -80,7 +80,7 @@ let check_spend_obligation alpha blkh (txhe:big_int) s obl =
   match obl with
   | None -> (*** defaults to alpha with no block height restriction ***)
       verify_gensignat txhe s alpha
-  | Some(gamma,b) ->
+  | Some(gamma,b,_) ->
       b >= blkh && verify_gensignat txhe s alpha
 
 let check_move_obligation alpha txhe s obl2 u2 outpl =
@@ -91,15 +91,23 @@ let check_move_obligation alpha txhe s obl2 u2 outpl =
   with Not_found -> false
 
 let rec check_tx_in_signatures blkh txhe outpl inpl al sl =
-  match inpl,al,sl with
-  | [],[],[] -> true
-  | (alpha,k)::inpr,(a::ar),(s::sr) ->
-      check_tx_in_signatures blkh txhe outpl inpr ar sr
+  match inpl,al with
+  | [],[] -> true
+  | (alpha,k)::inpr,(a::ar) ->
+      check_tx_in_signatures blkh txhe outpl inpr ar sl
 	&&
       assetid a = k
 	&&
-      (check_spend_obligation alpha blkh txhe s (assetobl a) || check_move_obligation alpha txhe s (assetobl a) (assetpre a) outpl)
-  | _,_,_ -> false
+      begin
+	try
+	  ignore (List.find
+		    (fun s ->
+		      check_spend_obligation alpha blkh txhe s (assetobl a) || check_move_obligation alpha txhe s (assetobl a) (assetpre a) outpl)
+		    sl);
+	  true
+	with Not_found -> false
+      end
+  | _,_ -> false
 
 let rec check_tx_out_signatures blkh txhe outpl sl =
   match outpl,sl with
