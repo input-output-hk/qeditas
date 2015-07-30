@@ -517,7 +517,7 @@ let rec seo_pdoc o dl c =
       let c = seo_hashval o h c in
       seo_pdoc o dr c
   | PDocDef(a,m,dr) -> (** 10 1 0 **)
-      let c = o 4 5 c in
+      let c = o 4 6 c in
       let c = seo_tp o a c in
       let c = seo_tm o m c in
       seo_pdoc o dr c
@@ -859,7 +859,7 @@ let rec doc_creates_props_aux (dl:doc) r : hashval list =
   match dl with
   | DocPfOf(p,d)::dr -> doc_creates_props_aux dr (adj (tm_hashroot p) r)
   | _::dr -> doc_creates_props_aux dr r
-  | [] -> []
+  | [] -> r
 
 let doc_creates_props (dl:doc) : hashval list = doc_creates_props_aux dl []
 
@@ -882,7 +882,7 @@ let rec doc_creates_neg_props_aux (dl:doc) r : hashval list =
 	with Not_found -> doc_creates_neg_props_aux dr r
       end
   | _::dr -> doc_creates_neg_props_aux dr r
-  | [] -> []
+  | [] -> r
 
 let doc_creates_neg_props (dl:doc) : hashval list = doc_creates_neg_props_aux dl []
 
@@ -1175,9 +1175,14 @@ let rec tm_beta_eta_norm m =
   else
     tm_beta_eta_norm mr
 
+exception CheckingFailure
+
 let tp_of_prim thy i =
   match thy with
-  | (tpl,_) -> List.nth tpl i
+  | (tpl,_) ->
+      try
+	List.nth tpl i
+      with Failure "nth" -> raise CheckingFailure
 
 let rec tp_of_tmh_r tpl h =
   match tpl with
