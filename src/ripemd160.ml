@@ -6,7 +6,7 @@ open Hashaux
 
 (*** Following
  Dobbertin, Bosselaers, Preneel. 1996
- RIPEMD-160: A Strengthened Veripemd.
+ RIPEMD-160: A Strengthened Version of RIPEMD.
  With some constants taken from rosettacode.org/wiki/RIPEMD-160
  ***)
 
