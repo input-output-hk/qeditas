@@ -1220,7 +1220,6 @@ let prop_of_known sg h =
   | (_,kl) ->
       prop_of_known_r kl h
 
-exception CheckingFailure
 exception NonNormalTerm
 
 let rec check_tp v a =
