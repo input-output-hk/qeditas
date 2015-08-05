@@ -38,3 +38,5 @@ val _g : pt
 
 (* _n : order of _g *)
 val _n : big_int
+
+val curve_y : bool -> big_int -> big_int

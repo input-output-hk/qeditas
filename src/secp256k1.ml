@@ -36,6 +36,20 @@ let mul x y = mod_big_int (mult_big_int x y) _p
 (* x^n mod _p *)
 let pow x n = mod_big_int (power_big_int_positive_int x n) _p
 
+(* x^n mod _p, where n is a big_int *)
+let rec bigpow x n =
+  if (sign_big_int n > 0) then
+    let r = bigpow (mul x x) (shift_right_towards_zero_big_int n 1) in
+    if evenp n then
+      r
+    else
+      mul r x
+  else
+    unit_big_int
+
+(* square root mod p *)
+let sqrt_p x = bigpow x (shift_right_towards_zero_big_int (succ_big_int _p) 2)
+
 (* Extended Euclidean Algorithm *)
 let rec eea_rec a b x lastx y lasty =
   if (sign_big_int b > 0) then
@@ -105,4 +119,11 @@ let _g = Some(big_int_of_string "55066263022277343669578718895168534326250603453
 
 (* _n : order of _g *)
 let _n = big_int_of_string "115792089237316195423570985008687907852837564279074904382605163141518161494337"
+
+let curve_y e x =
+  let y = sqrt_p (add (pow x 3) (big_int_of_int 7)) in
+  if e = evenp y then
+    y
+  else
+    sub_big_int _p y
 
