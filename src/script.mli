@@ -7,6 +7,9 @@ open Hash
 open Secp256k1
 open Signat
 
+val blnum_le : big_int -> int -> int list
+val blnum_be : big_int -> int -> int list
+
 val verify_p2sh : big_int -> hashval -> int list -> bool
 
 type gensignat =
