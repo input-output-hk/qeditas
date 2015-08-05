@@ -16,12 +16,12 @@ let hexchar i =
   | 7l -> '7'
   | 8l -> '8'
   | 9l -> '9'
-  | 10l -> 'A'
-  | 11l -> 'B'
-  | 12l -> 'C'
-  | 13l -> 'D'
-  | 14l -> 'E'
-  | 15l -> 'F'
+  | 10l -> 'a'
+  | 11l -> 'b'
+  | 12l -> 'c'
+  | 13l -> 'd'
+  | 14l -> 'e'
+  | 15l -> 'f'
   | _ -> raise (Failure("Not a hexit"))
 
 let hexchar_inv x =
