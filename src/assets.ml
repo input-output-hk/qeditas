@@ -191,7 +191,6 @@ let rec count_rights_used bl alpha =
   | _::br -> count_rights_used br alpha
   | [] -> 0
 
-(*** This inlines what output_doc_uses_objs and output_doc_uses_props does above. Those functions could likely be deleted now. ***)
 let rec obj_rights_mentioned_aux outpl r =
   match outpl with
   | (beta,(obl,RightsObj(alpha,n)))::outpr ->
@@ -212,7 +211,9 @@ let rec prop_rights_mentioned_aux outpl r =
   | (beta,(obl,RightsProp(alpha,n)))::outpr ->
       prop_rights_mentioned_aux outpr (alpha::r)
   | (_,(_,DocPublication(_,_,th,d)))::outpr ->
-      prop_rights_mentioned_aux outpr (doc_uses_props d @ r)
+      let dup = doc_uses_props d in
+      prop_rights_mentioned_aux outpr
+	(dup @ List.map (fun h -> hashopair2 th h) dup @ r)
   | _::outpr -> prop_rights_mentioned_aux outpr r
   | [] -> r
 
@@ -256,11 +257,11 @@ let seo_preasset o u c =
       let c = o 4 2 c in
       let c = seo_payaddr o alpha c in
       seo_option seo_int64 o r c
-  | OwnsProp(alpha,r) -> (** 010 10 **)
-      let c = o 5 18 c in
+  | OwnsProp(alpha,r) -> (** 010 1 0 **)
+      let c = o 5 10 c in
       let c = seo_payaddr o alpha c in
       seo_option seo_int64 o r c
-  | OwnsNegProp -> (** 010 11 **)
+  | OwnsNegProp -> (** 010 1 1 **)
       let c = o 5 26 c in
       c
   | RightsObj(alpha,n) -> (** 011 0 **)
