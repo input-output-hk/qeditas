@@ -961,10 +961,29 @@ let rec tpshift i j a =
   | TpAll(a) -> TpAll(tpshift (i+1) j a)
   | _ -> a
 
+let beta_count = ref 200000
+let term_count = ref 10000000
+
+exception BetaLimit
+exception TermLimit
+
+let beta_count_check () =
+  if !beta_count > 0 then
+    decr beta_count
+  else
+    raise BetaLimit
+
+let term_count_check () =
+  if !term_count > 0 then
+    decr term_count
+  else
+    raise TermLimit
+
 (*** The shift and substitution operations are only valid if TmH only abbreviates
  closed terms (terms with no DBs and no TpVars).
  ***)
 let rec tmshift i j m =
+  term_count_check ();
   match m with
   | DB(k) when k < i -> DB(k)
   | DB(k) -> DB(k+j)
@@ -978,6 +997,7 @@ let rec tmshift i j m =
   | _ -> m
 
 let rec tmtpshift i j m =
+  term_count_check ();
   match m with
   | DB(k) when k < i -> DB(k)
   | DB(k) -> DB(k+j)
@@ -994,6 +1014,7 @@ let rec tmtpshift i j m =
   abbreviate closed pfs and tms, respectively.
  ***)
 let rec pfshift i j d =
+  term_count_check ();
   match d with
   | Hyp(k) when k < i -> Hyp(k)
   | Hyp(k) -> Hyp(k+j)
@@ -1006,6 +1027,7 @@ let rec pfshift i j d =
   | _ -> d
 
 let rec pftmshift i j d =
+  term_count_check ();
   match d with
   | PTmAp(d1,m2) -> PTmAp(pftmshift i j d1,tmshift i j m2)
   | PPfAp(d1,d2) -> PPfAp(pftmshift i j d1,pftmshift i j d2)
@@ -1016,6 +1038,7 @@ let rec pftmshift i j d =
   | _ -> d
 
 let rec pftpshift i j d =
+  term_count_check ();
   match d with
   | PTmAp(d1,m2) -> PTmAp(pftpshift i j d1,tmtpshift i j m2)
   | PPfAp(d1,d2) -> PPfAp(pftpshift i j d1,pftpshift i j d2)
@@ -1026,6 +1049,7 @@ let rec pftpshift i j d =
   | _ -> d
 
 let rec tpsubst a j b =
+  term_count_check ();
   match a with
   | TpVar(i) when i = j && j = 0 -> b
   | TpVar(i) when i = j -> tpshift 0 j b
@@ -1035,6 +1059,7 @@ let rec tpsubst a j b =
   | _ -> a
 
 let rec tmtpsubst m j b =
+  term_count_check ();
   match m with
   | Ap(m1,m2) -> Ap(tmtpsubst m1 j b,tmtpsubst m2 j b)
   | Lam(a1,m1) -> Lam(tpsubst a1 j b,tmtpsubst m1 j b)
@@ -1046,6 +1071,7 @@ let rec tmtpsubst m j b =
   | _ -> m
 
 let rec pftpsubst d j b =
+  term_count_check ();
   match d with
   | PTmAp(d1,m1) -> PTmAp(pftpsubst d1 j b,tmtpsubst m1 j b)
   | PPfAp(d1,d2) -> PPfAp(pftpsubst d1 j b,pftpsubst d2 j b)
@@ -1056,6 +1082,7 @@ let rec pftpsubst d j b =
   | _ -> d
 
 let rec tmsubst m j n =
+  term_count_check ();
   match m with
   | DB(i) when i = j && j = 0 -> n
   | DB(i) when i = j -> tmshift 0 j n
@@ -1108,18 +1135,6 @@ let rec tm_norm_p m =
   | TTpLam(m1) -> tm_norm_p m1
   | TTpAll(m1) -> tm_norm_p m1
   | _ -> true
-
-let beta_count = ref (Some 1000000)
-
-exception BetaLimit
-
-let beta_count_check () =
-  match !beta_count with
-  | None -> ()
-  | Some b when b > 0 ->
-      beta_count := Some (b-1)
-  | _ ->
-      raise BetaLimit
 
 let rec tm_beta_eta_norm_1 m =
   match m with

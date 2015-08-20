@@ -187,6 +187,11 @@ val ottree_lookup : ttree option -> hashval option -> theory
 
 exception CheckingFailure
 exception NonNormalTerm
+exception BetaLimit
+exception TermLimit
+
+val beta_count : int ref
+val term_count : int ref
 
 val check_theoryspec : theoryspec -> theory * gsigna
 
