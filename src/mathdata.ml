@@ -1191,6 +1191,10 @@ let rec tm_beta_eta_norm m =
     tm_beta_eta_norm mr
 
 exception CheckingFailure
+exception NotKnown of hashval option * hashval
+exception UnknownTerm of hashval option * hashval * tp
+exception UnknownSigna of hashval
+exception SignaTheoryMismatch of hashval option * hashval option * hashval
 
 let tp_of_prim thy i =
   match thy with
@@ -1621,8 +1625,9 @@ let rec import_signatures th (str:stree) hl sg =
 	    let (tptml3,kl3) = import_signatures th str sl sg in
 	    (tptml3 @ tptml2,kl3 @ kl2)
 	  else
-	    raise CheckingFailure
-      | None -> raise CheckingFailure
+	    raise (SignaTheoryMismatch(th,th2,h))
+      | None ->
+	  raise (UnknownSigna(h))
 
 let tm_tp_p gvtp sg th h a =
   try
@@ -1644,7 +1649,7 @@ let rec check_signaspec gvtp gvkn th thy (str:stree option) dl : gsigna =
 	let sg = check_signaspec gvtp gvkn th thy str dr in
 	match str with
 	| Some(str) -> import_signatures th str [h] sg
-	| None -> raise CheckingFailure
+	| None -> raise (UnknownSigna(h))
       end
   | SignaParam(h,a)::dr ->
       let (tmtpl,kl) = check_signaspec gvtp gvkn th thy str dr in
@@ -1652,7 +1657,7 @@ let rec check_signaspec gvtp gvkn th thy (str:stree option) dl : gsigna =
       if tm_tp_p gvtp (tmtpl,kl) th h a then
 	((h,a,None)::tmtpl,kl)
       else
-	raise CheckingFailure
+	raise (UnknownTerm(th,h,a))
   | SignaDef(a,m)::dr ->
       let (tmtpl,kl) = check_signaspec gvtp gvkn th thy str dr in
       if not (tm_norm_p m) then raise NonNormalTerm;
@@ -1673,7 +1678,7 @@ let rec check_signaspec gvtp gvkn th thy (str:stree option) dl : gsigna =
 	    else if known_p gvkn (tmtpl,kl) th k then (*** check if it's either in the signature or globally known ***)
 	      (tmtpl,(k,p)::kl)
 	    else
-	      raise CheckingFailure (*** otherwise it cannot be declared as a known ***)
+	      raise (NotKnown(th,k)) (*** otherwise it cannot be declared as a known ***)
       end
   | [] -> ([],[])
 
@@ -1685,7 +1690,7 @@ let rec check_doc gvtp gvkn th (thy:theory) (str:stree option) dl =
 	let sg = check_doc gvtp gvkn th thy str dr in
 	match str with
 	| Some(str) -> import_signatures th str [h] sg
-	| None -> raise CheckingFailure
+	| None -> raise (UnknownSigna(h))
       end
   | DocParam(h,a)::dr ->
       let (tmtpl,kl) = check_doc gvtp gvkn th thy str dr in
@@ -1693,7 +1698,7 @@ let rec check_doc gvtp gvkn th (thy:theory) (str:stree option) dl =
       if tm_tp_p gvtp (tmtpl,kl) th h a then
 	((h,a,None)::tmtpl,kl)
       else
-	raise CheckingFailure
+	raise (UnknownTerm(th,h,a))
   | DocDef(a,m)::dr ->
       let (tmtpl,kl) = check_doc gvtp gvkn th thy str dr in
       if not (tm_norm_p m) then raise NonNormalTerm;
@@ -1713,7 +1718,7 @@ let rec check_doc gvtp gvkn th (thy:theory) (str:stree option) dl =
 	    else if known_p gvkn (tmtpl,kl) th k then (*** check if it's either in the signature or globally known ***)
 	      (tmtpl,(k,p)::kl)
 	    else
-	      raise CheckingFailure (*** otherwise it cannot be declared as a known ***)
+	      raise (NotKnown(th,k)) (*** otherwise it cannot be declared as a known ***)
       end
   | DocConj(p)::dr ->
       let (tmtpl,kl) = check_doc gvtp gvkn th thy str dr in

@@ -186,6 +186,10 @@ val ottree_lookup : ttree option -> hashval option -> theory
 (** * operations including type checking and proof checking ***)
 
 exception CheckingFailure
+exception NotKnown of hashval option * hashval
+exception UnknownTerm of hashval option * hashval * tp
+exception UnknownSigna of hashval
+exception SignaTheoryMismatch of hashval option * hashval option * hashval
 exception NonNormalTerm
 exception BetaLimit
 exception TermLimit
