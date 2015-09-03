@@ -1183,7 +1183,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	      (*** ensure that an owner of the prop or negprop signed the tx because the ownership asset was an input value ***)
 	      ignore
 		(List.find
-		   (fun (alpha2,(h2,bday2,obl2,u2)) ->
+		   (fun (alpha2,(h2,bday2,obl2,u2)) -> (*** remember: it's the obligation that determines who signs these; so the obligations tells who the "owners" are for the purpose of collecting bounties ***)
 		     alpha = alpha2 &&
 		     match u2 with
 		     | OwnsProp(beta2,r2) -> true
