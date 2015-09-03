@@ -81,7 +81,7 @@ let check_spend_obligation alpha blkh (txhe:big_int) s obl =
   | None -> (*** defaults to alpha with no block height restriction ***)
       verify_gensignat txhe s alpha
   | Some(gamma,b,_) ->
-      b >= blkh && verify_gensignat txhe s alpha
+      b <= blkh && verify_gensignat txhe s (Hash.payaddr_addr gamma)
 
 let check_move_obligation alpha txhe s obl2 u2 outpl =
   try
@@ -138,7 +138,13 @@ let rec txout_update_ottree outpl tht =
   match outpl with
   | [] -> tht
   | (alpha,(obl,TheoryPublication(gamma,nonce,d)))::outpr ->
-      txout_update_ottree outpr (Some(ottree_insert tht (hashval_bitseq (hashtheoryspec d)) (theoryspec_theory d)))
+      let thy = theoryspec_theory d in
+      begin
+	match hashtheory thy with
+	| Some(thyh) ->
+	    txout_update_ottree outpr (Some(ottree_insert tht (hashval_bitseq thyh) thy))
+	| _ -> txout_update_ottree outpr tht
+      end
   | _::outpr -> txout_update_ottree outpr tht
 
 let tx_update_ottree tau tht = txout_update_ottree (tx_outputs tau) tht
@@ -147,7 +153,9 @@ let rec txout_update_ostree outpl sigt =
   match outpl with
   | [] -> sigt
   | (alpha,(obl,SignaPublication(gamma,nonce,th,d)))::outpr ->
-      txout_update_ostree outpr (Some(ostree_insert sigt (hashval_bitseq (hashsignaspec d)) th (signaspec_signa d)))
+      let sg = signaspec_signa d in
+      let sgh = hashsigna sg in
+      txout_update_ostree outpr (Some(ostree_insert sigt (hashval_bitseq sgh) th sg))
   | _::outpr -> txout_update_ostree outpr sigt
 
 let tx_update_ostree tau sigt = txout_update_ostree (tx_outputs tau) sigt
