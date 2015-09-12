@@ -60,6 +60,7 @@ val ohashlist : hashval list -> hashval option
 val hashopair : hashval option -> hashval option -> hashval option
 val hashopair1 : hashval -> hashval option -> hashval
 val hashopair2 : hashval option -> hashval -> hashval
+val hashbitseq : bool list -> hashval
 
 val hashval_rev : hashval -> hashval
 

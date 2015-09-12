@@ -516,6 +516,16 @@ let hashopair2 x y =
   | Some x -> hashpair x y
   | None -> hashtag y 1l
 
+let rec hashbitseq_r bl i =
+  if i >= 32 then
+    let (x,bl) = bitseq_int32 bl 0l 31 in
+    hashpair (hashint32 x) (hashbitseq_r bl (i-32))
+  else
+    let (x,_) = bitseq_int32 bl 0l (i-1) in
+    hashint32 x
+
+let hashbitseq bl = hashtag (hashbitseq_r bl (List.length bl)) 140l
+
 let hashval_hexstring h =
   let b = Buffer.create 64 in
   let (h0,h1,h2,h3,h4) = h in
