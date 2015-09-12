@@ -102,7 +102,7 @@ let asset_value_sum al =
 let rec output_signaspec_uses_objs (outpl:addr_preasset list) : (termaddr * termaddr) list =
   match outpl with
   | (_,(_,SignaPublication(_,_,th,d)))::outpr ->
-      List.map (fun (h,tph) -> (h,hashopair2 th (hashpair h tph))) (signaspec_uses_objs d)
+      List.map (fun (h,tph) -> (h,hashtag (hashopair2 th (hashpair h tph)) 32l)) (signaspec_uses_objs d)
       @ output_signaspec_uses_objs outpr
   | _::outpr -> output_signaspec_uses_objs outpr
   | [] -> []
@@ -110,7 +110,7 @@ let rec output_signaspec_uses_objs (outpl:addr_preasset list) : (termaddr * term
 let rec output_signaspec_uses_props (outpl:addr_preasset list) : (termaddr * termaddr) list =
   match outpl with
   | (_,(_,SignaPublication(_,_,th,d)))::outpr ->
-      List.map (fun h -> (h,hashopair2 th h)) (signaspec_uses_props d)
+      List.map (fun h -> (h,hashtag (hashopair2 th h) 33l)) (signaspec_uses_props d)
       @ output_signaspec_uses_props outpr
   | _::outpr -> output_signaspec_uses_props outpr
   | [] -> []
@@ -118,7 +118,7 @@ let rec output_signaspec_uses_props (outpl:addr_preasset list) : (termaddr * ter
 let rec output_doc_uses_objs (outpl:addr_preasset list) : (termaddr * termaddr) list =
   match outpl with
   | (_,(_,DocPublication(_,_,th,d)))::outpr ->
-      List.map (fun (h,tph) -> (h,hashopair2 th (hashpair h tph))) (doc_uses_objs d)
+      List.map (fun (h,tph) -> (h,hashtag (hashopair2 th (hashpair h tph)) 32l)) (doc_uses_objs d)
       @ output_doc_uses_objs outpr
   | _::outpr -> output_doc_uses_objs outpr
   | [] -> []
@@ -126,7 +126,7 @@ let rec output_doc_uses_objs (outpl:addr_preasset list) : (termaddr * termaddr) 
 let rec output_doc_uses_props (outpl:addr_preasset list) : (termaddr * termaddr) list =
   match outpl with
   | (_,(_,DocPublication(_,_,th,d)))::outpr ->
-      List.map (fun h -> (h,hashopair2 th h)) (doc_uses_props d)
+      List.map (fun h -> (h,hashtag (hashopair2 th h) 33l)) (doc_uses_props d)
       @ output_doc_uses_props outpr
   | _::outpr -> output_doc_uses_props outpr
   | [] -> []
