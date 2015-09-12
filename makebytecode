@@ -1,4 +1,5 @@
 #!/bin/bash
+ocamlc -I bin -o bin/config.cmi -c src/config.mli
 ocamlc -I bin -o bin/ser.cmi -c src/ser.mli
 ocamlc -I bin -o bin/hashaux.cmi -c src/hashaux.mli
 ocamlc -I bin -o bin/sha256.cmi -c src/sha256.mli
@@ -15,6 +16,7 @@ ocamlc -I bin -o bin/tx.cmi -c src/tx.mli
 ocamlc -I bin -o bin/ctre.cmi -c src/ctre.mli
 ocamlc -I bin -o bin/ctregraft.cmi -c src/ctregraft.mli
 ocamlc -I bin -o bin/block.cmi -c src/block.mli
+ocamlc -I bin -o bin/config.cmo -c src/config.ml
 ocamlc -I bin -o bin/ser.cmo -c src/ser.ml
 ocamlc -I bin -o bin/secp256k1.cmo -c src/secp256k1.ml
 ocamlc -I bin -o bin/cryptocurr.cmo -c src/cryptocurr.ml
