@@ -8,8 +8,7 @@ open Mathdata
 open Assets
 open Cryptocurr
 open Tx
-
-let qdcdir = "qdg/";;
+open Config
 
 let intention_minage = 144L
 
@@ -125,7 +124,7 @@ type frame =
 type ctree =
   | CLeaf of bool list * nehlist
   | CHash of hashval
-  | CAbbrev of hashval
+  | CAbbrev of hashval * hashval
   | CLeft of ctree
   | CRight of ctree
   | CBin of ctree * ctree
@@ -135,7 +134,7 @@ let rec print_ctree_r c n =
   match c with
   | CLeaf(bl,hl) -> Printf.printf "Leaf\n"
   | CHash(h) -> Printf.printf "H %s\n" (hashval_hexstring h)
-  | CAbbrev(h) -> Printf.printf "A %s\n" (hashval_hexstring h)
+  | CAbbrev(hr,ha) -> Printf.printf "A %s %s\n" (hashval_hexstring hr) (hashval_hexstring ha)
   | CLeft(c0) -> Printf.printf "L\n"; print_ctree_r c0 (n+1)
   | CRight(c1) -> Printf.printf "R\n"; print_ctree_r c1 (n+1)
   | CBin(c0,c1) -> Printf.printf "B\n"; print_ctree_r c0 (n+1); print_ctree_r c1 (n+1)
@@ -157,7 +156,7 @@ let rec print_ctree_all_r c n br =
   match c with
   | CLeaf(bl,hl) -> Printf.printf "Leaf %s\n" (addr_qedaddrstr (bitseq_addr ((List.rev br) @ bl))); print_hlist (nehlist_hlist hl)
   | CHash(h) -> Printf.printf "H %s\n" (hashval_hexstring h)
-  | CAbbrev(h) -> Printf.printf "A %s\n" (hashval_hexstring h)
+  | CAbbrev(hr,ha) -> Printf.printf "A %s %s\n" (hashval_hexstring hr) (hashval_hexstring ha)
   | CLeft(c0) -> Printf.printf "L\n"; print_ctree_all_r c0 (n+1) (false::br)
   | CRight(c1) -> Printf.printf "R\n"; print_ctree_all_r c1 (n+1) (true::br)
   | CBin(c0,c1) -> Printf.printf "B\n"; print_ctree_all_r c0 (n+1) (false::br); print_ctree_all_r c1 (n+1) (true::br)
@@ -181,16 +180,36 @@ let rec ctree_hashroot c =
 	)
 	bl (nehlist_hashroot hl)
   | CHash(h) -> h
-  | CAbbrev(h) -> h
+  | CAbbrev(hr,ha) -> hr
   | CLeft(c0) -> hashopair1 (ctree_hashroot c0) None
   | CRight(c1) -> hashopair2 None (ctree_hashroot c1)
   | CBin(c0,c1) -> hashopair1 (ctree_hashroot c0) (Some (ctree_hashroot c1))
+
+let rec hashhlist hl =
+  match hl with
+  | HHash(h) -> hashtag h 149l
+  | HCons(a,hr) -> hashtag (hashpair (hashasset a) (hashhlist hr)) 150l
+  | HNil -> hashint32 151l
+
+let hashnehlist hl =
+  match hl with
+  | NehHash(h) -> hashtag h 147l
+  | NehCons(a,hr) -> hashtag (hashpair (hashasset a) (hashhlist hr)) 148l
+
+let rec hashctree c =
+  match c with
+  | CLeaf(bl,hl) -> hashtag (hashpair (hashbitseq bl) (hashnehlist hl)) 141l
+  | CHash(h) -> hashtag h 142l
+  | CAbbrev(hr,ha) -> hashtag (hashpair hr ha) 143l
+  | CLeft(c0) -> hashtag (hashctree c0) 144l
+  | CRight(c1) -> hashtag (hashctree c1) 145l
+  | CBin(c0,c1) -> hashtag (hashpair (hashctree c0) (hashctree c1)) 146l
 
 let rec ctree_numnodes c =
   match c with
   | CLeaf(_,_) -> 1
   | CHash(_) -> 1
-  | CAbbrev(_) -> 1
+  | CAbbrev(_,_) -> 1
   | CLeft(c) -> 1 + ctree_numnodes c
   | CRight(c) -> 1 + ctree_numnodes c
   | CBin(c0,c1) -> 1 + ctree_numnodes c0 + ctree_numnodes c1
@@ -252,7 +271,7 @@ let octree_S_inv c =
   | None -> (None,None)
   | Some(CHash(h)) ->
       raise Not_found
-  | Some(CAbbrev(h)) ->
+  | Some(CAbbrev(hr,ha)) ->
       raise Not_found
   | Some(CLeaf([],hl)) ->
       raise Not_found
@@ -421,9 +440,10 @@ let rec seo_ctree o tr c =
   | CHash(h) -> (* 01 0 *)
       let c = o 3 1 c in
       seo_hashval o h c
-  | CAbbrev(h) -> (* 01 1 *)
+  | CAbbrev(hr,ha) -> (* 01 1 *)
       let c = o 3 5 c in
-      seo_hashval o h c
+      let c = seo_hashval o hr c in
+      seo_hashval o ha c
   | CLeft(trl) -> (* 10 0 *)
       let c = o 3 2 c in
       let c = seo_ctree o trl c in
@@ -450,7 +470,8 @@ let rec sei_ctree i c =
     if y = 0 then
       (CHash(h),c)
     else
-      (CAbbrev(h),c)
+      let (ha,c) = sei_hashval i c in
+      (CAbbrev(h,ha),c)
   else if x = 2 then
     let (y,c) = i 1 c in
     let (tr,c) = sei_ctree i c in
@@ -501,13 +522,23 @@ let load_octree f =
   close_in ch;
   tr
 
-let remove_hashroot_ctree r =
-  let fn = qdcdir ^ (hashval_hexstring r) in
+let remove_hashed_ctree r =
+  let fn = Filename.concat !datadir (hashval_hexstring r) in
   if Sys.file_exists fn then Sys.remove fn
 
-let save_hashroot_ctree r (tr:ctree) =
-  let fn = qdcdir ^ (hashval_hexstring r) in
-(*  Printf.printf "save_hashroot_ctree %s %d\n" fn (ctree_numnodes tr); print_ctree tr; flush stdout; *)
+let ensure_dir_exists d =
+  try
+    let s = Unix.stat d in
+    if not (s.Unix.st_kind = Unix.S_DIR) then
+      raise (Failure (d ^ " is not a directory"))
+  with
+  | Unix.Unix_error(Unix.ENOENT,_,_) -> raise (Failure(d ^ " directory does not exist"))
+  | _ -> raise (Failure("Problem with " ^ d))
+
+let save_hashed_ctree r (tr:ctree) =
+  ensure_dir_exists !datadir;
+  let fn = Filename.concat !datadir (hashval_hexstring r) in
+(*  Printf.printf "save_hashed_ctree %s %d\n" fn (ctree_numnodes tr); print_ctree tr; flush stdout; *)
   if not (Sys.file_exists fn) then
     begin
       let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
@@ -538,7 +569,7 @@ let rec frame_filter_hlist i hl =
       match hl with
       | HHash(h) -> HHash(h)
       | HNil -> HNil
-      | HCons(a,hr) -> frame_filter_hlist (i-1) hr
+      | HCons(a,hr) -> HCons(a,frame_filter_hlist (i-1) hr)
     end
   else
     match hlist_hashroot hl with
@@ -601,27 +632,28 @@ let rec frame_hlist_bitseq f bl =
       | (true::br) -> frame_hlist_bitseq f1 br
       | [] -> raise (Failure "frame vs. leaf level problem")
 
-let rec frame_filter_ctree z f c =
+let rec frame_filter_ctree f c =
   match f with
   | FHash -> CHash(ctree_hashroot c)
   | FAbbrev(fc) ->
       begin
 	match c with
-	| CAbbrev(h) -> CAbbrev(h)
+	| CAbbrev(hr,ha) -> CAbbrev(hr,ha)
 	| _ ->
-	    let c2 = frame_filter_ctree z fc c in
+	    let c2 = frame_filter_ctree fc c in
 	    let r2 = ctree_hashroot c2 in
-	    save_hashroot_ctree r2 c2;
-	    CAbbrev(r2)
+	    let a2 = hashctree c2 in
+	    save_hashed_ctree a2 c2;
+	    CAbbrev(r2,a2)
       end
   | FAll -> c
   | FLeaf(bl,i) ->
       frame_filter_leaf bl i c
   | FBin(f0,f1) ->
       match c with
-      | CLeft(c0) -> CLeft(frame_filter_ctree (z ^ "0") f0 c0)
-      | CRight(c1) -> CRight(frame_filter_ctree (z ^ "1") f1 c1)
-      | CBin(c0,c1) -> CBin(frame_filter_ctree (z ^ "0") f0 c0,frame_filter_ctree (z ^ "1") f1 c1)
+      | CLeft(c0) -> CLeft(frame_filter_ctree f0 c0)
+      | CRight(c1) -> CRight(frame_filter_ctree f1 c1)
+      | CBin(c0,c1) -> CBin(frame_filter_ctree f0 c0,frame_filter_ctree f1 c1)
       | CLeaf(false::bl,hl) -> (*** Leaves pass over FHash, but uses the FAbbrev to determine the abstraction to use for hl ***)
 	  begin
 	    match frame_hlist_bitseq f0 bl with
@@ -641,15 +673,16 @@ let rec frame_filter_ctree z f c =
 
 let frame_filter_octree fr oc =
   match oc with
-  | Some(c) -> Some(frame_filter_ctree "" fr c)
+  | Some(c) -> Some(frame_filter_ctree fr c)
   | None -> None
 
 let get_ctree_abbrev h =
-  let fn = qdcdir ^ (hashval_hexstring h) in
+  ensure_dir_exists !datadir;
+  let fn = Filename.concat !datadir (hashval_hexstring h) in
   if Sys.file_exists fn then
     begin
       let ch = open_in_bin fn in
-      let c : ctree = input_value ch in
+      let (c,_) = sei_ctree seic (ch,None) in
       close_in ch;
       c
     end
@@ -685,7 +718,7 @@ let rec ctree_full_approx_addr tr bl =
   | CLeaf(br,hl) when br = bl -> nehlist_full_approx hl
   | CLeaf(_,_) -> true (*** fully approximates because we know it's empty ***)
   | CHash(_) -> false
-  | CAbbrev(h) -> ctree_full_approx_addr (get_ctree_abbrev h) bl
+  | CAbbrev(hr,ha) -> ctree_full_approx_addr (get_ctree_abbrev ha) bl
   | CLeft(trl) ->
       begin
 	match bl with
@@ -710,7 +743,7 @@ let rec ctree_supports_addr tr bl =
   match tr with
   | CLeaf(_,_) -> true
   | CHash(_) -> false
-  | CAbbrev(h) -> ctree_supports_addr (get_ctree_abbrev h) bl
+  | CAbbrev(hr,ha) -> ctree_supports_addr (get_ctree_abbrev ha) bl
   | CLeft(trl) ->
       begin
 	match bl with
@@ -736,7 +769,7 @@ let rec ctree_supports_asset a tr bl =
   | CLeaf(br,hl) when br = bl -> in_nehlist a hl
   | CLeaf(_,_) -> false
   | CHash(h) -> false
-  | CAbbrev(h) -> ctree_supports_asset a (get_ctree_abbrev h) bl
+  | CAbbrev(hr,ha) -> ctree_supports_asset a (get_ctree_abbrev ha) bl
   | CLeft(trl) ->
       begin
 	match bl with
@@ -762,7 +795,7 @@ let rec ctree_lookup_asset k tr bl =
   | CLeaf(br,hl) when br = bl -> nehlist_lookup_asset k hl
   | CLeaf(_,_) -> None
   | CHash(h) -> None
-  | CAbbrev(h) -> ctree_lookup_asset k (get_ctree_abbrev h) bl
+  | CAbbrev(hr,ha) -> ctree_lookup_asset k (get_ctree_abbrev ha) bl
   | CLeft(trl) ->
       begin
 	match bl with
@@ -788,7 +821,7 @@ let rec ctree_lookup_addr_assets tr bl =
   | CLeaf(br,hl) when br = bl -> (nehlist_hlist hl)
   | CLeaf(_,_) -> HNil
   | CHash(h) -> HNil
-  | CAbbrev(h) -> ctree_lookup_addr_assets (get_ctree_abbrev h) bl
+  | CAbbrev(hr,ha) -> ctree_lookup_addr_assets (get_ctree_abbrev ha) bl
   | CLeft(trl) ->
       begin
 	match bl with
@@ -814,7 +847,7 @@ let rec ctree_lookup_marker tr bl =
   | CLeaf(br,hl) when br = bl -> nehlist_lookup_marker hl
   | CLeaf(_,_) -> None
   | CHash(h) -> None
-  | CAbbrev(h) -> ctree_lookup_marker (get_ctree_abbrev h) bl
+  | CAbbrev(hr,ha) -> ctree_lookup_marker (get_ctree_abbrev ha) bl
   | CLeft(trl) ->
       begin
 	match bl with
@@ -937,12 +970,18 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
     else
       raise NotSupported)
     propaddrs;
-  (*** publications are correct and were declared in advance by placing a marker in the right pubaddr ***)
+  (*** publications are correct, new, and were declared in advance by placing a marker in the right pubaddr ***)
+  let ensure_addr_empty alpha =
+    match ctree_lookup_addr_assets tr (addr_bitseq alpha) with
+    | HNil -> ()
+    | _ -> raise NotSupported
+  in
   List.iter
     (fun (alpha,(obl,u)) ->
       match u with
       | TheoryPublication(gamma,nonce,thy) ->
 	  begin
+	    ensure_addr_empty alpha; (*** make sure the publication is new because otherwise publishing it is pointless ***)
 	    try
 	      ignore (check_theoryspec thy);
 	      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashtheoryspec thy))) in
@@ -960,6 +999,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	  end
       | SignaPublication(gamma,nonce,th,sl) ->
 	  begin
+	    ensure_addr_empty alpha; (*** make sure the publication is new because otherwise publishing it is pointless ***)
 	    try
 	      let gvtp th h a =
 		let alpha = hashval_term_addr (hashtag (hashopair2 th (hashpair h (hashtp a))) 32l) in
@@ -992,6 +1032,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	  end
       | DocPublication(gamma,nonce,th,dl) ->
 	  begin
+	    ensure_addr_empty alpha; (*** make sure the publication is new because otherwise publishing it is pointless ***)
 	    try
 	      let gvtp th h a =
 		let alpha = hashval_term_addr (hashtag (hashopair2 th (hashpair h (hashtp a))) 32l) in
@@ -1082,53 +1123,87 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
     (fun (alpha,(obl,u)) ->
       match u with
       | OwnsObj(beta,r) ->
-	  if (List.mem alpha createsobjsaddrs1 || List.mem alpha createsobjsaddrs2) && not (List.mem alpha !ownobjclaims) then
-	    let hl = ctree_lookup_addr_assets tr (addr_bitseq alpha) in
-	    begin
+	  begin
+	    try
+	      ignore
+		(List.find
+		   (fun (alpha1,(_,_,_,u1)) ->
+		     alpha = alpha1 &&
+		     match u1 with
+		     | OwnsObj(_,_) -> true
+		     | _ -> false)
+		   aal); (*** if the ownership is being transferred ***)
 	      ownobjclaims := alpha::!ownobjclaims;
-	      match hlist_lookup_obj_owner hl with
-	      | Some(beta2,r2) -> raise NotSupported (*** already owned ***)
-	      | None ->
-		  match obl with (*** insist on an obligation, or the ownership will not be transferable ***)
-		  | Some(_,_,_) -> ()
-		  | None -> raise NotSupported
-	    end
-	  else
-	    raise NotSupported
-      | OwnsProp(beta,r) -> 
-	  if (List.mem alpha createspropsaddrs1 || List.mem alpha createspropsaddrs2) && not (List.mem alpha !ownpropclaims) then
-	    let hl = ctree_lookup_addr_assets tr (addr_bitseq alpha) in
-	    begin
-	      ownpropclaims := alpha::!ownpropclaims;
-	      match hlist_lookup_prop_owner hl with
-	      | Some(beta2,r2) -> raise NotSupported (*** already owned ***)
-	      | None ->
-		  match obl with (*** insist on an obligation, or the ownership will not be transferable; note that a trivial transfer is made to collect bounties ***)
-		  | Some(_,_,_) -> ()
-		  | None -> raise NotSupported
-	    end
-	  else
-	    raise NotSupported
-      | OwnsNegProp -> 
-	  if (List.mem alpha createsnegpropsaddrs2) && not (List.mem alpha !ownnegpropclaims) then
-	    let hl = ctree_lookup_addr_assets tr (addr_bitseq alpha) in
-	    begin
-	      ownpropclaims := alpha::!ownpropclaims;
-	      if hlist_lookup_neg_prop_owner hl then
-		raise NotSupported (*** already owned ***)
+	    with Not_found ->
+	      (*** if the ownership is being created ***)
+	      if (List.mem alpha createsobjsaddrs1 || List.mem alpha createsobjsaddrs2) && not (List.mem alpha !ownobjclaims) then
+		let hl = ctree_lookup_addr_assets tr (addr_bitseq alpha) in
+		begin
+		  ownobjclaims := alpha::!ownobjclaims;
+		  match hlist_lookup_obj_owner hl with
+		  | Some(beta2,r2) -> raise NotSupported (*** already owned ***)
+		  | None ->
+		      match obl with (*** insist on an obligation, or the ownership will not be transferable; also don't allow it to be indicated as a reward ***)
+		      | Some(_,_,b) when not b -> ()
+		      | _ -> raise NotSupported
+		end
 	      else
-		match obl with (*** insist on an obligation, or the ownership will not be transferable; note that a trivial transfer is made to collect bounties ***)
-		| Some(_,_,_) -> ()
-		| None -> raise NotSupported
-	    end
-	  else
-	    raise NotSupported
+		raise NotSupported
+	  end
+      | OwnsProp(beta,r) -> 
+	  begin
+	    try
+	      ignore
+		(List.find
+		   (fun (alpha1,(_,_,_,u1)) ->
+		     alpha = alpha1 &&
+		     match u1 with
+		     | OwnsProp(beta1,r1) -> true
+		     | _ -> false)
+		   aal); (*** if the ownership is being transferred ***)
+	      ownpropclaims := alpha::!ownpropclaims;
+	    with Not_found ->
+	      (*** if the ownership is being created ***)
+	      if (List.mem alpha createspropsaddrs1 || List.mem alpha createspropsaddrs2) && not (List.mem alpha !ownpropclaims) then
+		let hl = ctree_lookup_addr_assets tr (addr_bitseq alpha) in
+		begin
+		  ownpropclaims := alpha::!ownpropclaims;
+		  match hlist_lookup_prop_owner hl with
+		  | Some(beta2,r2) -> raise NotSupported (*** already owned ***)
+		  | None ->
+		      match obl with (*** insist on an obligation, or the ownership will not be transferable; note that a trivial transfer is made to collect bounties ***)
+		      | Some(_,_,b) when not b -> ()
+		      | _ -> raise NotSupported
+		end
+	      else
+		raise NotSupported
+	  end
+      | OwnsNegProp -> 
+	  begin
+	    try
+	      ignore (List.find (fun (alpha1,(_,_,_,u1)) -> u1 = OwnsNegProp && alpha = alpha1) aal); (*** if the ownership is being transferred ***)
+	      ownnegpropclaims := alpha::!ownnegpropclaims;
+	    with Not_found ->
+	      (*** if the ownership is being created ***)
+	      if (List.mem alpha createsnegpropsaddrs2) && not (List.mem alpha !ownnegpropclaims) then
+		let hl = ctree_lookup_addr_assets tr (addr_bitseq alpha) in
+		begin
+		  ownpropclaims := alpha::!ownpropclaims;
+		  if hlist_lookup_neg_prop_owner hl then
+		    raise NotSupported (*** already owned ***)
+		  else
+		    match obl with (*** insist on an obligation, or the ownership will not be transferable; note that a trivial transfer is made to collect bounties ***)
+		    | Some(_,_,b) when not b -> ()
+		    | _ -> raise NotSupported
+		end
+	      else
+		raise NotSupported
+	  end
       | _ -> ()
     )
     outpl;
   (***
       new objects and props must be given ownership by the tx publishing the document.
-      also, markers to record the types of terms and provability of props must be given.
    ***)
   List.iter (fun (th,tmh,tph) ->
     try
@@ -1152,7 +1227,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
     try
       let ensureowned alpha =
 	let hl = ctree_lookup_addr_assets tr (addr_bitseq alpha) in
-	match hlist_lookup_obj_owner hl with
+	match hlist_lookup_prop_owner hl with
 	| Some(beta2,r2) -> () (*** already owned ***)
 	| None -> (*** Since alpha was listed in full_needed we know alpha really isn't owned here ***)
 	    (*** ensure that it will be owned after the tx ***)
@@ -1168,7 +1243,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
     createsprops;
   (*** bounties can be collected by the owners of props or negprops
        To make checking this easy, the ownership asset is spent and recreated unchanged (except the asset id).
-       Note that the relevant signature is in the obligation of the ownership asset.
+       Note that address for the relevant signature is in the obligation of the ownership asset.
        Essentially the ownership gets trivially transfered when the bounty is collected.
        Someone can place bounties on pure propositions, but this is a bad idea.
        Someone else could collect it by creating an inconsistent theory and giving a trivial proof.
@@ -1248,13 +1323,13 @@ let rec ctree_singlebranch_lub bl hl c =
 let rec ctree_lub c1 c2 =
   match c1 with
   | CHash(_) -> c2
-  | CAbbrev(h) -> ctree_lub (get_ctree_abbrev h) c2
+  | CAbbrev(hr,ha) -> ctree_lub (get_ctree_abbrev ha) c2
   | CLeaf(bl1,hl1) -> ctree_singlebranch_lub bl1 hl1 c2
   | CLeft(c10) ->
       begin
 	match c2 with
 	| CHash(_) -> c1
-	| CAbbrev(h) -> ctree_lub c1 (get_ctree_abbrev h)
+	| CAbbrev(hr,ha) -> ctree_lub c1 (get_ctree_abbrev ha)
 	| CLeaf(bl2,hl2) -> ctree_singlebranch_lub bl2 hl2 c1
 	| CLeft(c20) -> CLeft (ctree_lub c10 c20)
 	| _ -> raise (Failure "no lub for incompatible ctrees")
@@ -1263,7 +1338,7 @@ let rec ctree_lub c1 c2 =
       begin
 	match c2 with
 	| CHash(_) -> c1
-	| CAbbrev(h) -> ctree_lub c1 (get_ctree_abbrev h)
+	| CAbbrev(hr,ha) -> ctree_lub c1 (get_ctree_abbrev ha)
 	| CLeaf(bl2,hl2) -> ctree_singlebranch_lub bl2 hl2 c1
 	| CRight(c21) -> CRight (ctree_lub c11 c21)
 	| _ -> raise (Failure "no lub for incompatible ctrees")
@@ -1272,7 +1347,7 @@ let rec ctree_lub c1 c2 =
       begin
 	match c2 with
 	| CHash(_) -> c1
-	| CAbbrev(h) -> ctree_lub c1 (get_ctree_abbrev h)
+	| CAbbrev(hr,ha) -> ctree_lub c1 (get_ctree_abbrev ha)
 	| CBin(c20,c21) -> CBin(ctree_lub c10 c20,ctree_lub c11 c21)
 	| _ -> raise (Failure "no lub for incompatible ctrees")
       end
@@ -1308,6 +1383,28 @@ let rec ctree_reduce_to_min_support n inpl outpl full c =
       else
 	begin
 	  match c with
+	  | CLeaf(false::bl,hl) ->
+	      begin
+		match ctree_reduce_to_min_support (n-1)
+		      (strip_bitseq_false inpl)
+		      (strip_bitseq_false0 outpl)
+		      (strip_bitseq_false0 full)
+		      (CLeaf(bl,hl))
+		with
+		| CLeaf(bl2,hl2) -> CLeaf(false::bl2,hl2)
+		| c2 -> CLeft(c2)
+	      end
+	  | CLeaf(true::bl,hl) ->
+	      begin
+		match ctree_reduce_to_min_support (n-1)
+		      (strip_bitseq_true inpl)
+		      (strip_bitseq_true0 outpl)
+		      (strip_bitseq_true0 full)
+		      (CLeaf(bl,hl))
+		with
+		| CLeaf(bl2,hl2) -> CLeaf(true::bl2,hl2)
+		| c2 -> CRight(c2)
+	      end
 	  | CLeft(c0) ->
 	      CLeft(ctree_reduce_to_min_support (n-1)
 		      (strip_bitseq_false inpl)
@@ -1331,8 +1428,8 @@ let rec ctree_reduce_to_min_support n inpl outpl full c =
 		       (strip_bitseq_true0 outpl)
 		       (strip_bitseq_true0 full)
 		       c1)
-	  | CAbbrev(h) ->
-	      ctree_reduce_to_min_support n inpl outpl full (get_ctree_abbrev h)
+	  | CAbbrev(hr,ha) ->
+	      ctree_reduce_to_min_support n inpl outpl full (get_ctree_abbrev ha)
 	  | CHash(h) -> (*** If we reach this point, the ctree does not support the tx, contrary to assumption. ***)
 	      raise (Failure("ctree does not support the tx"))
 	  | _ -> c
@@ -1346,7 +1443,59 @@ let rec ctree_reduce_to_min_support n inpl outpl full c =
 	  if inpl = [] then
 	    CLeaf([],NehHash(nehlist_hashroot hl))
 	  else
-	    CLeaf([],NehCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) (List.map (fun (_,k) -> h) inpl)) hr))
+	    CLeaf([],NehCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) (List.map (fun (_,k) -> k) inpl)) hr))
+      | _ -> raise (Failure "impossible")
+    end
+  else (*** At this point we are necessarily at a leaf. However, if the full hlist is not here, then it will not be fully supported. Not checking since we assume c supported before calling reduce_to_min. ***)
+    c
+
+let rec ctree_reduce_to_min_support n inpl outpl full c =
+  if n > 0 then
+    begin
+      if inpl = [] && outpl = [] && full = [] then
+	CHash(ctree_hashroot c)
+      else
+	begin
+	  match c with
+	  | CLeft(c0) ->
+	      CLeft(ctree_reduce_to_min_support (n-1)
+		      (strip_bitseq_false inpl)
+		      (strip_bitseq_false0 outpl)
+		      (strip_bitseq_false0 full)
+		      c0)
+	  | CRight(c1) ->
+	      CRight(ctree_reduce_to_min_support (n-1)
+		       (strip_bitseq_true inpl)
+		       (strip_bitseq_true0 outpl)
+		       (strip_bitseq_true0 full)
+		       c1)
+	  | CBin(c0,c1) ->
+	      CBin(ctree_reduce_to_min_support (n-1)
+		     (strip_bitseq_false inpl)
+		     (strip_bitseq_false0 outpl)
+		     (strip_bitseq_false0 full)
+		     c0,
+		   ctree_reduce_to_min_support (n-1)
+		       (strip_bitseq_true inpl)
+		       (strip_bitseq_true0 outpl)
+		       (strip_bitseq_true0 full)
+		       c1)
+	  | CAbbrev(hr,ha) ->
+	      ctree_reduce_to_min_support n inpl outpl full (get_ctree_abbrev ha)
+	  | CHash(h) -> (*** If we reach this point, the ctree does not support the tx, contrary to assumption. ***)
+	      raise (Failure("ctree does not support the tx"))
+	  | _ -> c
+	end
+    end
+  else if full = [] then
+    begin
+      match c with
+      | CLeaf([],NehHash(_)) -> c
+      | CLeaf([],(NehCons((h,bh,o,u),hr) as hl)) ->
+	  if inpl = [] then
+	    CLeaf([],NehHash(nehlist_hashroot hl))
+	  else
+	    CLeaf([],NehCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) (List.map (fun (_,k) -> k) inpl)) hr))
       | _ -> raise (Failure "impossible")
     end
   else (*** At this point we are necessarily at a leaf. However, if the full hlist is not here, then it will not be fully supported. Not checking since we assume c supported before calling reduce_to_min. ***)

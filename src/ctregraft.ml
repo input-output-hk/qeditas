@@ -71,8 +71,8 @@ let rec factor_ctree_cgraft n inpl outpl full c =
 		  c1
 	      in
 	      (CBin(c0a,c1a),g0 @ g1)
-	  | CAbbrev(h) ->
-	      factor_ctree_cgraft n inpl outpl full (get_ctree_abbrev h)
+	  | CAbbrev(hr,ha) ->
+	      factor_ctree_cgraft n inpl outpl full (get_ctree_abbrev ha)
 	  | CHash(h) -> (*** If we reach this point, the ctree does not support the tx, contrary to assumption. ***)
 	      raise (Failure("ctree does not support the tx"))
 	  | _ -> (c,[])

@@ -27,11 +27,12 @@ type frame =
 type ctree =
   | CLeaf of bool list * nehlist
   | CHash of hashval
-  | CAbbrev of hashval
+  | CAbbrev of hashval * hashval
   | CLeft of ctree
   | CRight of ctree
   | CBin of ctree * ctree
 
+val hashctree : ctree -> hashval
 val ctree_hashroot : ctree -> hashval
 val octree_hashroot : ctree option -> hashval option
 
@@ -39,6 +40,9 @@ val ctree_lookup_asset : hashval -> ctree -> bool list -> asset option
 
 exception NotSupported
 
+val remove_hashed_ctree : hashval -> unit
+val frame_filter_ctree : frame -> ctree -> ctree
+val frame_filter_octree : frame -> ctree option -> ctree option
 val get_ctree_abbrev : hashval -> ctree
 
 val strip_bitseq_true : (bool list * 'a) list -> (bool list * 'a) list
