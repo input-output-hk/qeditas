@@ -1,9 +1,12 @@
-opt: bin/hashaux.cmx bin/sha256.cmx bin/ripemd160.cmx bin/ser.cmx bin/hash.cmx bin/htree.cmx bin/mathdata.cmx bin/assets.cmx bin/tx.cmx bin/ctre.cmx bin/ctregraft.cmx bin/secp256k1.cmx bin/cryptocurr.cmx bin/signat.cmx bin/script.cmx bin/block.cmx
+opt: bin/config.cmx bin/hashaux.cmx bin/sha256.cmx bin/ripemd160.cmx bin/ser.cmx bin/hash.cmx bin/htree.cmx bin/mathdata.cmx bin/assets.cmx bin/tx.cmx bin/ctre.cmx bin/ctregraft.cmx bin/secp256k1.cmx bin/cryptocurr.cmx bin/signat.cmx bin/script.cmx bin/block.cmx
 
-bytecode: bin/hashaux.cmo bin/sha256.cmo bin/ripemd160.cmo bin/ser.cmo bin/hash.cmo bin/htree.cmo bin/mathdata.cmo bin/assets.cmo bin/tx.cmo bin/ctre.cmo bin/ctregraft.cmo bin/secp256k1.cmo bin/cryptocurr.cmo bin/signat.cmo bin/script.cmo bin/block.cmo
+bytecode: bin/config.cmo bin/hashaux.cmo bin/sha256.cmo bin/ripemd160.cmo bin/ser.cmo bin/hash.cmo bin/htree.cmo bin/mathdata.cmo bin/assets.cmo bin/tx.cmo bin/ctre.cmo bin/ctregraft.cmo bin/secp256k1.cmo bin/cryptocurr.cmo bin/signat.cmo bin/script.cmo bin/block.cmo
 
 bin/ser.cmi: src/ser.mli
 	$(OCAMLC) -I bin -o bin/ser.cmi -c src/ser.mli
+
+bin/config.cmi: src/config.mli
+	$(OCAMLC) -I bin -o bin/config.cmi -c src/config.mli
 
 bin/hashaux.cmi: src/hashaux.mli
 	$(OCAMLC) -I bin -o bin/hashaux.cmi -c src/hashaux.mli
@@ -65,6 +68,9 @@ bin/signat.cmx: src/signat.ml bin/signat.cmi bin/ser.cmx bin/sha256.cmx bin/hash
 bin/script.cmx: src/script.ml bin/script.cmi bin/cryptocurr.cmx bin/secp256k1.cmx bin/hash.cmx bin/ripemd160.cmx bin/sha256.cmx bin/signat.cmx
 	$(OCAMLOPT) -I bin -o bin/script.cmx -c src/script.ml
 
+bin/config.cmx: src/config.ml bin/config.cmi
+	$(OCAMLOPT) -I bin -o bin/config.cmx -c src/config.ml
+
 bin/hashaux.cmx: src/hashaux.ml bin/hashaux.cmi
 	$(OCAMLOPT) -I bin -o bin/hashaux.cmx -c src/hashaux.ml
 
@@ -89,7 +95,7 @@ bin/assets.cmx: src/assets.ml bin/assets.cmi bin/hash.cmx bin/mathdata.cmx bin/s
 bin/tx.cmx: src/tx.ml bin/tx.cmi bin/ser.cmx bin/sha256.cmx bin/hash.cmx bin/mathdata.cmx bin/assets.cmx bin/secp256k1.cmx bin/cryptocurr.cmx bin/signat.cmx bin/script.cmx
 	$(OCAMLOPT) -I bin -o bin/tx.cmx -c src/tx.ml
 
-bin/ctre.cmx: src/ctre.ml bin/ctre.cmi bin/hash.cmx bin/mathdata.cmx bin/assets.cmx bin/tx.cmx bin/ser.cmx
+bin/ctre.cmx: src/ctre.ml bin/ctre.cmi bin/hash.cmx bin/mathdata.cmx bin/assets.cmx bin/tx.cmx bin/ser.cmx bin/config.cmx
 	$(OCAMLOPT) -I bin -o bin/ctre.cmx -c src/ctre.ml
 
 bin/ctregraft.cmx: src/ctregraft.ml bin/ctregraft.cmi bin/ser.cmx bin/hash.cmx bin/ctre.cmx
@@ -112,6 +118,9 @@ bin/signat.cmo: src/signat.ml bin/signat.cmi bin/ser.cmo bin/sha256.cmo bin/hash
 
 bin/script.cmo: src/script.ml bin/script.cmi bin/cryptocurr.cmo bin/secp256k1.cmo bin/hash.cmo bin/ripemd160.cmo bin/sha256.cmo bin/signat.cmo
 	$(OCAMLC) -I bin -o bin/script.cmo -c src/script.ml
+
+bin/config.cmo: src/config.ml bin/config.cmi
+	$(OCAMLC) -I bin -o bin/config.cmo -c src/config.ml
 
 bin/hashaux.cmo: src/hashaux.ml bin/hashaux.cmi
 	$(OCAMLC) -I bin -o bin/hashaux.cmo -c src/hashaux.ml
@@ -137,7 +146,7 @@ bin/assets.cmo: src/assets.ml bin/assets.cmi bin/hash.cmo bin/mathdata.cmo bin/s
 bin/tx.cmo: src/tx.ml bin/tx.cmi bin/ser.cmo bin/sha256.cmo bin/hash.cmo bin/mathdata.cmo bin/assets.cmo bin/secp256k1.cmo bin/cryptocurr.cmo bin/signat.cmo bin/script.cmo
 	$(OCAMLC) -I bin -o bin/tx.cmo -c src/tx.ml
 
-bin/ctre.cmo: src/ctre.ml bin/ctre.cmi bin/hash.cmo bin/mathdata.cmo bin/assets.cmo bin/tx.cmo bin/ser.cmo
+bin/ctre.cmo: src/ctre.ml bin/ctre.cmi bin/hash.cmo bin/mathdata.cmo bin/assets.cmo bin/tx.cmo bin/ser.cmo bin/config.cmo
 	$(OCAMLC) -I bin -o bin/ctre.cmo -c src/ctre.ml
 
 bin/ctregraft.cmo: src/ctregraft.ml bin/ctregraft.cmi bin/ser.cmo bin/hash.cmo bin/ctre.cmo

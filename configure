@@ -4,18 +4,29 @@ do
     if [ $v == "-bytecode" ]; then
 	BYTECODE="1"
     else
-	if [ ${v:0:9} == "-qeditasdir=" ]; then
-            INSTALLDIR=${v:9}
+	if [ ${v:0:12} == "-qeditasdir=" ]; then
+            INSTALLDIR=${v:12}
 	    if [ ! -d $INSTALLDIR ]; then
 		echo "$INSTALLDIR is not a directory"
 	    fi
 	else
-	    echo "Unknown command line argument $v"
-	    echo "configure can be given -bytecode (to only build bytecode) or -qeditasdir=<dir> (to specify the install directory)"
-	    exit 1
+	    if [ ${v:0:9} == "-datadir=" ]; then
+		DATADIR=${v:9}
+	    else
+		echo "Unknown command line argument $v"
+		echo "configure can be given -bytecode (to only build bytecode), -qeditasdir=<dir> (to specify the install directory), and -datadir=<dir> (to specify the default directory for Qeditas data)"
+		exit 1
+	    fi
 	fi
     fi
 done
+if [ ! $DATADIR ]; then
+    DATADIR=$HOME/.qeditas
+fi
+if [ ! -d $DATADIR ]; then
+    echo "$DATADIR is not a directory; create it first or give an existing directory with -datadir=<dir>"
+fi
+echo let datadir = ref \"$DATADIR\" > src/config.ml
 if [ $BYTECODE ]; then
     if [ $INSTALLDIR ]; then
 	echo "bytecode cannot be installed"
