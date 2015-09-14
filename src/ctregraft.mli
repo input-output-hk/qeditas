@@ -14,4 +14,4 @@ val ctree_cgraft : cgraft -> ctree -> ctree
 
 val factor_tx_ctree_cgraft : tx -> ctree -> ctree * cgraft
 
-val factor_assets_ctree_cgraft : addr_assetid list -> ctree -> ctree * cgraft
+val factor_inputs_ctree_cgraft : addr_assetid list -> ctree -> ctree * cgraft
