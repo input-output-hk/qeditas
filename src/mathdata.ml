@@ -948,7 +948,7 @@ let ottree_lookup t h =
 	| None -> raise Not_found
 	| Some(thy) -> thy
       end
-  | None,None -> ([],[])
+  | _,None -> ([],[])
   | _,_ -> raise Not_found
 
 (** * operations including type checking and proof checking ***)
