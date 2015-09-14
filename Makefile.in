@@ -47,7 +47,7 @@ bin/tx.cmi: src/tx.mli bin/hash.cmi bin/mathdata.cmi bin/assets.cmi bin/script.c
 bin/ctre.cmi: src/ctre.mli bin/hash.cmi bin/mathdata.cmi bin/assets.cmi bin/tx.cmi
 	$(OCAMLC) -I bin -o bin/ctre.cmi -c src/ctre.mli
 
-bin/ctregraft.cmi: src/ctre.mli bin/hash.cmi bin/ctre.cmi
+bin/ctregraft.cmi: src/ctregraft.mli bin/hash.cmi bin/ctre.cmi
 	$(OCAMLC) -I bin -o bin/ctregraft.cmi -c src/ctregraft.mli
 
 bin/block.cmi: src/block.mli bin/hash.cmi bin/mathdata.cmi bin/assets.cmi bin/signat.cmi bin/tx.cmi bin/ctre.cmi bin/ctregraft.cmi
