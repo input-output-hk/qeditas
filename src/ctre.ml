@@ -145,6 +145,51 @@ let rec print_hlist hl =
   match hl with
   | HHash(h) -> Printf.printf "...%s...\n" (hashval_hexstring h)
   | HNil -> ()
+  | HCons((aid,bday,obl,Currency(v)),hr) ->
+      begin
+	Printf.printf "%s [%Ld] Currency %Ld\n" (hashval_hexstring aid) bday v;
+	print_hlist hr
+      end
+  | HCons((aid,bday,obl,Bounty(v)),hr) ->
+      begin
+	Printf.printf "%s [%Ld] Bounty %Ld\n" (hashval_hexstring aid) bday v;
+	print_hlist hr
+      end
+  | HCons((aid,bday,obl,OwnsObj(gamma,Some(r))),hr) ->
+      begin
+	Printf.printf "%s [%Ld] OwnsObj %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma)) r;
+	print_hlist hr
+      end
+  | HCons((aid,bday,obl,OwnsObj(gamma,None)),hr) ->
+      begin
+	Printf.printf "%s [%Ld] OwnsObj %s None\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma));
+	print_hlist hr
+      end
+  | HCons((aid,bday,obl,OwnsProp(gamma,Some(r))),hr) ->
+      begin
+	Printf.printf "%s [%Ld] OwnsProp %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma)) r;
+	print_hlist hr
+      end
+  | HCons((aid,bday,obl,OwnsProp(gamma,None)),hr) ->
+      begin
+	Printf.printf "%s [%Ld] OwnsProp %s None\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma));
+	print_hlist hr
+      end
+  | HCons((aid,bday,obl,OwnsNegProp),hr) ->
+      begin
+	Printf.printf "%s [%Ld] OwnsNegProp\n" (hashval_hexstring aid) bday;
+	print_hlist hr
+      end
+  | HCons((aid,bday,obl,RightsObj(gamma,r)),hr) ->
+      begin
+	Printf.printf "%s [%Ld] RightsObj %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (termaddr_addr gamma)) r;
+	print_hlist hr
+      end
+  | HCons((aid,bday,obl,RightsProp(gamma,r)),hr) ->
+      begin
+	Printf.printf "%s [%Ld] RightsProp %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (termaddr_addr gamma)) r;
+	print_hlist hr
+      end
   | HCons((aid,bday,obl,v),hr) ->
       begin
 	Printf.printf "%s [%Ld]\n" (hashval_hexstring aid) bday;
@@ -1054,7 +1099,8 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	      ignore (List.find
 			(fun a ->
 			  match a with
-			  | (h,bday,obl,Marker) -> List.mem (beta,h) inpl && Int64.add bday intention_minage <= blkh
+			  | (h,bday,obl,Marker) ->
+			      List.mem (beta,h) inpl && Int64.add bday intention_minage <= blkh
 			  | _ -> false
 			)
 			al)
@@ -1449,58 +1495,6 @@ let rec ctree_reduce_to_min_support n inpl outpl full c =
   else (*** At this point we are necessarily at a leaf. However, if the full hlist is not here, then it will not be fully supported. Not checking since we assume c supported before calling reduce_to_min. ***)
     c
 
-let rec ctree_reduce_to_min_support n inpl outpl full c =
-  if n > 0 then
-    begin
-      if inpl = [] && outpl = [] && full = [] then
-	CHash(ctree_hashroot c)
-      else
-	begin
-	  match c with
-	  | CLeft(c0) ->
-	      CLeft(ctree_reduce_to_min_support (n-1)
-		      (strip_bitseq_false inpl)
-		      (strip_bitseq_false0 outpl)
-		      (strip_bitseq_false0 full)
-		      c0)
-	  | CRight(c1) ->
-	      CRight(ctree_reduce_to_min_support (n-1)
-		       (strip_bitseq_true inpl)
-		       (strip_bitseq_true0 outpl)
-		       (strip_bitseq_true0 full)
-		       c1)
-	  | CBin(c0,c1) ->
-	      CBin(ctree_reduce_to_min_support (n-1)
-		     (strip_bitseq_false inpl)
-		     (strip_bitseq_false0 outpl)
-		     (strip_bitseq_false0 full)
-		     c0,
-		   ctree_reduce_to_min_support (n-1)
-		       (strip_bitseq_true inpl)
-		       (strip_bitseq_true0 outpl)
-		       (strip_bitseq_true0 full)
-		       c1)
-	  | CAbbrev(hr,ha) ->
-	      ctree_reduce_to_min_support n inpl outpl full (get_ctree_abbrev ha)
-	  | CHash(h) -> (*** If we reach this point, the ctree does not support the tx, contrary to assumption. ***)
-	      raise (Failure("ctree does not support the tx"))
-	  | _ -> c
-	end
-    end
-  else if full = [] then
-    begin
-      match c with
-      | CLeaf([],NehHash(_)) -> c
-      | CLeaf([],(NehCons((h,bh,o,u),hr) as hl)) ->
-	  if inpl = [] then
-	    CLeaf([],NehHash(nehlist_hashroot hl))
-	  else
-	    CLeaf([],NehCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) (List.map (fun (_,k) -> k) inpl)) hr))
-      | _ -> raise (Failure "impossible")
-    end
-  else (*** At this point we are necessarily at a leaf. However, if the full hlist is not here, then it will not be fully supported. Not checking since we assume c supported before calling reduce_to_min. ***)
-    c
-    
 let octree_reduce_to_min_support inpl outpl full oc =
   match oc with
   | None -> None
