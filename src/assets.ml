@@ -142,6 +142,10 @@ let rec output_creates_props (outpl:addr_preasset list) : (hashval option * hash
   match outpl with
   | (_,(_,DocPublication(_,_,th,d)))::outpr ->
       List.map (fun h -> (th,h)) (doc_creates_props d) @ output_creates_props outpr
+  | (_,(_,TheoryPublication(_,_,d)))::outpr -> (*** Axioms created by theories also need to be considered "created" so they will be given owners when published. ***)
+      let (pl,kl) = theoryspec_theory d in
+      let th = hashtheory (pl,kl) in
+      List.map (fun h -> (th,h)) kl @ output_creates_props outpr
   | _::outpr -> output_creates_props outpr
   | [] -> []
 
@@ -199,7 +203,7 @@ let rec obj_rights_mentioned_aux outpl r =
       let duo = doc_uses_objs d in
       obj_rights_mentioned_aux outpr
 	(List.map (fun (h,tph) -> h) duo
-	 @ List.map (fun (h,tph) -> hashopair2 th (hashpair h tph)) duo
+	 @ List.map (fun (h,tph) -> hashtag (hashopair2 th (hashpair h tph)) 32l) duo
 	 @ r)
   | _::outpr -> obj_rights_mentioned_aux outpr r
   | [] -> r
@@ -213,7 +217,7 @@ let rec prop_rights_mentioned_aux outpl r =
   | (_,(_,DocPublication(_,_,th,d)))::outpr ->
       let dup = doc_uses_props d in
       prop_rights_mentioned_aux outpr
-	(dup @ List.map (fun h -> hashopair2 th h) dup @ r)
+	(dup @ List.map (fun h -> hashtag (hashopair2 th h) 33l) dup @ r)
   | _::outpr -> prop_rights_mentioned_aux outpr r
   | [] -> r
 
