@@ -55,6 +55,9 @@ type blockheadersig = {
 
 type blockheader = blockheaderdata * blockheadersig
 
+val seo_blockheader : (int -> int -> 'a -> 'a) -> blockheader -> 'a -> 'a
+val sei_blockheader : (int -> 'a -> int * 'a) -> 'a -> blockheader * 'a
+
 type poforfeit = blockheader * blockheader * blockheaderdata list * blockheaderdata list * int64 * hashval list
 
 type blockdelta = {
@@ -65,6 +68,12 @@ type blockdelta = {
   }
 
 type block = blockheader * blockdelta
+
+(*** a partial representation of the block delta using hashvals in place of stxs ***)
+type blockdeltah = addr_preasset list * poforfeit option * cgraft * hashval list
+
+val seo_blockdeltah : (int -> int -> 'a -> 'a) -> blockdeltah -> 'a -> 'a
+val sei_blockdeltah : (int -> 'a -> int * 'a) -> 'a -> blockdeltah * 'a
 
 val coinstake : block -> tx
 

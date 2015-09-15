@@ -2,6 +2,8 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Big_int
+
 type seosbt = Buffer.t * (int * int) option
 type seist = string * int * int option * int * int
 
@@ -21,11 +23,17 @@ val seic : int -> seict -> int * seict
 val seo_bool : (int -> int -> 'a -> 'a) -> bool -> 'a -> 'a
 val sei_bool : (int -> 'a -> int * 'a) -> 'a -> bool * 'a
 
+val seo_int8 : (int -> int -> 'a -> 'a) -> int -> 'a -> 'a
+val sei_int8 : (int -> 'a -> int * 'a) -> 'a -> int * 'a
+
 val seo_int32 : (int -> int -> 'a -> 'a) -> int32 -> 'a -> 'a
 val sei_int32 : (int -> 'a -> int * 'a) -> 'a -> int32 * 'a
 
 val seo_int64 : (int -> int -> 'a -> 'a) -> int64 -> 'a -> 'a
 val sei_int64 : (int -> 'a -> int * 'a) -> 'a -> int64 * 'a
+
+val seo_big_int_256 : (int -> int -> 'a -> 'a) -> big_int -> 'a -> 'a
+val sei_big_int_256 : (int -> 'a -> int * 'a) -> 'a -> big_int * 'a
 
 val seo_varint : (int -> int -> 'a -> 'a) -> int64 -> 'a -> 'a
 val sei_varint : (int -> 'a -> int * 'a) -> 'a -> int64 * 'a
@@ -47,3 +55,9 @@ val sei_prod3 : ((int -> 'a -> int * 'a) -> 'a -> 'b * 'a) -> ((int -> 'a -> int
 
 val seo_prod4 : ((int -> int -> 'a -> 'a) -> 'b -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'c -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'd -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'e -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'b * 'c * 'd * 'e -> 'a -> 'a)
 val sei_prod4 : ((int -> 'a -> int * 'a) -> 'a -> 'b * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'c * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'd * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'e * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> ('b * 'c * 'd * 'e) * 'a)
+
+val seo_prod5 : ((int -> int -> 'a -> 'a) -> 'b -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'c -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'd -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'e -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'f -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'b * 'c * 'd * 'e * 'f -> 'a -> 'a)
+val sei_prod5 : ((int -> 'a -> int * 'a) -> 'a -> 'b * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'c * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'd * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'e * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'f * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> ('b * 'c * 'd * 'e * 'f) * 'a)
+
+val seo_prod6 : ((int -> int -> 'a -> 'a) -> 'b -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'c -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'd -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'e -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'f -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'g -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'b * 'c * 'd * 'e * 'f * 'g -> 'a -> 'a)
+val sei_prod6 : ((int -> 'a -> int * 'a) -> 'a -> 'b * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'c * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'd * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'e * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'f * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'g * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> ('b * 'c * 'd * 'e * 'f * 'g) * 'a)

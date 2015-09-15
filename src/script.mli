@@ -21,3 +21,6 @@ type gensignat =
   | EndP2shToP2shSignat of hashval * int list * int list
 
 val verify_gensignat : big_int -> gensignat -> addr -> bool
+
+val seo_gensignat : (int -> int -> 'a -> 'a) -> gensignat -> 'a -> 'a
+val sei_gensignat : (int -> 'a -> int * 'a) -> 'a -> gensignat * 'a

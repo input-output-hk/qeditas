@@ -160,3 +160,8 @@ let rec txout_update_ostree outpl sigt =
   | _::outpr -> txout_update_ostree outpr sigt
 
 let tx_update_ostree tau sigt = txout_update_ostree (tx_outputs tau) sigt
+
+let seo_tx o g c = seo_prod (seo_list seo_addr_assetid) (seo_list seo_addr_preasset) o g c
+let sei_tx i c = sei_prod (sei_list sei_addr_assetid) (sei_list sei_addr_preasset) i c
+let seo_stx o g c = seo_prod seo_tx (seo_prod (seo_list seo_gensignat) (seo_list seo_gensignat)) o g c
+let sei_stx i c = sei_prod sei_tx (sei_prod (sei_list sei_gensignat) (sei_list sei_gensignat)) i c

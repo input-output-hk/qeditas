@@ -185,3 +185,5 @@ let verifybitcoinmessage_base64 alpha sg m =
   let (by0,(r,s)) = decode_signature sg in
   verifybitcoinmessage alpha by0 (r,s) m
 
+let seo_signat o rs c = seo_prod seo_big_int_256 seo_big_int_256 o rs c
+let sei_signat i c = sei_prod sei_big_int_256 sei_big_int_256 i c

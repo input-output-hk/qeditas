@@ -3,6 +3,8 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Ser
+
 (* Most of this code is taken directly from Egal. *)
 
 (* Secp256k1, Chad E. Brown, ported from Krona Rev's Lisp code: https://github.com/kronarev/bip0032sbcl *)
@@ -127,3 +129,5 @@ let curve_y e x =
   else
     sub_big_int _p y
 
+let seo_pt o p c = seo_option (seo_prod seo_big_int_256 seo_big_int_256) o p c
+let sei_pt i c = sei_option (sei_prod sei_big_int_256 sei_big_int_256) i c

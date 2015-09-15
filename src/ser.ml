@@ -2,6 +2,8 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Big_int
+
 (*** This is a generalized version of the serialization code found in the
  proof checker Egal - Copyright (c) 2014 Chad E Brown, MIT software license.
  ***)
@@ -109,6 +111,10 @@ let sei_bool i c =
   let (x,c) = i 1 c in
   (x=1,c)
 
+(*** int8 assumes int is a byte (0 to 255) ***)
+let seo_int8 o x c = o 8 x c
+let sei_int8 i c = i 8 c
+
 (*** big endian serialization of int32 and int64 ***)
 let seo_int32 o x c =
   let c = o 8 (Int32.to_int (Int32.shift_right_logical x 24)) c in
@@ -155,6 +161,26 @@ let sei_int64 i c =
 		 (Int64.logor (Int64.shift_left (Int64.of_int m5) 40)
 		    (Int64.logor (Int64.shift_left (Int64.of_int m6) 48)
 		       (Int64.shift_left (Int64.of_int m7) 56))))))),c)
+
+(*** big_int, assuming it is positive and < 2^256 ***)
+let seo_big_int_256 o x c =
+  let xr = ref x in
+  let cr = ref c in
+  for j = 0 to 31 do
+    cr := o 8 (int_of_big_int (and_big_int !xr (big_int_of_int 255))) !cr;
+    xr := shift_right_towards_zero_big_int !xr 8
+  done;
+  !cr
+
+let sei_big_int_256 i c =
+  let xr = ref zero_big_int in
+  let cr = ref c in
+  for j = 0 to 31 do
+    let (x,c) = i 8 c in
+    cr := c;
+    xr := or_big_int (shift_left_big_int (big_int_of_int x) (j*8)) !xr
+  done;
+  (!xr,!cr)
 
 (*** the varint representation used in Bitcoin ***)
 let seo_varint o x c =
@@ -294,3 +320,37 @@ let sei_prod4 s1 s2 s3 s4 i c =
   let (k,c) = s3 i c in
   let (l,c) = s4 i c in
   ((m,n,k,l),c)
+
+let seo_prod5 s1 s2 s3 s4 s5 o (m,n,k,l,p) c =
+  let c = s1 o m c in
+  let c = s2 o n c in
+  let c = s3 o k c in
+  let c = s4 o l c in
+  let c = s5 o p c in
+  c
+
+let sei_prod5 s1 s2 s3 s4 s5 i c =
+  let (m,c) = s1 i c in
+  let (n,c) = s2 i c in
+  let (k,c) = s3 i c in
+  let (l,c) = s4 i c in
+  let (p,c) = s5 i c in
+  ((m,n,k,l,p),c)
+
+let seo_prod6 s1 s2 s3 s4 s5 s6 o (m,n,k,l,p,q) c =
+  let c = s1 o m c in
+  let c = s2 o n c in
+  let c = s3 o k c in
+  let c = s4 o l c in
+  let c = s5 o p c in
+  let c = s6 o q c in
+  c
+
+let sei_prod6 s1 s2 s3 s4 s5 s6 i c =
+  let (m,c) = s1 i c in
+  let (n,c) = s2 i c in
+  let (k,c) = s3 i c in
+  let (l,c) = s4 i c in
+  let (p,c) = s5 i c in
+  let (q,c) = s6 i c in
+  ((m,n,k,l,p,q),c)

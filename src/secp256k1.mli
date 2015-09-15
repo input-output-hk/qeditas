@@ -40,3 +40,6 @@ val _g : pt
 val _n : big_int
 
 val curve_y : bool -> big_int -> big_int
+
+val seo_pt : (int -> int -> 'a -> 'a) -> pt -> 'a -> 'a
+val sei_pt : (int -> 'a -> int * 'a) -> 'a -> pt * 'a

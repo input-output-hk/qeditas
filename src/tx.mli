@@ -25,3 +25,9 @@ val tx_signatures_valid : int64 -> asset list -> stx -> bool
 
 val txout_update_ottree : addr_preasset list -> ttree option -> ttree option
 val txout_update_ostree : addr_preasset list -> stree option -> stree option
+
+val seo_tx : (int -> int -> 'a -> 'a) -> tx -> 'a -> 'a
+val sei_tx : (int -> 'a -> int * 'a) -> 'a -> tx * 'a
+val seo_stx : (int -> int -> 'a -> 'a) -> stx -> 'a -> 'a
+val sei_stx : (int -> 'a -> int * 'a) -> 'a -> stx * 'a
+

@@ -101,3 +101,6 @@ let factor_inputs_ctree_cgraft inpl c =
     (List.map (fun (alpha,z) -> (addr_bitseq alpha,z)) inpl)
     [] []
     c
+
+let seo_cgraft o g c = seo_list (seo_prod seo_hashval seo_ctree) o g c
+let sei_cgraft i c = sei_list (sei_prod sei_hashval sei_ctree) i c

@@ -27,3 +27,5 @@ val verifybitcoinmessage_base64 : hashval -> string -> string -> bool
 
 val md256_of_bitcoin_message : string -> md256
 
+val seo_signat : (int -> int -> 'a -> 'a) -> signat -> 'a -> 'a
+val sei_signat : (int -> 'a -> int * 'a) -> 'a -> signat * 'a

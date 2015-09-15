@@ -3,6 +3,7 @@
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 open Big_int
+open Ser
 open Sha256
 open Ripemd160
 open Hash
@@ -895,3 +896,48 @@ let verify_gensignat e gsg alpha =
 	false
   | _ -> false
   
+let seo_gensignat o gsg c =
+  match gsg with
+  | P2pkhSignat(p,b,sg) -> (* 00 *)
+      let c = o 2 0 c in
+      seo_prod3 seo_pt seo_bool seo_signat o (p,b,sg) c
+  | P2shSignat(scr) -> (* 01 *)
+      let c = o 2 1 c in
+      seo_list seo_int8 o scr c
+  | EndP2pkhToP2pkhSignat(p,b,q,d,esg,sg) -> (* 10 0 *)
+      let c = o 3 2 c in
+      seo_prod6 seo_pt seo_bool seo_pt seo_bool seo_signat seo_signat o (p,b,q,d,esg,sg) c
+  | EndP2pkhToP2shSignat(p,b,beta,esg,scr) -> (* 10 1 *)
+      let c = o 3 6 c in
+      seo_prod5 seo_pt seo_bool seo_hashval seo_signat (seo_list seo_int8) o (p,b,beta,esg,scr) c
+  | EndP2shToP2pkhSignat(q,d,escr,sg) -> (* 11 0 *)
+      let c = o 3 3 c in
+      seo_prod4 seo_pt seo_bool (seo_list seo_int8) seo_signat o (q,d,escr,sg) c
+  | EndP2shToP2shSignat(beta,escr,scr) -> (* 11 1 *)
+      let c = o 3 7 c in
+      seo_prod3 seo_hashval (seo_list seo_int8) (seo_list seo_int8) o (beta,escr,scr) c
+
+let sei_gensignat i c =
+  let (x,c) = i 2 c in
+  if x = 0 then
+    let ((p,b,sg),c) = sei_prod3 sei_pt sei_bool sei_signat i c in
+    (P2pkhSignat(p,b,sg),c)
+  else if x = 1 then
+    let (scr,c) = sei_list sei_int8 i c in
+    (P2shSignat(scr),c)
+  else if x = 2 then
+    let (x,c) = i 1 c in
+    if x = 0 then
+      let ((p,b,q,d,esg,sg),c) = sei_prod6 sei_pt sei_bool sei_pt sei_bool sei_signat sei_signat i c in
+      (EndP2pkhToP2pkhSignat(p,b,q,d,esg,sg),c)
+    else
+      let ((p,b,beta,esg,scr),c) = sei_prod5 sei_pt sei_bool sei_hashval sei_signat (sei_list sei_int8) i c in
+      (EndP2pkhToP2shSignat(p,b,beta,esg,scr),c)
+  else
+    let (x,c) = i 1 c in
+    if x = 0 then
+      let ((q,d,escr,sg),c) = sei_prod4 sei_pt sei_bool (sei_list sei_int8) sei_signat i c in
+      (EndP2shToP2pkhSignat(q,d,escr,sg),c)
+    else
+      let ((beta,escr,scr),c) = sei_prod3 sei_hashval (sei_list sei_int8) (sei_list sei_int8) i c in
+      (EndP2shToP2shSignat(beta,escr,scr),c)

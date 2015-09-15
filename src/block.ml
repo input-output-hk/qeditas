@@ -2,6 +2,7 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Ser
 open Sha256
 open Hash
 open Big_int
@@ -91,6 +92,12 @@ let hashstakemod sm =
   let (m3,m2,m1,m0) = sm in
   hashtag (hashlist [hashint64 m3;hashint64 m2;hashint64 m1;hashint64 m0]) 240l
 
+let seo_stakemod o sm c =
+  seo_prod4 seo_int64 seo_int64 seo_int64 seo_int64 o sm c
+
+let sei_stakemod i c =
+  sei_prod4 sei_int64 sei_int64 sei_int64 sei_int64 i c
+
 (*** drop most significant bit of m3, shift everything, b is the new least siginificant bit of m0 ***)
 let stakemod_pushbit b sm =
   let (m3,m2,m1,m0) = sm in
@@ -144,6 +151,12 @@ let hashtargetinfo ti =
     (hashpair (hashstakemod fsm)
        (big_int_hashval tar))
 
+let seo_targetinfo o ti c =
+  seo_prod3 seo_stakemod seo_stakemod seo_big_int_256 o ti c
+
+let sei_targetinfo i c =
+  sei_prod3 sei_stakemod sei_stakemod sei_big_int_256 i c
+
 type postor =
   | PostorTrm of hashval option * tm * tp * hashval
   | PostorDoc of payaddr * hashval * hashval option * pdoc * hashval
@@ -158,6 +171,40 @@ let hashopostor r =
   match r with
   | Some(r) -> Some(hashpostor r)
   | None -> None
+
+let seo_postor o po c =
+  match po with
+  | PostorTrm(th,m,a,h) -> 
+      let c = o 1 0 c in
+      let c = seo_option seo_hashval o th c in
+      let c = seo_tm o m c in
+      let c = seo_tp o a c in
+      let c = seo_hashval o h c in
+      c
+  | PostorDoc(gamma,nonce,th,d,h) ->
+      let c = o 1 1 c in
+      let c = seo_payaddr o gamma c in
+      let c = seo_hashval o nonce c in
+      let c = seo_option seo_hashval o th c in
+      let c = seo_pdoc o d c in
+      let c = seo_hashval o h c in
+      c
+
+let sei_postor i c =
+  let (x,c) = i 1 c in
+  if x = 0 then
+    let (th,c) = sei_option sei_hashval i c in
+    let (m,c) = sei_tm i c in
+    let (a,c) = sei_tp i c in
+    let (h,c) = sei_hashval i c in
+    (PostorTrm(th,m,a,h),c)
+  else
+    let (gamma,c) = sei_payaddr i c in
+    let (nonce,c) = sei_hashval i c in
+    let (th,c) = sei_option sei_hashval i c in
+    let (d,c) = sei_pdoc i c in
+    let (h,c) = sei_hashval i c in
+    (PostorDoc(gamma,nonce,th,d,h),c)
 
 type blockheaderdata = {
     prevblockhash : hashval option;
@@ -181,7 +228,82 @@ type blockheadersig = {
 
 type blockheader = blockheaderdata * blockheadersig
 
+let seo_blockheaderdata o bh c =
+  let c = seo_option seo_hashval o bh.prevblockhash c in
+  let c = seo_option seo_hashval o bh.newtheoryroot c in
+  let c = seo_option seo_hashval o bh.newsignaroot c in
+  let c = seo_hashval o bh.newledgerroot c in
+  let c = seo_hashval o bh.stakeaddr c in (*** p2pkh addresses are hashvals ***)
+  let c = seo_hashval o bh.stakeassetid c in
+  let c = seo_option seo_postor o bh.stored c in
+  let c = seo_int64 o bh.timestamp c in
+  let c = seo_int32 o bh.deltatime c in
+  let c = seo_targetinfo o bh.tinfo c in
+  let c = seo_ctree o bh.prevledger c in
+  c
+
+let sei_blockheaderdata i c =
+  let (x0,c) = sei_option sei_hashval i c in
+  let (x1,c) = sei_option sei_hashval i c in
+  let (x2,c) = sei_option sei_hashval i c in
+  let (x3,c) = sei_hashval i c in
+  let (x4,c) = sei_hashval i c in (*** p2pkh addresses are hashvals ***)
+  let (x5,c) = sei_hashval i c in
+  let (x6,c) = sei_option sei_postor i c in
+  let (x7,c) = sei_int64 i c in
+  let (x8,c) = sei_int32 i c in
+  let (x9,c) = sei_targetinfo i c in
+  let (x10,c) = sei_ctree i c in
+  let bhd : blockheaderdata =
+      { prevblockhash = x0;
+	newtheoryroot = x1;
+	newsignaroot = x2;
+	newledgerroot = x3;
+	stakeaddr = x4;
+	stakeassetid = x5;
+	stored = x6;
+	timestamp = x7;
+	deltatime = x8;
+	tinfo = x9;
+	prevledger = x10;
+      }
+  in
+  (bhd,c)
+
+let seo_blockheadersig o bhs c = 
+  let c = seo_signat o bhs.blocksignat c in
+  let c = o 2 bhs.blocksignatrecid c in
+  let c = seo_bool o bhs.blocksignatfcomp c in
+  c
+
+let sei_blockheadersig i c = 
+  let (x,c) = sei_signat i c in
+  let (r,c) = i 2 c in
+  let (f,c) = sei_bool i c in
+  let bhs : blockheadersig =
+    { blocksignat = x;
+      blocksignatrecid = r;
+      blocksignatfcomp = f;
+    }
+  in
+  (bhs,c)
+
+let seo_blockheader o bh c = seo_prod seo_blockheaderdata seo_blockheadersig o bh c
+let sei_blockheader i c = sei_prod sei_blockheaderdata sei_blockheadersig i c
+
 type poforfeit = blockheader * blockheader * blockheaderdata list * blockheaderdata list * int64 * hashval list
+
+let seo_poforfeit o pof c =
+  seo_prod6 seo_blockheader seo_blockheader
+    (seo_list seo_blockheaderdata) (seo_list seo_blockheaderdata)
+    seo_int64 (seo_list seo_hashval)
+    o pof c
+
+let sei_poforfeit i c =
+  sei_prod6 sei_blockheader sei_blockheader
+    (sei_list sei_blockheaderdata) (sei_list sei_blockheaderdata)
+    sei_int64 (sei_list sei_hashval)
+    i c
 
 type blockdelta = {
     stakeoutput : addr_preasset list;
@@ -191,6 +313,17 @@ type blockdelta = {
   }
 
 type block = blockheader * blockdelta
+
+(*** a partial representation of the block delta using hashvals in place of stxs ***)
+type blockdeltah = addr_preasset list * poforfeit option * cgraft * hashval list
+
+let seo_blockdeltah o bd c =
+  seo_prod4 (seo_list seo_addr_preasset) (seo_option seo_poforfeit) seo_cgraft (seo_list seo_hashval)
+    o bd c
+
+let sei_blockdeltah i c =
+  sei_prod4 (sei_list sei_addr_preasset) (sei_option sei_poforfeit) sei_cgraft (sei_list sei_hashval)
+    i c
 
 (*** multiply stake by 1.25 ***)
 let incrstake s =
