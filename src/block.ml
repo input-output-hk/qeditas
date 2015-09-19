@@ -858,12 +858,23 @@ let ledgerroot_of_blockchain bc =
   let (((bhd,bhs),bd),bl) = bc in
   bhd.newledgerroot
 
+(*** max target/min difficulty: 2^220 ***)
+let max_target = shift_left_big_int unit_big_int 220
+
 (*** retargeting at each step ***)
 let retarget tar deltm =
-   div_big_int
-     (mult_big_int tar
-       (big_int_of_int32 (Int32.add 9000l deltm)))
-     (big_int_of_int 9600);;
+  min_big_int
+    max_target
+    (div_big_int
+       (mult_big_int tar
+	  (big_int_of_int32 (Int32.add 9000l deltm)))
+       (big_int_of_int 9600))
+
+(*** cumulative stake ***)
+let cumul_stake cs tar deltm =
+  add_big_int
+    cs
+    (div_big_int max_target (mult_big_int tar (big_int_of_int32 deltm)))
 
 let blockheader_succ bh1 bh2 =
   let (bhd1,bhs1) = bh1 in
