@@ -734,6 +734,105 @@ let get_ctree_abbrev h =
   else
     raise (Failure ("could not resolve a needed ctree abbrev " ^ fn))
 
+(*** archive_unused_ctrees/remove_unused_ctrees:
+    c1 is the ctree at blockheight blkh and c2 is the ctree at blockheight blkh+1.
+    Assume blkh+1 has been buried beneath 256 blocks and so is now being included
+    as a rolling checkpoint. We can archive/delete subtrees of c1 which do not occur in c2.
+    If archiving, put the hashes into 'archive' file along with the blockheight.
+    Users can later call a command to actually move or delete the archived files at or up to some
+    block height.
+    If removing, then delete the files immediately.
+ ***)
+let add_to_archive ch blkh ha =
+   seocf (seo_int64 seoc blkh (ch,None));
+   seocf (seo_hashval seoc ha (ch,None))
+
+let rec process_unused_ctrees_1 a c =
+   match c with
+   | CAbbrev(hr,ha) ->
+     a ha;
+     process_unused_ctrees_1 a (get_ctree_abbrev ha)
+   | CLeft(cl) ->
+     process_unused_ctrees_1 a cl
+   | CRight(cr) ->
+     process_unused_ctrees_1 a cr
+   | CBin(cl,cr) ->
+     process_unused_ctrees_1 a cl;
+     process_unused_ctrees_1 a cr
+   | _ -> ()
+
+let rec process_unused_ctrees_2 a c1 c2 =
+   match c1 with
+   | CAbbrev(hr,ha) ->
+      begin
+        match c2 with
+        | CAbbrev(hr2,ha2) when hr = hr2 && ha = ha2 -> ()
+        | _ ->
+          a ha;
+          process_unused_ctrees_2 a (get_ctree_abbrev ha) c2
+      end
+   | CLeft(c1l) ->
+     begin
+       match c2 with
+       | CAbbrev(hr,ha) -> process_unused_ctrees_2 a c1 (get_ctree_abbrev ha)
+       | CLeft(c2l) -> process_unused_ctrees_2 a c1l c2l
+       | CBin(c2l,c2r) -> process_unused_ctrees_2 a c1l c2l
+       | CLeaf((b::bl),hl) when not b -> process_unused_ctrees_2 a c1l (CLeaf(bl,hl))
+       | _ -> process_unused_ctrees_1 a c1l
+     end
+   | CRight(c1r) ->
+     begin
+       match c2 with
+       | CAbbrev(hr,ha) -> process_unused_ctrees_2 a c1 (get_ctree_abbrev ha)
+       | CRight(c2r) -> process_unused_ctrees_2 a c1r c2r
+       | CBin(c2l,c2r) -> process_unused_ctrees_2 a c1r c2r
+       | CLeaf((b::bl),hl) when b -> process_unused_ctrees_2 a c1r (CLeaf(bl,hl))
+       | _ -> process_unused_ctrees_1 a c1r
+     end
+   | CBin(c1l,c1r) ->
+     begin
+       match c2 with
+       | CAbbrev(hr,ha) -> process_unused_ctrees_2 a c1 (get_ctree_abbrev ha)
+       | CLeft(c2l) ->
+         process_unused_ctrees_2 a c1l c2l;
+         process_unused_ctrees_1 a c1r
+       | CRight(c2r) ->
+         process_unused_ctrees_1 a c1l;
+         process_unused_ctrees_2 a c1r c2r
+       | CBin(c2l,c2r) ->
+         process_unused_ctrees_2 a c1l c2l;
+         process_unused_ctrees_2 a c1r c2r
+       | CLeaf((b::bl),hl) when not b ->
+         process_unused_ctrees_2 a c1l (CLeaf(bl,hl));
+         process_unused_ctrees_1 a c1r
+       | CLeaf((b::bl),hl) when b ->
+         process_unused_ctrees_1 a c1l;
+         process_unused_ctrees_2 a c1r (CLeaf(bl,hl))
+       | _ ->
+         process_unused_ctrees_1 a c1l;
+         process_unused_ctrees_1 a c1r
+     end
+   | _ -> ()
+
+let archive_unused_ctrees blkh c1 c2 =
+  ensure_dir_exists !datadir;
+  let fn = Filename.concat !datadir "archive" in
+  if not (Sys.file_exists fn) then
+    begin
+      let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
+      process_unused_ctrees_2 (add_to_archive ch blkh) c1 c2;
+      close_out ch      
+    end
+  else
+    begin
+      let ch = open_out_gen [Open_wronly;Open_binary;Open_append] 0o644 fn in
+      process_unused_ctrees_2 (add_to_archive ch blkh) c1 c2;
+      close_out ch      
+    end
+
+let remove_unused_ctrees c1 c2 =
+   process_unused_ctrees_2 remove_hashed_ctree c1 c2
+
 let ctree_rights_balanced tr alpha ownr rtot1 rtot2 rtot3 outpl =
   match ownr with
   | Some(beta,None) -> (*** Owner does not allow right to use. Rights may have been obtained in the past. ***)
@@ -745,7 +844,6 @@ let ctree_rights_balanced tr alpha ownr rtot1 rtot2 rtot3 outpl =
       else
 	true (*** If it's free to use, people are free to use or create rights as they please. ***)
   | None -> false (*** No owner, in this case we shouldn't even be here ***)
-
 
 let rec hlist_full_approx hl =
   match hl with

@@ -41,6 +41,8 @@ val ctree_lookup_asset : hashval -> ctree -> bool list -> asset option
 exception NotSupported
 
 val remove_hashed_ctree : hashval -> unit
+val archive_unused_ctrees : int64 -> ctree -> ctree -> unit
+val remove_unused_ctrees : ctree -> ctree -> unit
 val frame_filter_ctree : frame -> ctree -> ctree
 val frame_filter_octree : frame -> ctree option -> ctree option
 val get_ctree_abbrev : hashval -> ctree
