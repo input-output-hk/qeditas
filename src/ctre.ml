@@ -750,8 +750,8 @@ let add_to_archive ch blkh ha =
 let rec process_unused_ctrees_1 a c =
    match c with
    | CAbbrev(hr,ha) ->
-     a ha;
-     process_unused_ctrees_1 a (get_ctree_abbrev ha)
+     process_unused_ctrees_1 a (get_ctree_abbrev ha);
+     a ha
    | CLeft(cl) ->
      process_unused_ctrees_1 a cl
    | CRight(cr) ->
@@ -768,8 +768,8 @@ let rec process_unused_ctrees_2 a c1 c2 =
         match c2 with
         | CAbbrev(hr2,ha2) when hr = hr2 && ha = ha2 -> ()
         | _ ->
-          a ha;
-          process_unused_ctrees_2 a (get_ctree_abbrev ha) c2
+          process_unused_ctrees_2 a (get_ctree_abbrev ha) c2;
+          a ha
       end
    | CLeft(c1l) ->
      begin
