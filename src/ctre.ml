@@ -311,79 +311,6 @@ let rec remove_assets_hlist hl spent =
 	HCons(a,remove_assets_hlist hr spent)
   | _ -> hl
 
-let octree_S_inv c =
-  match c with
-  | None -> (None,None)
-  | Some(CHash(h)) ->
-      raise Not_found
-  | Some(CAbbrev(hr,ha)) ->
-      raise Not_found
-  | Some(CLeaf([],hl)) ->
-      raise Not_found
-  | Some(CLeaf(false::bl,hl)) -> (Some(CLeaf(bl,hl)),None)
-  | Some(CLeaf(true::bl,hl)) -> (None,Some(CLeaf(bl,hl)))
-  | Some(CLeft(c0)) -> (Some(c0),None)
-  | Some(CRight(c1)) -> (None,Some(c1))
-  | Some(CBin(c0,c1)) -> (Some(c0),Some(c1))
-
-let rec tx_octree_trans_ n inpl outpl c =
-  if inpl = [] && outpl = [] then
-    c
-  else if n > 0 then
-    begin
-      match octree_S_inv c with
-      | (c0,c1) ->
-	  match
-	    tx_octree_trans_ (n-1) (strip_bitseq_false inpl) (strip_bitseq_false outpl) c0,
-	    tx_octree_trans_ (n-1) (strip_bitseq_true inpl) (strip_bitseq_true outpl) c1
-	  with
-	  | None,None -> None
-	  | Some(CLeaf(bl,hl)),None -> Some(CLeaf(false::bl,hl))
-	  | Some(c0r),None -> Some(CLeft(c0r))
-	  | None,Some(CLeaf(bl,hl)) -> Some(CLeaf(true::bl,hl))
-	  | None,Some(c1r) -> Some(CRight(c1r))
-	  | Some(c0r),Some(c1r) -> Some(CBin(c0r,c1r))
-    end
-  else
-    begin
-      let hl =
-	begin
-	  match c with
-	  | Some(CLeaf([],hl)) -> nehlist_hlist hl
-	  | None -> HNil
-	  | _ -> raise (Failure "not a ctree 0")
-	end
-      in
-      let hl2 = hlist_new_assets (List.map (fun (x,y) -> y) outpl) (remove_assets_hlist hl (List.map (fun (x,y) -> y) inpl)) in
-      match hl2 with
-      | HNil -> None
-      | HHash(h) -> Some(CLeaf([],NehHash(h)))
-      | HCons(a,hr) -> Some(CLeaf([],NehCons(a,hr)))
-    end
-
-let add_vout bh txh outpl =
-  let i = ref 0 in
-  let r = ref [] in
-  List.iter
-    (fun (alpha,(obl,u)) ->
-      r := (addr_bitseq alpha,(hashpair txh (hashint32 (Int32.of_int !i)),bh,obl,u))::!r;
-      incr i;
-    )
-    outpl;
-  !r
-
-let tx_octree_trans bh tx c =
-  let (inpl,outpl) = tx in
-  tx_octree_trans_ 162
-    (List.map (fun (alpha,h) -> (addr_bitseq alpha,h)) inpl)
-    (add_vout bh (hashtx tx) outpl)
-    c
-
-let rec txl_octree_trans bh txl c =
-  match txl with
-  | (tx::txr) -> txl_octree_trans bh txr (tx_octree_trans bh tx c)
-  | [] -> c
-
 (** * serialization **)
 let rec seo_hlist o hl c =
   match hl with
@@ -592,6 +519,92 @@ let save_hashed_ctree r (tr:ctree) =
       close_out ch      
     end
 
+let get_ctree_abbrev h =
+  ensure_dir_exists !datadir;
+  let fn = Filename.concat !datadir (hashval_hexstring h) in
+  if Sys.file_exists fn then
+    begin
+      let ch = open_in_bin fn in
+      let (c,_) = sei_ctree seic (ch,None) in
+      close_in ch;
+      c
+    end
+  else
+    raise (Failure ("could not resolve a needed ctree abbrev " ^ fn))
+
+let rec octree_S_inv c =
+  match c with
+  | None -> (None,None)
+  | Some(CHash(h)) ->
+      raise Not_found
+  | Some(CAbbrev(hr,ha)) ->
+      octree_S_inv (Some(get_ctree_abbrev ha))
+  | Some(CLeaf([],hl)) ->
+      raise Not_found
+  | Some(CLeaf(false::bl,hl)) -> (Some(CLeaf(bl,hl)),None)
+  | Some(CLeaf(true::bl,hl)) -> (None,Some(CLeaf(bl,hl)))
+  | Some(CLeft(c0)) -> (Some(c0),None)
+  | Some(CRight(c1)) -> (None,Some(c1))
+  | Some(CBin(c0,c1)) -> (Some(c0),Some(c1))
+
+let rec tx_octree_trans_ n inpl outpl c =
+  if inpl = [] && outpl = [] then
+    c
+  else if n > 0 then
+    begin
+      match octree_S_inv c with
+      | (c0,c1) ->
+	  match
+	    tx_octree_trans_ (n-1) (strip_bitseq_false inpl) (strip_bitseq_false outpl) c0,
+	    tx_octree_trans_ (n-1) (strip_bitseq_true inpl) (strip_bitseq_true outpl) c1
+	  with
+	  | None,None -> None
+	  | Some(CLeaf(bl,hl)),None -> Some(CLeaf(false::bl,hl))
+	  | Some(c0r),None -> Some(CLeft(c0r))
+	  | None,Some(CLeaf(bl,hl)) -> Some(CLeaf(true::bl,hl))
+	  | None,Some(c1r) -> Some(CRight(c1r))
+	  | Some(c0r),Some(c1r) -> Some(CBin(c0r,c1r))
+    end
+  else
+    begin
+      let hl =
+	begin
+	  match c with
+	  | Some(CLeaf([],hl)) -> nehlist_hlist hl
+	  | None -> HNil
+	  | _ -> raise (Failure "not a ctree 0")
+	end
+      in
+      let hl2 = hlist_new_assets (List.map (fun (x,y) -> y) outpl) (remove_assets_hlist hl (List.map (fun (x,y) -> y) inpl)) in
+      match hl2 with
+      | HNil -> None
+      | HHash(h) -> Some(CLeaf([],NehHash(h)))
+      | HCons(a,hr) -> Some(CLeaf([],NehCons(a,hr)))
+    end
+
+let add_vout bh txh outpl =
+  let i = ref 0 in
+  let r = ref [] in
+  List.iter
+    (fun (alpha,(obl,u)) ->
+      r := (addr_bitseq alpha,(hashpair txh (hashint32 (Int32.of_int !i)),bh,obl,u))::!r;
+      incr i;
+    )
+    outpl;
+  !r
+
+let tx_octree_trans bh tx c =
+  let (inpl,outpl) = tx in
+  tx_octree_trans_ 162
+    (List.map (fun (alpha,h) -> (addr_bitseq alpha,h)) inpl)
+    (add_vout bh (hashtx tx) outpl)
+    c
+
+let rec txl_octree_trans bh txl c =
+  match txl with
+  | (tx::txr) -> txl_octree_trans bh txr (tx_octree_trans bh tx c)
+  | [] -> c
+
 let rec ctree_pre bl c d =
   match bl with
   | [] -> (Some(c),d)
@@ -601,6 +614,7 @@ let rec ctree_pre bl c d =
       | CLeft(c0) -> if b then (None,d) else ctree_pre br c0 (d+1)
       | CRight(c1) -> if b then ctree_pre br c1 (d+1) else (None,d)
       | CBin(c0,c1) -> if b then ctree_pre br c1 (d+1) else ctree_pre br c0 (d+1)
+      | CAbbrev(hr,ha) -> ctree_pre bl (get_ctree_abbrev ha) d
       | _ ->
 	  Printf.printf "ctree_pre Not_found\n"; flush stdout;
 	  raise Not_found
@@ -720,19 +734,6 @@ let frame_filter_octree fr oc =
   match oc with
   | Some(c) -> Some(frame_filter_ctree fr c)
   | None -> None
-
-let get_ctree_abbrev h =
-  ensure_dir_exists !datadir;
-  let fn = Filename.concat !datadir (hashval_hexstring h) in
-  if Sys.file_exists fn then
-    begin
-      let ch = open_in_bin fn in
-      let (c,_) = sei_ctree seic (ch,None) in
-      close_in ch;
-      c
-    end
-  else
-    raise (Failure ("could not resolve a needed ctree abbrev " ^ fn))
 
 (*** archive_unused_ctrees/remove_unused_ctrees:
     c1 is the ctree at blockheight blkh and c2 is the ctree at blockheight blkh+1.
