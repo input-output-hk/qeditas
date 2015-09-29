@@ -43,6 +43,8 @@ exception NotSupported
 val remove_hashed_ctree : hashval -> unit
 val archive_unused_ctrees : int64 -> ctree -> ctree -> unit
 val remove_unused_ctrees : ctree -> ctree -> unit
+val ctree_pre : bool list -> ctree -> int -> ctree option * int
+val ctree_addr : addr -> ctree -> ctree option * int
 val frame_filter_ctree : frame -> ctree -> ctree
 val frame_filter_octree : frame -> ctree option -> ctree option
 val get_ctree_abbrev : hashval -> ctree
@@ -77,5 +79,6 @@ val sei_frame : (int -> 'a -> int * 'a) -> 'a -> frame * 'a
 val seo_ctree : (int -> int -> 'a -> 'a) -> ctree -> 'a -> 'a
 val sei_ctree : (int -> 'a -> int * 'a) -> 'a -> ctree * 'a
 
+val print_hlist : hlist -> unit
 val print_ctree : ctree -> unit
 val print_ctree_all : ctree -> unit
