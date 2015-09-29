@@ -173,6 +173,19 @@ let hashval_from_addrstr b =
   let (_,_,x0,x1,x2,x3,x4,_) = big_int_md256 (frombase58 b) in
   (x0,x1,x2,x3,x4)
 
+let qedaddrstr_addr b =
+  let (_,p,x0,x1,x2,x3,x4,_) = big_int_md256 (frombase58 b) in
+  if p = 58l then
+    (0,x0,x1,x2,x3,x4)
+  else if p = 120l then
+    (1,x0,x1,x2,x3,x4)
+  else if p = 66l then
+    (2,x0,x1,x2,x3,x4)
+  else if p = 56l then
+    (3,x0,x1,x2,x3,x4)
+  else
+    raise (Failure "Not a Qeditas address")
+
 let hashval_btcaddrstr rm1 =
   let c0 = count0bytes rm1 in
   let s = Buffer.create 21 in

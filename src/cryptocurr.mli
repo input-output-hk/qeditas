@@ -19,4 +19,5 @@ val pubkey_hashval : big_int * big_int -> bool -> hashval
 val hashval_from_addrstr : string -> hashval
 val hashval_btcaddrstr : hashval -> string
 val addr_qedaddrstr : addr -> string
+val qedaddrstr_addr : string -> addr
 
