@@ -75,8 +75,10 @@ let sqr512 x = let y = big_int_of_int64 (Int64.shift_right x 9) in mult_big_int 
 
 let maximum_age = 16384L
 let maximum_age_sqr = sqr512 maximum_age
-let maturation = 512L
-let not_close_to_mature = 32L
+let reward_maturation = 512L
+let unlocked_maturation = 512L
+let locked_maturation = 8L
+let close_to_unlocked = 32L
 
 (*** base reward of 50 fraenks (50 trillion cants) like bitcoin, but assume the first 350000 blocks have passed. ***)
 let basereward = 50000000000000L
@@ -437,24 +439,33 @@ let sqr512_int64 (x:int64) =
   done;
   !i
 
-(*** coinage experiment ***)
 let coinage blkh bday obl v =
   if bday = 0L then (*** coins in the initial distribution start out at maximum age ***)
     mult_big_int maximum_age_sqr (big_int_of_int64 v)
   else
-    let mday = Int64.add bday maturation in
-    if mday >= blkh then (*** only start aging after it is mature -- initial distribution starts as mature ***)
-      zero_big_int
-    else
-      match obl with
-  | None ->
-      let a = Int64.sub blkh mday in
-      let a2 = if a < maximum_age then a else maximum_age in
-      mult_big_int (sqr512 a2) (big_int_of_int64 v)
-  | Some(_,_,_) -> (*** in this case it's locked until block height n ***)
-      let a = Int64.shift_left (Int64.sub blkh mday) 1 in (*** age twice as fast ***)
-      let a2 = if a < maximum_age then a else maximum_age in
-      mult_big_int (sqr512 a2) (big_int_of_int64 v)
+    match obl with
+    | None -> (*** unlocked ***)
+	let mday = Int64.add bday unlocked_maturation in
+	if mday >= blkh then (*** only start aging after it is mature ***)
+	  zero_big_int
+	else
+	  let a = Int64.sub blkh mday in (*** how many blocks since the output became mature ***)
+	  let a2 = if a < maximum_age then a else maximum_age in (*** up to maximum_age ***)
+	  mult_big_int (sqr512 a2) (big_int_of_int64 v) (*** multiply the currency units by (a2/512)^2 ***)
+    | Some(_,n,r) when r -> (*** in this case it's locked until block height n and is a reward ***)
+	let mday = Int64.add bday reward_maturation in
+	if mday >= blkh || Int64.add blkh close_to_unlocked >= n then (*** only start aging after it is mature and until it is close to unlocked ***)
+	  zero_big_int
+	else
+	  let a = Int64.sub blkh mday in (*** how many blocks since the output became mature ***)
+	  let a2 = if a < maximum_age then a else maximum_age in (*** up to maximum_age ***)
+	  mult_big_int (sqr512 a2) (big_int_of_int64 v) (*** multiply the currency units by (a2/512)^2 ***)
+    | Some(_,n,_) -> (*** in this case it's locked until block height n and is not a reward ***)
+	let mday = Int64.add bday locked_maturation in
+	if mday >= blkh || Int64.add blkh close_to_unlocked >= n then (*** only start aging after it is mature and until it is close to unlocked ***)
+	  zero_big_int
+	else
+	  mult_big_int maximum_age_sqr (big_int_of_int64 v) (*** always at maximum age during after it is mature and until it is close to unlocked ***)
 
 (***
  hitval computes a big_int by hashing the deltatime (seconds since the previous block), the stake's asset id and the current stake modifier.
@@ -517,16 +528,6 @@ let valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v) =
   check_hit blkh bhd bday obl v
     &&
   bhd.deltatime > 0l
-    &&
-  begin
-    match obl with
-    | None -> (*** stake belongs to staker ***)
-	(Int64.add bday maturation <= blkh || bday = 0L) (*** either it has aged enough or its part of the initial distribution (for bootstrapping) ***)
-    | Some(beta,n,_) -> (*** stake may be on loan for staking ***)
-	Int64.add bday maturation <= blkh
-	  &&
-	n > Int64.add blkh not_close_to_mature
-  end
     &&
   begin
     match bhd.stored with
@@ -645,8 +646,8 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
 	       v2 = v
 		 &&
 	       begin
-		 try (*** all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for maturation many blocks ***)
-		   ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh maturation -> false | _ -> true) remouts);
+		 try (*** all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for at least reward_maturation many blocks ***)
+		   ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh reward_maturation -> false | _ -> true) remouts);
 		   false
 		 with Not_found -> true
 	       end
@@ -654,7 +655,7 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
 	       false
 	 end
      | _ -> (*** stake has the default obligation ***)
-	 begin (*** the first output is optionally the stake with the default obligation (not a reward, immediately spendable) with all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for maturation many blocks ***)
+	 begin (*** the first output is optionally the stake with the default obligation (not a reward, immediately spendable) with all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for at least reward_maturation many blocks ***)
 	   match bd.stakeoutput with
 	   | (alpha2,(None,Currency(v2)))::remouts ->
 	       begin
@@ -663,13 +664,13 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
 		 v2 = v
 		   &&
 		 try
-		   ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh maturation -> false | _ -> true) remouts);
+		   ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh reward_maturation -> false | _ -> true) remouts);
 		   false
 		 with Not_found -> true
 	       end
 	   | _ ->
 	       try
-		 ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh maturation -> false | _ -> true) bd.stakeoutput);
+		 ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh reward_maturation -> false | _ -> true) bd.stakeoutput);
 		 false
 	       with Not_found -> true
 	 end
