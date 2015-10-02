@@ -13,9 +13,22 @@ do
 	    if [ ${v:0:9} == "-datadir=" ]; then
 		DATADIR=${v:9}
 	    else
-		echo "Unknown command line argument $v"
-		echo "configure can be given -bytecode (to only build bytecode), -qeditasdir=<dir> (to specify the install directory), and -datadir=<dir> (to specify the default directory for Qeditas data)"
-		exit 1
+		if [ ${v:0:14} == "-ctreedatadir=" ]; then
+		    CTREEDATADIR=${v:14}
+		else
+		    if [ ${v:0:14} == "-chaindatadir=" ]; then
+			CHAINDATADIR=${v:14}
+		    else
+			echo "Unknown command line argument $v"
+			echo "configure can be given the following arguments:"
+			echo "-bytecode (to only build bytecode)"
+			echo "-qeditasdir=<dir> (to specify the install directory)"
+			echo "-datadir=<dir> (to specify the default directory for Qeditas data)"
+			echo "-ctreedatadir=<dir> (to specify the default directory for saving ctree abbreviations)"
+			echo "-chaindatadir=<dir> (to specify the default directory for saving chain information)"
+			exit 1
+		    fi
+		fi
 	    fi
 	fi
     fi
@@ -26,7 +39,33 @@ fi
 if [ ! -d $DATADIR ]; then
     echo "$DATADIR is not a directory; create it first or give an existing directory with -datadir=<dir>"
 fi
+if [ ! $CTREEDATADIR ]; then
+    CTREEDATADIR=$DATADIR/ctrees
+    if [ ! -d $CTREEDATADIR ]; then
+	mkdir $CTREEDATADIR
+    fi
+fi
+if [ ! -d $CTREEDATADIR ]; then
+    echo "$CTREEDATADIR is not a directory; create it first"
+fi
+if [ ! $CHAINDATADIR ]; then
+    CHAINDATADIR=$DATADIR/chain
+    if [ ! -d $CHAINDATADIR ]; then
+	mkdir $CHAINDATADIR
+    fi
+fi
+if [ ! -d $CHAINDATADIR ]; then
+    echo "$CHAINDATADIR is not a directory; create it first"
+fi
 echo let datadir = ref \"$DATADIR\" > src/config.ml
+echo let ctreedatadir = ref \"$CTREEDATADIR\" >> src/config.ml
+echo let chaindatadir = ref \"$CHAINDATADIR\" >> src/config.ml
+echo let staking = ref false >> src/config.ml
+echo let ip = ref None >> src/config.ml
+echo let port = ref 20805 >> src/config.ml
+echo let rpcport = ref 20804 >> src/config.ml
+echo let socks = ref None >> src/config.ml
+echo let socksport = ref 9050 >> src/config.ml
 if [ $BYTECODE ]; then
     if [ $INSTALLDIR ]; then
 	echo "bytecode cannot be installed"

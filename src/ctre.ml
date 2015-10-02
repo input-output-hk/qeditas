@@ -495,7 +495,7 @@ let load_octree f =
   tr
 
 let remove_hashed_ctree r =
-  let fn = Filename.concat !datadir (hashval_hexstring r) in
+  let fn = Filename.concat !ctreedatadir (hashval_hexstring r) in
   if Sys.file_exists fn then Sys.remove fn
 
 let ensure_dir_exists d =
@@ -508,8 +508,8 @@ let ensure_dir_exists d =
   | _ -> raise (Failure("Problem with " ^ d))
 
 let save_hashed_ctree r (tr:ctree) =
-  ensure_dir_exists !datadir;
-  let fn = Filename.concat !datadir (hashval_hexstring r) in
+  ensure_dir_exists !ctreedatadir;
+  let fn = Filename.concat !ctreedatadir (hashval_hexstring r) in
 (*  Printf.printf "save_hashed_ctree %s %d\n" fn (ctree_numnodes tr); print_ctree tr; flush stdout; *)
   if not (Sys.file_exists fn) then
     begin
@@ -520,8 +520,8 @@ let save_hashed_ctree r (tr:ctree) =
     end
 
 let get_ctree_abbrev h =
-  ensure_dir_exists !datadir;
-  let fn = Filename.concat !datadir (hashval_hexstring h) in
+  ensure_dir_exists !ctreedatadir;
+  let fn = Filename.concat !ctreedatadir (hashval_hexstring h) in
   if Sys.file_exists fn then
     begin
       let ch = open_in_bin fn in
@@ -816,8 +816,8 @@ let rec process_unused_ctrees_2 a c1 c2 =
    | _ -> ()
 
 let archive_unused_ctrees blkh c1 c2 =
-  ensure_dir_exists !datadir;
-  let fn = Filename.concat !datadir "archive" in
+  ensure_dir_exists !ctreedatadir;
+  let fn = Filename.concat !ctreedatadir "archive" in
   if not (Sys.file_exists fn) then
     begin
       let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
