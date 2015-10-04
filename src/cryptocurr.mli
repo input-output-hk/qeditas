@@ -15,9 +15,11 @@ val base58 : big_int -> string
 val frombase58 : string -> big_int
 val qedwif : big_int -> bool -> string
 val privkey_from_wif : string -> big_int * bool
+val privkey_from_btcwif : string -> big_int * bool
 val pubkey_hashval : big_int * big_int -> bool -> hashval
 val hashval_from_addrstr : string -> hashval
 val hashval_btcaddrstr : hashval -> string
 val addr_qedaddrstr : addr -> string
 val qedaddrstr_addr : string -> addr
+val btcaddrstr_addr : string -> addr
 

@@ -121,7 +121,7 @@ let qedwif k compr =
   let (sh20,_,_,_,_,_,_,_) = sha256dstr (Buffer.contents s) in
   base58 (or_big_int (shift_left_big_int (or_big_int k (shift_left_big_int (big_int_of_int pre) 256)) 32) (int32_big_int_bits sh20 0))
 
-(* w : qeditas wif base58 string *)
+(* w : Qeditas wif base58 string *)
 (* return private key, big_int and a bool indicating if it's for the compressed pubkey *)
 (* Note: This doesn't check the checksum. *)
 let privkey_from_wif w =
@@ -136,6 +136,23 @@ let privkey_from_wif w =
     (k,false)
   else
     raise (Failure "Invalid Qeditas WIF")
+
+(* w : Bitcoin wif base58 string *)
+(* return private key, big_int and a bool indicating if it's for the compressed pubkey *)
+(* Note: This doesn't check the checksum. *)
+let privkey_from_btcwif w =
+  if String.length w > 1 && w.[0] = '5' then
+    let k =
+      and_big_int (shift_right_towards_zero_big_int (frombase58 w) 32)
+	(big_int_of_string "115792089237316195423570985008687907853269984665640564039457584007913129639935")
+    in
+    (k,false)
+  else
+    let k =
+      and_big_int (shift_right_towards_zero_big_int (frombase58 w) 40)
+	(big_int_of_string "115792089237316195423570985008687907853269984665640564039457584007913129639935")
+    in
+    (k,true)
 
 (* Computation of base 58 address strings *)
 
@@ -194,6 +211,15 @@ let qedaddrstr_addr b =
     (3,x0,x1,x2,x3,x4)
   else
     raise (Failure "Not a Qeditas address")
+
+let btcaddrstr_addr b =
+  let (_,p,x0,x1,x2,x3,x4,_) = big_int_md256 (frombase58 b) in
+  if p = 0l then
+    (0,x0,x1,x2,x3,x4)
+  else if p = 5l then
+    (1,x0,x1,x2,x3,x4)
+  else
+    raise (Failure "Not a Bitcoin address")
 
 let hashval_btcaddrstr rm1 =
   let c0 = count0bytes rm1 in
