@@ -77,6 +77,30 @@ let build_rpccall r =
 	 else
 	   Printf.printf "Private key for address %s added.\n" s
       )
+  | [c;scr] when c = "importp2sh" ->
+      (ImportP2sh(scr),
+       fun i ->
+	 let by = input_byte i in
+	 let s = rec_string i in
+	 if by = 0 then
+	   begin
+	     Printf.printf "P2sh script not imported:\n";
+	     Printf.printf "%s\n" s;
+	   end
+	 else
+	   Printf.printf "Script for %s imported.\n" s)
+  | [c;a;b;s] when c = "importendorsement" ->
+      (ImportEndorsement(a,b,s),
+       fun i ->
+	 let by = input_byte i in
+	 if by = 0 then
+	   begin
+	     Printf.printf "Endorsement not added:\n";
+	     let s = rec_string i in
+	     Printf.printf "%s\n" s;
+	   end
+	 else
+	   Printf.printf "Endorsement added.\n")
   | (c::_) -> 
       Printf.printf "Unknown rpc command %s.\n" c;
       raise (Failure "Unknown rpc command")

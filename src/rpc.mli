@@ -14,6 +14,8 @@ type rpccom =
   | ImportPrivKey of string
   | ImportWatchBtcAddr of string
   | ImportBtcPrivKey of string
+  | ImportP2sh of string
+  | ImportEndorsement of string * string * string
 
 val send_string : out_channel -> string -> unit
 val rec_string : in_channel -> string
@@ -27,7 +29,7 @@ val addnode : string -> int -> bool
 ***)
 
 val walletkeys : (big_int * bool * (big_int * big_int) * string * hashval * string) list ref
-val walletendorsements : (payaddr * payaddr * signat) list ref
+val walletendorsements : (payaddr * payaddr * int * signat) list ref
 val walletwatchaddrs : addr list ref
 
 val read_wallet : unit -> unit
