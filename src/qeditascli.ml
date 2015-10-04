@@ -22,6 +22,36 @@ let build_rpccall r =
 	 else
 	   Printf.printf "Node added.\n"
       )
+  | [c] when c = "getinfo" ->
+      (GetInfo,
+       fun i ->
+	 let s = rec_string i in
+	 output_string stdout s)
+  | [c;a] when c = "importwatchaddr" ->
+      (ImportWatchAddr(a),
+       fun i ->
+	 let by = input_byte i in
+	 if by = 0 then
+	   begin
+	     Printf.printf "Watch address not added:\n";
+	     let s = rec_string i in
+	     Printf.printf "%s\n" s;
+	   end
+	 else
+	   Printf.printf "Watch address added.\n")
+  | [c;k] when c = "importprivkey" ->
+      (ImportPrivKey(k),
+       fun i ->
+	 let by = input_byte i in
+	 let s = rec_string i in
+	 if by = 0 then
+	   begin
+	     Printf.printf "Private key not added.\n";
+	     Printf.printf "%s\n" s;
+	   end
+	 else
+	   Printf.printf "Private key for address %s added.\n" s
+      )
   | (c::_) -> 
       Printf.printf "Unknown rpc command %s.\n" c;
       raise (Failure "Unknown rpc command")

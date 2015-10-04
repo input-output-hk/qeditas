@@ -13,34 +13,47 @@ let fallbacknodes = [
 let init_rpcserver pidl =
   Printf.printf "Qeditas server starting\n";
   try
-    let s = openlocallistener !Config.rpcport 5 in
-    let cont = ref true in
-    while !cont do
-      try
-	Printf.printf "waiting for rpc connection\n"; flush stdout;
-	let (s2,a2) = Unix.accept s in
-	Printf.printf "got rpc connection\n"; flush stdout;
-	let s2in = Unix.in_channel_of_descr s2 in
-	let s2out = Unix.out_channel_of_descr s2 in
-	set_binary_mode_in s2in true;
-	set_binary_mode_out s2out true;
-	let r = rec_rpccom s2in in
-	if r = Stop then
-	  cont := false
-	else
-	  do_rpccom r s2out;
-	Unix.close s2
-      with
-      | Failure(m) -> Printf.printf "Failure of rpc: %s\n" m
-      | _ -> ()
-    done;
-    Printf.printf "Shutting down Qeditas rpc server.\n";
-    Unix.close s;
-    Unix.kill pidl 9;
+    let lockfn = Filename.concat !Config.datadir "lock" in
+    if Sys.file_exists lockfn then
+      Printf.printf "Qeditas server seems to already be running. If not, remove lock file by hand.\n"
+    else
+      begin
+	let s = openlocallistener !Config.rpcport 5 in
+	let pid = Unix.getpid () in
+	let pids = string_of_int pid in
+	let lo = open_out lockfn in
+	output lo pids 0 (String.length pids);
+	close_out lo;
+	let cont = ref true in
+	while !cont do
+	  try
+	    Printf.printf "waiting for rpc connection\n"; flush stdout;
+	    let (s2,a2) = Unix.accept s in
+	    Printf.printf "got rpc connection\n"; flush stdout;
+	    let s2in = Unix.in_channel_of_descr s2 in
+	    let s2out = Unix.out_channel_of_descr s2 in
+	    set_binary_mode_in s2in true;
+	    set_binary_mode_out s2out true;
+	    let r = rec_rpccom s2in in
+	    if r = Stop then
+	      cont := false
+	    else
+	      do_rpccom r s2out;
+	    flush s2out;
+	    Unix.close s2
+	  with
+	  | Failure(m) -> Printf.printf "Failure of rpc: %s\n" m
+	  | _ -> ()
+	done;
+	Printf.printf "Shutting down Qeditas rpc server.\n";
+	Unix.close s;
+	Unix.unlink lockfn
+      end;
+    List.iter (fun pid -> Unix.kill pid 9) pidl
   with
   | _ ->
       Printf.printf "Error. Could not start rpc server. Maybe port %d is temporarily blocked.\n" !Config.rpcport; flush stdout;
-      Unix.kill pidl 9;;
+      List.iter (fun pid -> Unix.kill pid 9) pidl
 
 let init_connlistener ip =
   try
@@ -49,7 +62,7 @@ let init_connlistener ip =
     while true do
       try
 	let (s2,a2) = Unix.accept s in
-	Printf.printf "got conn connection\n"; flush stdout;
+	Printf.printf "got remote connection\n"; flush stdout;
 	let s2in = Unix.in_channel_of_descr s2 in
 	let s2out = Unix.out_channel_of_descr s2 in
 	set_binary_mode_in s2in true;
@@ -105,15 +118,34 @@ let init_conns () =
       Printf.printf "Not listening for incoming connections.\nIf you want Qeditas to listen for incoming connections set ip to your ip address\nusing ip=... in qeditas.conf or -ip=... on the command line.\n"; flush stdout;
       ();;
 
+let init_staking () =
+  try
+    ()
+  with
+  | Failure(m) -> Printf.printf "%s\n" m;
+  | _ ->  Printf.printf "Staking process ended\n";;
+
 let pid = Unix.fork();;
 
 if (pid = 0) then
   begin
     process_config_args();
     process_config_file();
-    let pidl = Unix.fork() in
-    if (pidl = 0) then
+    let pidli = Unix.fork() in
+    if (pidli = 0) then
       init_conns()
     else
-      init_rpcserver pidl
+      begin
+	read_wallet();
+	if !Config.staking then
+	  begin
+	    let pidst = Unix.fork() in
+	    if (pidst = 0) then
+	      init_staking ()
+	    else
+	      init_rpcserver [pidli;pidst]
+	  end
+	else
+	  init_rpcserver [pidli]
+      end
   end;;
