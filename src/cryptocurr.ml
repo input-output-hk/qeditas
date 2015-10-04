@@ -121,12 +121,21 @@ let qedwif k compr =
   let (sh20,_,_,_,_,_,_,_) = sha256dstr (Buffer.contents s) in
   base58 (or_big_int (shift_left_big_int (or_big_int k (shift_left_big_int (big_int_of_int pre) 256)) 32) (int32_big_int_bits sh20 0))
 
-(* w : wif (of btc, ltc, ftc), base58 string *)
-(* return private key, big_int *)
-(* Note: This doesn't check that the input was a valid wif string. *)
+(* w : qeditas wif base58 string *)
+(* return private key, big_int and a bool indicating if it's for the compressed pubkey *)
+(* Note: This doesn't check the checksum. *)
 let privkey_from_wif w =
-  and_big_int (shift_right_towards_zero_big_int (frombase58 w) 32)
-    (big_int_of_string "115792089237316195423570985008687907853269984665640564039457584007913129639935")
+  let k =
+    and_big_int (shift_right_towards_zero_big_int (frombase58 w) 32)
+      (big_int_of_string "115792089237316195423570985008687907853269984665640564039457584007913129639935")
+  in
+  let pre = int_of_big_int (shift_right_towards_zero_big_int (frombase58 w) 288) in
+  if pre = 1288 then
+    (k,true)
+  else if pre = 542 then
+    (k,false)
+  else
+    raise (Failure "Invalid Qeditas WIF")
 
 (* Computation of base 58 address strings *)
 
