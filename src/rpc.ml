@@ -19,6 +19,8 @@ type rpccom =
   | GetInfo
   | ImportWatchAddr of string
   | ImportPrivKey of string
+  | ImportWatchBtcAddr of string
+  | ImportBtcPrivKey of string
 
 let send_string c x =
   let l = String.length x in
@@ -54,6 +56,12 @@ let send_rpccom c r =
     | ImportPrivKey(w) ->
 	output_byte c 4;
 	send_string c w
+    | ImportWatchBtcAddr(a) ->
+	output_byte c 5;
+	send_string c a
+    | ImportBtcPrivKey(w) ->
+	output_byte c 6;
+	send_string c w
     | _ -> ()
   end;
   flush c
@@ -72,6 +80,12 @@ let rec_rpccom c =
   | 4 ->
       let w = rec_string c in
       ImportPrivKey(w)
+  | 5 ->
+      let a = rec_string c in
+      ImportWatchBtcAddr(a)
+  | 6 ->
+      let w = rec_string c in
+      ImportBtcPrivKey(w)
   | _ -> raise (Failure "Unknown rpc command")
 
 let read_wallet () =
@@ -138,6 +152,34 @@ let addnode remip remport =
   | _ -> (*** unknown ***)
       false
 
+let privkey_in_wallet_p alpha =
+  let (p,x4,x3,x2,x1,x0) = alpha in
+  if p = 0 then
+    begin
+      try
+	ignore (List.find (fun (_,_,_,_,h,_) -> h = (x4,x3,x2,x1,x0)) !walletkeys);
+	true
+      with Not_found -> false
+    end
+  else
+    false
+
+let endorsement_in_wallet_p alpha =
+  let (p,x4,x3,x2,x1,x0) = alpha in
+  if p = 0 || p = 1 then
+    let b = (p = 1) in
+    begin
+      try
+	ignore (List.find (fun (beta,_,_) -> beta = (b,x4,x3,x2,x1,x0)) !walletendorsements);
+	true
+      with Not_found -> false
+    end
+  else
+    false
+
+let watchaddr_in_wallet_p alpha =
+  List.mem alpha !walletwatchaddrs
+
 let do_rpccom r c =
   match r with
   | AddNode(n) ->
@@ -203,6 +245,11 @@ let do_rpccom r c =
       begin
 	try
 	  let alpha = Cryptocurr.qedaddrstr_addr a in
+	  let a2 = Cryptocurr.addr_qedaddrstr alpha in
+	  if not (a2 = a) then raise (Failure (a ^ " is not a valid Qeditas address"));
+	  if privkey_in_wallet_p alpha then raise (Failure "Not adding as a watch address since the wallet already has the private key for this address.");
+	  if endorsement_in_wallet_p alpha then raise (Failure "Not adding as a watch address since the wallet already has an endorsement for this address.");
+	  if watchaddr_in_wallet_p alpha then raise (Failure "Watch address is already in wallet.");
 	  walletwatchaddrs := alpha::!walletwatchaddrs;
 	  write_wallet();
 	  output_byte c 1
@@ -218,14 +265,78 @@ let do_rpccom r c =
       begin
 	try
 	  let (k,b) = Cryptocurr.privkey_from_wif w in
+	  let w2 = Cryptocurr.qedwif k b in
+	  if not (w2 = w) then raise (Failure (w ^ " is not a valid Qeditas wif"));
 	  match Secp256k1.smulp k Secp256k1._g with
 	  | Some(x,y) ->
 	      let h = Cryptocurr.pubkey_hashval (x,y) b in
-	      let alpha = Cryptocurr.addr_qedaddrstr (Hash.hashval_p2pkh_addr h) in
-	      walletkeys := (k,b,(x,y),Cryptocurr.qedwif k b,h,alpha)::!walletkeys;
+	      let alpha = Hash.hashval_p2pkh_addr h in
+	      let a = Cryptocurr.addr_qedaddrstr alpha in
+	      if privkey_in_wallet_p alpha then raise (Failure "Private key already in wallet.");
+	      walletkeys := (k,b,(x,y),Cryptocurr.qedwif k b,h,a)::!walletkeys;
+	      walletendorsements := (*** remove endorsements if the wallet has the private key for the address, since it can now sign directly ***)
+		List.filter
+		  (fun (alpha2,beta,esg) -> not (alpha = payaddr_addr alpha2))
+		  !walletendorsements;
+	      walletwatchaddrs :=
+		List.filter
+		  (fun alpha2 -> not (alpha = alpha2))
+		  !walletwatchaddrs;
 	      write_wallet();
 	      output_byte c 1;
-	      send_string c alpha
+	      send_string c a
+	  | None ->
+	      raise (Failure "This private key does not give a public key.")
+	with
+	| Failure(m) ->
+	    output_byte c 0;
+	    send_string c m
+	| _ ->
+	    output_byte c 0;
+	    send_string c "Exception raised."
+      end
+  | ImportWatchBtcAddr(a) ->
+      begin
+	try
+	  let alpha = Cryptocurr.btcaddrstr_addr a in
+	  if privkey_in_wallet_p alpha then raise (Failure "Not adding as a watch address since the wallet already has the private key for this address.");
+	  if endorsement_in_wallet_p alpha then raise (Failure "Not adding as a watch address since the wallet already has an endorsement for this address.");
+	  if watchaddr_in_wallet_p alpha then raise (Failure "Watch address is already in wallet.");
+	  let alphaq = Cryptocurr.addr_qedaddrstr alpha in
+	  walletwatchaddrs := alpha::!walletwatchaddrs;
+	  write_wallet();
+	  output_byte c 1;
+	  send_string c alphaq
+	with
+	| Failure(m) ->
+	    output_byte c 0;
+	    send_string c m
+	| _ ->
+	    output_byte c 0;
+	    send_string c "Exception raised."
+      end
+  | ImportBtcPrivKey(w) ->
+      begin
+	try
+	  let (k,b) = Cryptocurr.privkey_from_btcwif w in
+	  match Secp256k1.smulp k Secp256k1._g with
+	  | Some(x,y) ->
+	      let h = Cryptocurr.pubkey_hashval (x,y) b in
+	      let alpha = Hash.hashval_p2pkh_addr h in
+	      let a = Cryptocurr.addr_qedaddrstr alpha in
+	      if privkey_in_wallet_p alpha then raise (Failure "Private key already in wallet.");
+	      walletkeys := (k,b,(x,y),Cryptocurr.qedwif k b,h,a)::!walletkeys;
+	      walletendorsements := (*** remove endorsements if the wallet has the private key for the address, since it can now sign directly ***)
+		List.filter
+		  (fun (alpha2,beta,esg) -> not (alpha = payaddr_addr alpha2))
+		  !walletendorsements;
+	      walletwatchaddrs :=
+		List.filter
+		  (fun alpha2 -> not (alpha = alpha2))
+		  !walletwatchaddrs;
+	      write_wallet();
+	      output_byte c 1;
+	      send_string c a
 	  | None ->
 	      raise (Failure "This private key does not give a public key.")
 	with

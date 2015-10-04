@@ -52,6 +52,31 @@ let build_rpccall r =
 	 else
 	   Printf.printf "Private key for address %s added.\n" s
       )
+  | [c;a] when c = "importwatchbtcaddr" ->
+      (ImportWatchBtcAddr(a),
+       fun i ->
+	 let by = input_byte i in
+	 let s = rec_string i in
+	 if by = 0 then
+	   begin
+	     Printf.printf "Watch address not added:\n";
+	     Printf.printf "%s\n" s;
+	   end
+	 else
+	   Printf.printf "Watch address %s added.\n" s)
+  | [c;k] when c = "importbtcprivkey" ->
+      (ImportBtcPrivKey(k),
+       fun i ->
+	 let by = input_byte i in
+	 let s = rec_string i in
+	 if by = 0 then
+	   begin
+	     Printf.printf "Private key not added.\n";
+	     Printf.printf "%s\n" s;
+	   end
+	 else
+	   Printf.printf "Private key for address %s added.\n" s
+      )
   | (c::_) -> 
       Printf.printf "Unknown rpc command %s.\n" c;
       raise (Failure "Unknown rpc command")

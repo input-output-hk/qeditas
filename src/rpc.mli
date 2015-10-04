@@ -12,6 +12,8 @@ type rpccom =
   | GetInfo
   | ImportWatchAddr of string
   | ImportPrivKey of string
+  | ImportWatchBtcAddr of string
+  | ImportBtcPrivKey of string
 
 val send_string : out_channel -> string -> unit
 val rec_string : in_channel -> string
