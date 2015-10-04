@@ -26,7 +26,6 @@ val stakemod_firstbit : stakemod -> bool
 type targetinfo = stakemod * stakemod * big_int
 
 val rewfn : int64 -> int64
-val coinage : int64 -> int64 -> obligation -> int64 -> big_int
 val hitval : int64 -> hashval -> stakemod -> big_int
 
 type postor =

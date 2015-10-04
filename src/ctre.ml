@@ -2,6 +2,7 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Big_int
 open Ser
 open Hash
 open Mathdata
@@ -11,6 +12,43 @@ open Tx
 open Config
 
 let intention_minage = 144L
+
+let sqr512 x = let y = big_int_of_int64 (Int64.shift_right x 9) in mult_big_int y y
+
+let maximum_age = 16384L
+let maximum_age_sqr = sqr512 maximum_age
+let reward_maturation = 512L
+let unlocked_maturation = 512L
+let locked_maturation = 8L
+let close_to_unlocked = 32L
+
+let coinage blkh bday obl v =
+  if bday = 0L then (*** coins in the initial distribution start out at maximum age ***)
+    mult_big_int maximum_age_sqr (big_int_of_int64 v)
+  else
+    match obl with
+    | None -> (*** unlocked ***)
+	let mday = Int64.add bday unlocked_maturation in
+	if mday >= blkh then (*** only start aging after it is mature ***)
+	  zero_big_int
+	else
+	  let a = Int64.sub blkh mday in (*** how many blocks since the output became mature ***)
+	  let a2 = if a < maximum_age then a else maximum_age in (*** up to maximum_age ***)
+	  mult_big_int (sqr512 a2) (big_int_of_int64 v) (*** multiply the currency units by (a2/512)^2 ***)
+    | Some(_,n,r) when r -> (*** in this case it's locked until block height n and is a reward ***)
+	let mday = Int64.add bday reward_maturation in
+	if mday >= blkh || Int64.add blkh close_to_unlocked >= n then (*** only start aging after it is mature and until it is close to unlocked ***)
+	  zero_big_int
+	else
+	  let a = Int64.sub blkh mday in (*** how many blocks since the output became mature ***)
+	  let a2 = if a < maximum_age then a else maximum_age in (*** up to maximum_age ***)
+	  mult_big_int (sqr512 a2) (big_int_of_int64 v) (*** multiply the currency units by (a2/512)^2 ***)
+    | Some(_,n,_) -> (*** in this case it's locked until block height n and is not a reward ***)
+	let mday = Int64.add bday locked_maturation in
+	if mday >= blkh || Int64.add blkh close_to_unlocked >= n then (*** only start aging after it is mature and until it is close to unlocked ***)
+	  zero_big_int
+	else
+	  mult_big_int maximum_age_sqr (big_int_of_int64 v) (*** always at maximum age during after it is mature and until it is close to unlocked ***)
 
 type hlist = HHash of hashval | HNil | HCons of asset * hlist
 
@@ -194,6 +232,208 @@ let rec print_hlist hl =
       begin
 	Printf.printf "%s [%Ld]\n" (hashval_hexstring aid) bday;
 	print_hlist hr
+      end
+
+let right_trim c s =
+  let l = ref ((String.length s) - 1) in
+  while (!l > 0 && s.[!l] = c) do
+    decr l
+  done;
+  String.sub s 0 (!l+1)
+
+let fraenks_string v =
+  let f = Int64.div v 1000000000000L in
+  let d = Int64.sub v f in
+  let ds = Int64.to_string d in
+  let l = String.length ds in
+  if l < 12 then
+    right_trim '0' ((Int64.to_string f) ^ "." ^ (String.make (12-l) '0') ^ ds)
+  else
+    right_trim '0' ((Int64.to_string f) ^ "." ^ ds)
+
+let rec print_hlist_to_buffer sb blkh hl =
+  match hl with
+  | HHash(h) -> Printf.printf "...%s...\n" (hashval_hexstring h)
+  | HNil -> ()
+  | HCons((aid,bday,None,Currency(v)),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	Buffer.add_string sb "] Currency ";
+	Buffer.add_string sb (fraenks_string v);
+	Buffer.add_string sb "; coinage ";
+	Buffer.add_string sb (string_of_big_int (coinage blkh bday None v));
+	Buffer.add_char sb '\n';
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,((Some(delta,locktime,b)) as obl),Currency(v)),hr) when b ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	if locktime < blkh then
+	  Buffer.add_string sb "] Currency (Reward, Locked) "
+	else
+	  Buffer.add_string sb "] Currency (Reward) ";
+	Buffer.add_string sb (fraenks_string v);
+	Buffer.add_string sb " spendable by ";
+	Buffer.add_string sb (addr_qedaddrstr (payaddr_addr delta));
+	if locktime < blkh then
+	  begin
+	    Buffer.add_string sb " unlocks at height ";
+	    Buffer.add_string sb (Int64.to_string locktime);
+	    Buffer.add_string sb " in ";
+	    Buffer.add_string sb (Int64.to_string (Int64.sub blkh locktime));
+	    Buffer.add_string sb " blocks ";
+	  end;
+	Buffer.add_string sb "; coinage ";
+	Buffer.add_string sb (string_of_big_int (coinage blkh bday obl v));
+	Buffer.add_char sb '\n';
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,((Some(delta,locktime,b)) as obl),Currency(v)),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	if locktime < blkh then
+	  Buffer.add_string sb "] Currency (Locked) "
+	else
+	  Buffer.add_string sb "] Currency ";
+	Buffer.add_string sb (fraenks_string v);
+	Buffer.add_string sb " spendable by ";
+	Buffer.add_string sb (addr_qedaddrstr (payaddr_addr delta));
+	if locktime < blkh then
+	  begin
+	    Buffer.add_string sb " unlocks at height ";
+	    Buffer.add_string sb (Int64.to_string locktime);
+	    Buffer.add_string sb " in ";
+	    Buffer.add_string sb (Int64.to_string (Int64.sub blkh locktime));
+	    Buffer.add_string sb " blocks ";
+	  end;
+	Buffer.add_string sb "; coinage ";
+	Buffer.add_string sb (string_of_big_int (coinage blkh bday obl v));
+	Buffer.add_char sb '\n';
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,obl,Bounty(v)),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	Buffer.add_string sb "] Bounty ";
+	Buffer.add_string sb (fraenks_string v);
+	Buffer.add_char sb '\n';
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,obl,OwnsObj(gamma,Some(r))),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	Buffer.add_string sb "] owned object ";
+	Buffer.add_string sb (addr_qedaddrstr (payaddr_addr gamma));
+	Buffer.add_string sb " each right costs ";
+	Buffer.add_string sb (fraenks_string r);
+	Buffer.add_char sb '\n';
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,obl,OwnsObj(gamma,None)),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	Buffer.add_string sb "] owned object ";
+	Buffer.add_string sb (addr_qedaddrstr (payaddr_addr gamma));
+	Buffer.add_string sb " rights cannot be purchased\n";
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,obl,OwnsProp(gamma,Some(r))),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	Buffer.add_string sb "] owned prop ";
+	Buffer.add_string sb (addr_qedaddrstr (payaddr_addr gamma));
+	Buffer.add_string sb " each right costs ";
+	Buffer.add_string sb (fraenks_string r);
+	Buffer.add_char sb '\n';
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,obl,OwnsProp(gamma,None)),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	Buffer.add_string sb "] owned prop ";
+	Buffer.add_string sb (addr_qedaddrstr (payaddr_addr gamma));
+	Buffer.add_string sb " rights cannot be purchased\n";
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,obl,OwnsNegProp),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	Buffer.add_string sb "] owned negation of prop\n";
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,obl,RightsObj(gamma,r)),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	Buffer.add_string sb "] ";
+	Buffer.add_string sb (Int64.to_string r);
+	Buffer.add_string sb " rights to use object ";
+	Buffer.add_string sb (addr_qedaddrstr (termaddr_addr gamma));
+	Buffer.add_char sb '\n';
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,obl,RightsProp(gamma,r)),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	Buffer.add_string sb "] ";
+	Buffer.add_string sb (Int64.to_string r);
+	Buffer.add_string sb " rights to use prop ";
+	Buffer.add_string sb (addr_qedaddrstr (termaddr_addr gamma));
+	Buffer.add_char sb '\n';
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,obl,Marker),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	Buffer.add_string sb "] Marker\n";
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,obl,TheoryPublication(gamma,nonce,d)),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	Buffer.add_string sb "] Theory\n";
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,obl,SignaPublication(gamma,nonce,th,d)),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	Buffer.add_string sb "] Signature\n";
+	print_hlist_to_buffer sb blkh hr
+      end
+  | HCons((aid,bday,obl,DocPublication(gamma,nonce,th,d)),hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " [";
+	Buffer.add_string sb (Int64.to_string bday);
+	Buffer.add_string sb "] Document\n";
+	print_hlist_to_buffer sb blkh hr
       end
 
 let rec print_ctree_all_r c n br =

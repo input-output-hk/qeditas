@@ -2,10 +2,14 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Big_int
 open Hash
 open Mathdata
 open Assets
 open Tx
+
+val reward_maturation : int64
+val coinage : int64 -> int64 -> obligation -> int64 -> big_int
 
 type hlist = HHash of hashval | HNil | HCons of asset * hlist
 
@@ -80,5 +84,6 @@ val seo_ctree : (int -> int -> 'a -> 'a) -> ctree -> 'a -> 'a
 val sei_ctree : (int -> 'a -> int * 'a) -> 'a -> ctree * 'a
 
 val print_hlist : hlist -> unit
+val print_hlist_to_buffer : Buffer.t -> int64 -> hlist -> unit
 val print_ctree : ctree -> unit
 val print_ctree_all : ctree -> unit

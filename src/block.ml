@@ -71,15 +71,6 @@ set_genesis_stakemods "0000000000000000000000000000000000000000";;
 let genesistarget = ref (big_int_of_string "1000000000")
 let genesisledgerroot : hashval ref = ref (0l,0l,0l,0l,0l)
 
-let sqr512 x = let y = big_int_of_int64 (Int64.shift_right x 9) in mult_big_int y y
-
-let maximum_age = 16384L
-let maximum_age_sqr = sqr512 maximum_age
-let reward_maturation = 512L
-let unlocked_maturation = 512L
-let locked_maturation = 8L
-let close_to_unlocked = 32L
-
 (*** base reward of 50 fraenks (50 trillion cants) like bitcoin, but assume the first 350000 blocks have passed. ***)
 let basereward = 50000000000000L
 
@@ -429,43 +420,6 @@ let check_postor_pdoc tm csm mtar alpha beta m =
       &&
     lt_big_int (hitval tm betah csm) mtar
   with InappropriatePostor -> false
-
-let sqr512_int64 (x:int64) =
-  let y = ref x in
-  let i = ref 0 in
-  while !y > 0L do
-    incr i;
-    y := Int64.shift_right_logical !y 1
-  done;
-  !i
-
-let coinage blkh bday obl v =
-  if bday = 0L then (*** coins in the initial distribution start out at maximum age ***)
-    mult_big_int maximum_age_sqr (big_int_of_int64 v)
-  else
-    match obl with
-    | None -> (*** unlocked ***)
-	let mday = Int64.add bday unlocked_maturation in
-	if mday >= blkh then (*** only start aging after it is mature ***)
-	  zero_big_int
-	else
-	  let a = Int64.sub blkh mday in (*** how many blocks since the output became mature ***)
-	  let a2 = if a < maximum_age then a else maximum_age in (*** up to maximum_age ***)
-	  mult_big_int (sqr512 a2) (big_int_of_int64 v) (*** multiply the currency units by (a2/512)^2 ***)
-    | Some(_,n,r) when r -> (*** in this case it's locked until block height n and is a reward ***)
-	let mday = Int64.add bday reward_maturation in
-	if mday >= blkh || Int64.add blkh close_to_unlocked >= n then (*** only start aging after it is mature and until it is close to unlocked ***)
-	  zero_big_int
-	else
-	  let a = Int64.sub blkh mday in (*** how many blocks since the output became mature ***)
-	  let a2 = if a < maximum_age then a else maximum_age in (*** up to maximum_age ***)
-	  mult_big_int (sqr512 a2) (big_int_of_int64 v) (*** multiply the currency units by (a2/512)^2 ***)
-    | Some(_,n,_) -> (*** in this case it's locked until block height n and is not a reward ***)
-	let mday = Int64.add bday locked_maturation in
-	if mday >= blkh || Int64.add blkh close_to_unlocked >= n then (*** only start aging after it is mature and until it is close to unlocked ***)
-	  zero_big_int
-	else
-	  mult_big_int maximum_age_sqr (big_int_of_int64 v) (*** always at maximum age during after it is mature and until it is close to unlocked ***)
 
 (***
  hitval computes a big_int by hashing the deltatime (seconds since the previous block), the stake's asset id and the current stake modifier.
