@@ -87,8 +87,7 @@ let extract_ip_and_port ipp =
 
 let connectpeer_socks4 proxyport ip port =
   let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-  let ia = Unix.inet_addr_of_string "127.0.0.1" in
-  Unix.connect s (Unix.ADDR_INET(ia, proxyport));
+  Unix.connect s (Unix.ADDR_INET(Unix.inet_addr_loopback, proxyport));
   let sin = Unix.in_channel_of_descr s in
   let sout = Unix.out_channel_of_descr s in
   set_binary_mode_in sin true;
