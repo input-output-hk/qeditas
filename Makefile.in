@@ -131,7 +131,7 @@ bin/net.cmx: src/net.ml bin/net.cmi bin/assets.cmx bin/tx.cmx bin/ctre.cmx bin/b
 bin/setconfig.cmx: src/setconfig.ml bin/setconfig.cmi bin/config.cmx
 	$(OCAMLOPT) -I bin -o bin/setconfig.cmx -c src/setconfig.ml
 
-bin/rpc.cmx: src/rpc.ml bin/rpc.cmi bin/config.cmx
+bin/rpc.cmx: src/rpc.ml bin/rpc.cmi bin/config.cmx bin/ser.cmx bin/hash.cmx bin/signat.cmx bin/net.cmx bin/ctre.cmx bin/cryptocurr.cmx
 	$(OCAMLOPT) -I bin -o bin/rpc.cmx -c src/rpc.ml
 
 bin/qeditasd.cmx: src/qeditasd.ml bin/assets.cmx bin/tx.cmx bin/ctre.cmx bin/block.cmx bin/net.cmx bin/setconfig.cmx bin/rpc.cmx
@@ -197,7 +197,7 @@ bin/net.cmo: src/net.ml bin/net.cmi bin/assets.cmo bin/tx.cmo bin/ctre.cmo bin/b
 bin/setconfig.cmo: src/setconfig.ml bin/setconfig.cmi bin/config.cmo
 	$(OCAMLC) -I bin -o bin/setconfig.cmo -c src/setconfig.ml
 
-bin/rpc.cmo: src/rpc.ml bin/rpc.cmi
+bin/rpc.cmo: src/rpc.ml bin/rpc.cmi bin/config.cmo bin/ser.cmo bin/hash.cmo bin/signat.cmo bin/net.cmo bin/ctre.cmo bin/cryptocurr.cmo
 	$(OCAMLC) -I bin -o bin/rpc.cmo -c src/rpc.ml
 
 bin/qeditasd.cmo: src/qeditasd.ml bin/assets.cmo bin/tx.cmo bin/ctre.cmo bin/block.cmo bin/net.cmo bin/setconfig.cmo bin/rpc.cmo
