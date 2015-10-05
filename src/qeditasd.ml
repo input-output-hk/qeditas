@@ -135,6 +135,7 @@ let initialize_conn_2 s sin sout =
     begin
       output_byte sout 1; (*** connection accepted ***)
       (*** handshake, empty for now ***)
+      flush sout;
       conns := (s,sin,sout,Buffer.create 100,ref true)::!conns
     end
   else
@@ -164,11 +165,15 @@ let search_for_conns () =
 		  let s = connectpeer ip port in
 		  initialize_conn s
 	      | Some(4) ->
+		  Printf.printf "here 1\n"; flush stdout;
 		  let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
+		  Printf.printf "here 2\n"; flush stdout;
 		  initialize_conn_2 s sin sout
 	      | Some(5) -> () (*** to do ***)
 	      | _ -> ()
-	    with _ -> ()
+	    with
+	    | RequestRejected -> Printf.printf "here RequestRejected\n"; flush stdout;
+	    | _ -> Printf.printf "here 3\n"; flush stdout;
 	  end
 	)
       fallbacknodes;;

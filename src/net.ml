@@ -54,7 +54,7 @@ let extract_ipv4 ip =
   let x = Array.make 4 0 in
   let j = ref 0 in
   for i = 0 to String.length ip - 1 do
-    let c = Char.code ip.[1] in
+    let c = Char.code ip.[i] in
     if c = 46 && !j < 3 then
       incr j
     else if c >= 48 && c < 58 then
@@ -114,8 +114,9 @@ let connectpeer_socks4 proxyport ip port =
   output_byte sout x3;
   output_byte sout 0;
   flush sout;
-  let _ = input_byte sin in
+  let z = input_byte sin in
   let cd = input_byte sin in
+  Printf.printf "%d %d\n" z cd; flush stdout;
   if not (cd = 90) then raise RequestRejected;
   for i = 1 to 6 do
     ignore (input_byte sin)
