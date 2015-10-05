@@ -37,12 +37,6 @@ let input_byte_nohang c tm =
       Some(b)
   with Hung -> None
 
-let openlocallistener port numconns =
-  let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-  Unix.bind s (Unix.ADDR_INET(Unix.inet_addr_loopback, port));
-  Unix.listen s numconns;
-  s
-
 let openlistener ip port numconns =
   let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
   let ia = Unix.inet_addr_of_string ip in
@@ -50,24 +44,11 @@ let openlistener ip port numconns =
   Unix.listen s numconns;
   s
 
-let connectlocal port =
-  let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-  Unix.connect s (Unix.ADDR_INET(Unix.inet_addr_loopback, port));
-  let sin = Unix.in_channel_of_descr s in
-  let sout = Unix.out_channel_of_descr s in
-  set_binary_mode_in sin true;
-  set_binary_mode_out sout true;
-  (s,sin,sout)
-
 let connectpeer ip port =
   let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
   let ia = Unix.inet_addr_of_string ip in
   Unix.connect s (Unix.ADDR_INET(ia, port));
-  let sin = Unix.in_channel_of_descr s in
-  let sout = Unix.out_channel_of_descr s in
-  set_binary_mode_in sin true;
-  set_binary_mode_out sout true;
-  (s,sin,sout)
+  s
 
 let extract_ipv4 ip =
   let x = Array.make 4 0 in

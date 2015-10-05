@@ -162,6 +162,9 @@ let write_wallet () =
   close_out s
 
 let addnode remip remport =
+  false
+(***
+let addnode remip remport =
   match !socks with
   | None -> (*** no proxy ***)
       begin
@@ -182,6 +185,7 @@ let addnode remip remport =
       false
   | _ -> (*** unknown ***)
       false
+***)
 
 let privkey_in_wallet_p alpha =
   let (p,x4,x3,x2,x1,x0) = alpha in

@@ -109,6 +109,8 @@ let build_rpccall r =
       raise (Failure "Missing rpc command");;
 
 let process_rpccall r f =
+  ();;
+(***
   try
     let (s,si,so) = connectlocal !Config.rpcport in
     send_rpccom so r;
@@ -126,6 +128,7 @@ let process_rpccall r f =
       Printf.printf "Could not connect to Qeditas rpc server.\nConnection refused. %s; %s\n" m1 m2;
   | Unix.Unix_error(_,m1,m2) ->
       Printf.printf "Could not connect to Qeditas rpc server.\n%s; %s\n" m1 m2;;
+***)
 
 let a = Array.length Sys.argv;;
 let rpccallr = ref [];;

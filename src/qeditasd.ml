@@ -10,6 +10,7 @@ let fallbacknodes = [
 "108.61.219.125:20805"
 ];;
 
+(***
 let init_rpcserver pidl =
   Printf.printf "Qeditas server starting\n";
   try
@@ -125,20 +126,16 @@ let init_staking () =
   | Failure(m) -> Printf.printf "%s\n" m;
   | _ ->  Printf.printf "Staking process ended\n";;
 
-let pid = Unix.fork();;
+***)
 
 let conns = ref [];;
 
-let initialize_conn s a =
-  let sin = Unix.in_channel_of_descr s in
-  let sout = Unix.out_channel_of_descr s in
-  set_binary_mode_in sin true;
-  set_binary_mode_out sout true;
+let initialize_conn_2 s sin sout =
   if List.length !conns < 10 then (*** Should be Config.maxconns ***)
     begin
       output_byte sout 1; (*** connection accepted ***)
       (*** handshake, empty for now ***)
-      conns := (s,a,sin,sout,Buffer.create 100,ref true)::!conns
+      conns := (s,sin,sout,Buffer.create 100,ref true)::!conns
     end
   else
     begin
@@ -147,7 +144,36 @@ let initialize_conn s a =
       Unix.close s
     end;;
 
-if (pid = 0) then
+let initialize_conn s =
+  let sin = Unix.in_channel_of_descr s in
+  let sout = Unix.out_channel_of_descr s in
+  set_binary_mode_in sin true;
+  set_binary_mode_out sout true;
+  initialize_conn_2 s sin sout;;
+
+let search_for_conns () =
+  if !conns = [] then
+    List.iter
+      (fun n ->
+	let (ip,port) = extract_ip_and_port n in
+	if not (!Config.ip = Some(ip)) then (*** if this is a fallback node, do not connect to itself ***)
+	  begin
+	    try
+	      match !Config.socks with
+	      | None ->
+		  let s = connectpeer ip port in
+		  initialize_conn s
+	      | Some(4) ->
+		  let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
+		  initialize_conn_2 s sin sout
+	      | Some(5) -> () (*** to do ***)
+	      | _ -> ()
+	    with _ -> ()
+	  end
+	)
+      fallbacknodes;;
+
+let main () =
   begin
     process_config_args();
     process_config_file();
@@ -164,7 +190,7 @@ if (pid = 0) then
 	  None
     in
     sethungsignalhandler();
-    (*** should search for connections here ***)
+    search_for_conns ();
     while true do (*** main process loop ***)
       begin (*** possibly check for a new incomming connection ***)
 	match l with
@@ -174,21 +200,23 @@ if (pid = 0) then
 	      | Some(s,a) ->
 		  Printf.printf "got remote connection\n";
 		  flush stdout;
-		  initialize_conn s a
+		  initialize_conn s
 	      | None -> ()
 	    end
 	| None -> ()
       end;
       (*** check each connection for a possible message ***)
       List.iter
-	(fun (s,a,sin,sout,sb,alive) ->
+	(fun (s,sin,sout,sb,alive) ->
 	  try
 	    match input_byte_nohang sin 0.1 with
-	    | Some(b) -> Buffer.add_char sb (Char.chr b) (*** oversimplified, need to know when the message ended in real version; also should keep reading as long as there is time and input ***)
+	    | Some(b) -> Printf.printf "got %d\n" b; flush stdout; Buffer.add_char sb (Char.chr b) (*** oversimplified, need to know when the message ended in real version; also should keep reading as long as there is time and input ***)
 	    | None -> ()
 	  with _ -> alive := false
 	)
 	!conns;
-      conns := List.filter (fun (s,a,sin,sout,sb,alive) -> !alive) !conns
+      conns := List.filter (fun (s,sin,sout,sb,alive) -> !alive) !conns
     done
   end;;
+
+main ();;
