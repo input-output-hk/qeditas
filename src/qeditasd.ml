@@ -127,25 +127,68 @@ let init_staking () =
 
 let pid = Unix.fork();;
 
+let conns = ref [];;
+
+let initialize_conn s a =
+  let sin = Unix.in_channel_of_descr s in
+  let sout = Unix.out_channel_of_descr s in
+  set_binary_mode_in sin true;
+  set_binary_mode_out sout true;
+  if List.length !conns < 10 then (*** Should be Config.maxconns ***)
+    begin
+      output_byte sout 1; (*** connection accepted ***)
+      (*** handshake, empty for now ***)
+      conns := (s,a,sin,sout,Buffer.create 100,ref true)::!conns
+    end
+  else
+    begin
+      output_byte sout 0; (*** connection rejected ***)
+      flush sout;
+      Unix.close s
+    end;;
+
 if (pid = 0) then
   begin
     process_config_args();
     process_config_file();
-    let pidli = Unix.fork() in
-    if (pidli = 0) then
-      init_conns()
-    else
-      begin
-	read_wallet();
-	if !Config.staking then
-	  begin
-	    let pidst = Unix.fork() in
-	    if (pidst = 0) then
-	      init_staking ()
-	    else
-	      init_rpcserver [pidli;pidst]
-	  end
-	else
-	  init_rpcserver [pidli]
-      end
+    let l = 
+      match !Config.ip with
+      | Some(ip) ->
+	  let l = openlistener ip !Config.port 5 in
+	  Printf.printf "Listening for incoming connections.\n";
+	  flush stdout;
+	  Some(l)
+      | None ->
+	  Printf.printf "Not listening for incoming connections.\nIf you want Qeditas to listen for incoming connections set ip to your ip address\nusing ip=... in qeditas.conf or -ip=... on the command line.\n";
+	  flush stdout;
+	  None
+    in
+    sethungsignalhandler();
+    (*** should search for connections here ***)
+    while true do (*** main process loop ***)
+      begin (*** possibly check for a new incomming connection ***)
+	match l with
+	| Some(l) ->
+	    begin
+	      match accept_nohang l 0.1 with
+	      | Some(s,a) ->
+		  Printf.printf "got remote connection\n";
+		  flush stdout;
+		  initialize_conn s a
+	      | None -> ()
+	    end
+	| None -> ()
+      end;
+      (*** check each connection for a possible message ***)
+      List.iter
+	(fun (s,a,sin,sout,sb,alive) ->
+	  try
+	    match input_byte_nohang sin 0.1 with
+	    | Some(b) -> Buffer.add_char sb (Char.chr b) (*** oversimplified, need to know when the message ended in real version; also should keep reading as long as there is time and input ***)
+	    | None -> ()
+	  with _ -> alive := false
+	)
+	!conns;
+      conns := List.filter (fun (s,a,sin,sout,sb,alive) -> !alive) !conns
+    done
   end;;

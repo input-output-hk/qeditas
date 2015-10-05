@@ -8,6 +8,34 @@ open Ctre
 open Block
 
 exception RequestRejected
+exception Hung
+
+let sethungsignalhandler () =
+  Sys.set_signal Sys.sigalrm (Sys.Signal_handle (fun _ -> raise Hung));;
+  
+let accept_nohang s tm =
+  try
+    ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = tm });
+    let (s2,a2) = Unix.accept s in
+    try
+      ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
+      Some(s2,a2)
+    with Hung -> (** in case the alarm is signaled after the connection was accepted but before the function returned, catch Hung and continue **)
+      ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
+      Some(s2,a2)
+  with Hung -> None
+
+let input_byte_nohang c tm =
+  try
+    ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = tm });
+    let b = input_byte c in
+    try
+      ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
+      Some(b)
+    with Hung -> (** in case the alarm is signaled after the connection was accepted but before the function returned, catch Hung and continue **)
+      ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
+      Some(b)
+  with Hung -> None
 
 let openlocallistener port numconns =
   let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
