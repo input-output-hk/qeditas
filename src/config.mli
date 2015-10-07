@@ -7,7 +7,9 @@ val ctreedatadir : string ref
 val chaindatadir : string ref
 val staking : bool ref
 val ip : string option ref
+val ipv6 : bool ref
 val port : int ref
-val rpcport : int ref
 val socks : int option ref
 val socksport : int ref
+val maxconns : int ref
+

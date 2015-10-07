@@ -8,12 +8,13 @@ let stringconfigvars = [
 ("chaindatadir",Config.chaindatadir)
 ];;
 let boolconfigvars = [
-("staking",Config.staking)
+("staking",Config.staking);
+("ipv6",Config.ipv6)
 ];;
 let intconfigvars = [
 ("port",Config.port);
-("rpcport",Config.rpcport);
-("socksport",Config.socksport)
+("socksport",Config.socksport);
+("maxconns",Config.maxconns)
 ];;
 let stringoptionconfigvars = [
 ("ip",Config.ip)

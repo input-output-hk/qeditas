@@ -62,10 +62,11 @@ echo let ctreedatadir = ref \"$CTREEDATADIR\" >> src/config.ml
 echo let chaindatadir = ref \"$CHAINDATADIR\" >> src/config.ml
 echo let staking = ref false >> src/config.ml
 echo let ip = ref None >> src/config.ml
+echo let ipv6 = ref false >> src/config.ml
 echo let port = ref 20805 >> src/config.ml
-echo let rpcport = ref 20804 >> src/config.ml
 echo let socks = ref None >> src/config.ml
 echo let socksport = ref 9050 >> src/config.ml
+echo let maxconns = ref 200 >> src/config.ml
 if [ $BYTECODE ]; then
     if [ $INSTALLDIR ]; then
 	echo "bytecode cannot be installed"
