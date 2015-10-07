@@ -187,7 +187,8 @@ let main () =
 		    if initialize_conn_accept s then
 		      Printf.printf "accepted remote connection\n"
 		    else
-		      Printf.printf "rejected remote connection\n"
+		      Printf.printf "rejected remote connection\n";
+		    flush stdout;
 		| None -> ()
 	      end
 	  | None -> ()
@@ -205,7 +206,7 @@ let main () =
 		    | Some(lptm) ->
 			if (Int64.sub tm lptm) > 30L then (*** If expecting a pong and haven't gotten it, then drop connection. ***)
 			  begin
-			    Printf.printf "Ping-Pong failed. Dropping connection.\n";
+			    Printf.printf "Ping-Pong failed. Dropping connection.\n"; flush stdout;
 			    alive := false
 			  end
 		    | None -> ()
@@ -227,7 +228,7 @@ let main () =
 		end
 	    with
 	    | End_of_file ->
-		Printf.printf "Lost connection.\n";
+		Printf.printf "Lost connection.\n"; flush stdout;
 		alive := false
 	    | exn -> (*** unexpected ***)
 		Printf.printf "Other exception: %s\nNot dropping connection yet.\n" (Printexc.to_string exn);
