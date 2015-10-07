@@ -221,6 +221,25 @@ type blockheadersig = {
 
 type blockheader = blockheaderdata * blockheadersig
 
+(*** a fake blockheader to use when some data structure needs to be initialized ***)
+let fake_blockheader : blockheader =
+  ({ prevblockhash = None;
+     newtheoryroot = None;
+     newsignaroot = None;
+     newledgerroot = (0l,0l,0l,0l,0l);
+     stakeaddr = (0l,0l,0l,0l,0l);
+     stakeassetid = (0l,0l,0l,0l,0l);
+     stored = None;
+     timestamp = 0L;
+     deltatime = 0l;
+     tinfo = ((0L,0L,0L,0L),(0L,0L,0L,0L),zero_big_int);
+     prevledger = CHash(0l,0l,0l,0l,0l);
+   },
+   { blocksignat = (zero_big_int,zero_big_int);
+     blocksignatrecid = 0;
+     blocksignatfcomp = false;
+   })
+
 let seo_blockheaderdata o bh c =
   let c = seo_option seo_hashval o bh.prevblockhash c in
   let c = seo_option seo_hashval o bh.newtheoryroot c in

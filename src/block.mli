@@ -54,6 +54,8 @@ type blockheadersig = {
 
 type blockheader = blockheaderdata * blockheadersig
 
+val fake_blockheader : blockheader
+
 val seo_blockheader : (int -> int -> 'a -> 'a) -> blockheader -> 'a -> 'a
 val sei_blockheader : (int -> 'a -> int * 'a) -> 'a -> blockheader * 'a
 

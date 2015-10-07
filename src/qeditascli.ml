@@ -4,7 +4,7 @@
 
 open Net;;
 open Setconfig;;
-open Rpc;;
+open Commands;;
 
 process_config_args();;
 process_config_file();;
