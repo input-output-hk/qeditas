@@ -42,9 +42,9 @@ let initialize_conn_accept s =
       let sout = Unix.out_channel_of_descr s in
       set_binary_mode_in sin true;
       set_binary_mode_out sout true;
-      let m2 = rec_msg sin in
+      let m2 = rec_msg_nohang sin 2.0 in
       match m2 with
-      | Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,start_height2,relay2) ->
+      | Some(Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,start_height2,relay2)) ->
 	  send_msg sout Verack;
 	  let vers = 1l in
 	  let srvs = 1L in
@@ -54,11 +54,11 @@ let initialize_conn_accept s =
 	  let start_height = 0L in
 	  let relay = true in
 	  send_msg sout (Version(vers,srvs,tm,addr_from2,myaddr(),nonce,user_agent,start_height,relay));
-	  let m1 = rec_msg sin in
-	  if m1 = Verack then
+	  let m1 = rec_msg_nohang sin 2.0 in
+	  if m1 = Some(Verack) then
 	    begin
 	      Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
-	      conns := (s,sin,sout,Buffer.create 100,ref true)::!conns;
+	      conns := (s,sin,sout,Buffer.create 100,ref tm,ref true)::!conns;
 	      true
 	    end
 	  else
@@ -86,15 +86,15 @@ let initialize_conn_2 n s sin sout =
   let start_height = 0L in
   let relay = true in
   send_msg sout (Version(vers,srvs,tm,n,myaddr(),nonce,user_agent,start_height,relay));
-  let m1 = rec_msg sin in
-  if m1 = Verack then
+  let m1 = rec_msg_nohang sin 2.0 in
+  if m1 = Some(Verack) then
     begin
-      let m2 = rec_msg sin in
+      let m2 = rec_msg_nohang sin 2.0 in
       match m2 with
-      | Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,start_height2,relay2) ->
+      | Some(Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,start_height2,relay2)) ->
 	  send_msg sout Verack;
 	  Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
-	  conns := (s,sin,sout,Buffer.create 100,ref true)::!conns;
+	  conns := (s,sin,sout,Buffer.create 100,ref tm,ref true)::!conns;
 	  true
       | _ ->
 	  Unix.close s; (*** handshake failed ***)
@@ -189,15 +189,27 @@ let main () =
       end;
       (*** check each connection for a possible message ***)
       List.iter
-	(fun (s,sin,sout,sb,alive) ->
-	  try
-	    match input_byte_nohang sin 0.1 with
-	    | Some(b) -> Printf.printf "got %d\n" b; flush stdout; Buffer.add_char sb (Char.chr b) (*** oversimplified, need to know when the message ended in real version; also should keep reading as long as there is time and input ***)
-	    | None -> ()
-	  with _ -> alive := false
+	(fun (s,sin,sout,sb,lasttm,alive) ->
+	  match rec_msg_nohang sin 0.1 with
+	  | Some(msg) ->
+	      Printf.printf "got a msg\n"; flush stdout;
+	  | None ->
+	      let tm = Int64.of_float(Unix.time()) in
+	      if (Int64.sub tm !lasttm) > 60L then
+		begin
+		  try
+		    send_msg sout Ping;
+		    let m1 = rec_msg_nohang sin 2.0 in
+		    if m1 = Some(Pong) then
+		      lasttm := tm
+		    else
+		      alive := false
+		  with _ -> 
+		    alive := false
+		end
 	)
 	!conns;
-      conns := List.filter (fun (s,sin,sout,sb,alive) -> !alive) !conns
+      conns := List.filter (fun (s,sin,sout,sb,lasttm,alive) -> !alive) !conns
     done
   end;;
 

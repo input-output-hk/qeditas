@@ -323,8 +323,7 @@ let send_msg c m =
       seocf (seo_frame seoc fr (c,None));
       flush c
 
-let rec_msg c =
-  let by = input_byte c in
+let rec_msg_2 c by =
   match by with
   | 0 ->
       let (vers,c2) = sei_int32 seic (c,None) in
@@ -463,3 +462,9 @@ let rec_msg c =
       GetFramedCTree(vers,cr,fr)
   | _ ->
       raise (Failure "Unrecognized Message Type")
+
+let rec_msg_nohang c tm =
+  let by = input_byte_nohang c tm in
+  match by with
+  | None -> None
+  | Some(by) -> Some(rec_msg_2 c by)
