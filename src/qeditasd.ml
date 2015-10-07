@@ -132,6 +132,10 @@ let search_for_conns () =
 		  | Some(4) ->
 		      let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
 		      ignore (initialize_conn_2 n s sin sout)
+		  | Some(5) ->
+		      raise (Failure "socks5 is not yet supported")
+		  | Some(z) ->
+		      raise (Failure ("socks" ^ (string_of_int z) ^ " is not yet supported"))
 		with
 		| RequestRejected -> Printf.printf "here RequestRejected\n"; flush stdout;
 		| Connected -> raise Connected
@@ -167,7 +171,13 @@ let main () =
 	    begin
 	      match accept_nohang l 0.1 with
 	      | Some(s,a) ->
-		  Printf.printf "got remote connection\n";
+		  begin
+		    match a with
+		    | Unix.ADDR_UNIX(x) ->
+			Printf.printf "got local connection %s\n" x;
+		    | Unix.ADDR_INET(x,y) ->
+			Printf.printf "got remote connection %s %d\n" (Unix.string_of_inet_addr x) y;
+		  end;
 		  flush stdout;
 		  if initialize_conn_accept s then
 		    Printf.printf "accepted remote connection\n"
