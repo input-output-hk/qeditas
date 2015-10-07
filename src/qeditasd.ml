@@ -192,16 +192,32 @@ let main () =
 	(fun (s,sin,sout,sb,lasttm,alive) ->
 	  match rec_msg_nohang sin 0.1 with
 	  | Some(msg) ->
-	      Printf.printf "got a msg\n"; flush stdout;
+	      begin
+		let tm = Int64.of_float(Unix.time()) in
+		Printf.printf "got a msg, new lasttm %Ld\n" tm; flush stdout;
+		lasttm := tm;
+		match msg with
+		| Ping ->
+		    Printf.printf "Got Ping. Sending Pong.\n"; flush stdout;
+		    send_msg sout Pong;
+		    Printf.printf "Sent Pong.\n"; flush stdout
+		| _ ->
+		    Printf.printf "Ignoring msg since code to handle msg is unwritten.\n"; flush stdout;
+	      end
 	  | None ->
 	      let tm = Int64.of_float(Unix.time()) in
 	      if (Int64.sub tm !lasttm) > 60L then
 		begin
 		  try
+		    Printf.printf "Sending Ping.\n"; flush stdout;
 		    send_msg sout Ping;
+		    Printf.printf "Sent Ping.\n"; flush stdout;
 		    let m1 = rec_msg_nohang sin 2.0 in
 		    if m1 = Some(Pong) then
-		      lasttm := tm
+		      begin
+			Printf.printf "Ping-Pong succeeded. New lasttm: %Ld\n" tm; flush stdout;
+			lasttm := tm
+		      end
 		    else
 		      alive := false
 		  with _ -> 
