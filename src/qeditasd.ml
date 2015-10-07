@@ -11,53 +11,136 @@ let fallbacknodes = [
 
 let conns = ref [];;
 
-let initialize_conn_2 s sin sout =
-  if List.length !conns < 10 then (*** Should be Config.maxconns ***)
+let rand_int64 () =
+  let r = open_in_bin "/dev/random" in
+  let get_byte r = Int64.of_int (input_byte r) in
+  let v = Int64.shift_right_logical (get_byte r) 56 in
+  let v = Int64.logor v (Int64.shift_right_logical (get_byte r) 48) in
+  let v = Int64.logor v (Int64.shift_right_logical (get_byte r) 40) in
+  let v = Int64.logor v (Int64.shift_right_logical (get_byte r) 32) in
+  let v = Int64.logor v (Int64.shift_right_logical (get_byte r) 24) in
+  let v = Int64.logor v (Int64.shift_right_logical (get_byte r) 16) in
+  let v = Int64.logor v (Int64.shift_right_logical (get_byte r) 8) in
+  let v = Int64.logor v (get_byte r) in
+  close_in r;
+  v;;
+
+let myaddr () =
+  match !Config.ip with
+  | Some(ip) -> 
+      if !Config.ipv6 then
+	"[" ^ ip ^ "]:" ^ (string_of_int !Config.port)
+      else
+	ip ^ ":" ^ (string_of_int !Config.port)
+  | None ->
+      "";;
+
+let initialize_conn_accept s =
+  if List.length !conns < !Config.maxconns then
     begin
-      output_byte sout 1; (*** connection accepted ***)
-      (*** handshake, empty for now ***)
-      flush sout;
-      conns := (s,sin,sout,Buffer.create 100,ref true)::!conns
+      let sin = Unix.in_channel_of_descr s in
+      let sout = Unix.out_channel_of_descr s in
+      set_binary_mode_in sin true;
+      set_binary_mode_out sout true;
+      let m2 = rec_msg sin in
+      match m2 with
+      | Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,start_height2,relay2) ->
+	  send_msg sout Verack;
+	  let vers = 1l in
+	  let srvs = 1L in
+	  let tm = Int64.of_float(Unix.time()) in
+	  let nonce = rand_int64() in
+	  let user_agent = "Qeditas-Testing-Phase" in
+	  let start_height = 0L in
+	  let relay = true in
+	  send_msg sout (Version(vers,srvs,tm,addr_from2,myaddr(),nonce,user_agent,start_height,relay));
+	  let m1 = rec_msg sin in
+	  if m1 = Verack then
+	    begin
+	      Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2;
+	      conns := (s,sin,sout,Buffer.create 100,ref true)::!conns;
+	      true
+	    end
+	  else
+	    begin (*** handshake failed ***)
+	      Unix.close s;
+	      false
+	    end
+      | _ ->
+	  Unix.close s; (*** handshake failed ***)
+	  false
     end
   else
     begin
-      output_byte sout 0; (*** connection rejected ***)
-      flush sout;
-      Unix.close s
+      Unix.close s;
+      false
     end;;
 
-let initialize_conn s =
+let initialize_conn_2 n s sin sout =
+  (*** handshake ***)
+  let vers = 1l in
+  let srvs = 1L in
+  let tm = Int64.of_float(Unix.time()) in
+  let nonce = rand_int64() in
+  let user_agent = "Qeditas-Testing-Phase" in
+  let start_height = 0L in
+  let relay = true in
+  send_msg sout (Version(vers,srvs,tm,n,myaddr(),nonce,user_agent,start_height,relay));
+  let m1 = rec_msg sin in
+  if m1 = Verack then
+    begin
+      let m2 = rec_msg sin in
+      match m2 with
+      | Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,start_height2,relay2) ->
+	  send_msg sout Verack;
+	  Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2;
+	  conns := (s,sin,sout,Buffer.create 100,ref true)::!conns;
+	  true
+      | _ ->
+	  Unix.close s; (*** handshake failed ***)
+	  false
+    end
+  else
+    begin (*** handshake failed ***)
+      Unix.close s;
+      false
+    end;;
+
+let initialize_conn n s =
   let sin = Unix.in_channel_of_descr s in
   let sout = Unix.out_channel_of_descr s in
   set_binary_mode_in sin true;
   set_binary_mode_out sout true;
-  initialize_conn_2 s sin sout;;
+  initialize_conn_2 n s sin sout;;
+
+exception Connected;;
 
 let search_for_conns () =
   if !conns = [] then
-    List.iter
-      (fun n ->
-	let (ip,port) = extract_ip_and_port n in
-	if not (!Config.ip = Some(ip)) then (*** if this is a fallback node, do not connect to itself ***)
-	  begin
-	    try
-	      match !Config.socks with
-	      | None ->
-		  let s = connectpeer ip port in
-		  initialize_conn s
-	      | Some(4) ->
-		  Printf.printf "here 1\n"; flush stdout;
-		  let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
-		  Printf.printf "here 2\n"; flush stdout;
-		  initialize_conn_2 s sin sout
-	      | Some(5) -> () (*** to do ***)
-	      | _ -> ()
-	    with
-	    | RequestRejected -> Printf.printf "here RequestRejected\n"; flush stdout;
-	    | _ -> Printf.printf "here 3\n"; flush stdout;
-	  end
-	)
-      fallbacknodes;;
+    begin
+      try
+	List.iter
+	  (fun n ->
+	    let (ip,port,v6) = extract_ip_and_port n in
+	    if not (!Config.ip = Some(ip) && !Config.ipv6 = v6) then (*** if this is a fallback node, do not connect to itself ***)
+	      begin
+		try
+		  match !Config.socks with
+		  | None ->
+		      let s = connectpeer ip port in
+		      ignore (initialize_conn n s)
+		  | Some(4) ->
+		      let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
+		      ignore (initialize_conn_2 n s sin sout)
+		with
+		| RequestRejected -> Printf.printf "here RequestRejected\n"; flush stdout;
+		| Connected -> raise Connected
+		| _ -> Printf.printf "here 3\n"; flush stdout;
+	      end
+	  )
+	  fallbacknodes
+      with Connected -> ()
+    end;;
 
 let main () =
   begin
@@ -86,7 +169,10 @@ let main () =
 	      | Some(s,a) ->
 		  Printf.printf "got remote connection\n";
 		  flush stdout;
-		  initialize_conn s
+		  if initialize_conn_accept s then
+		    Printf.printf "accepted remote connection\n"
+		  else
+		    Printf.printf "rejected remote connection\n"
 	      | None -> ()
 	    end
 	| None -> ()
