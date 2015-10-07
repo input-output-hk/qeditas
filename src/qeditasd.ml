@@ -57,7 +57,7 @@ let initialize_conn_accept s =
 	  let m1 = rec_msg sin in
 	  if m1 = Verack then
 	    begin
-	      Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2;
+	      Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
 	      conns := (s,sin,sout,Buffer.create 100,ref true)::!conns;
 	      true
 	    end
@@ -93,7 +93,7 @@ let initialize_conn_2 n s sin sout =
       match m2 with
       | Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,start_height2,relay2) ->
 	  send_msg sout Verack;
-	  Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2;
+	  Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
 	  conns := (s,sin,sout,Buffer.create 100,ref true)::!conns;
 	  true
       | _ ->
