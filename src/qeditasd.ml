@@ -169,62 +169,72 @@ let main () =
     sethungsignalhandler();
     search_for_conns ();
     while true do (*** main process loop ***)
-      begin (*** possibly check for a new incomming connection ***)
-	match l with
-	| Some(l) ->
-	    begin
-	      match accept_nohang l 0.1 with
-	      | Some(s,a) ->
-		  begin
-		    match a with
-		    | Unix.ADDR_UNIX(x) ->
-			Printf.printf "got local connection %s\n" x;
-		    | Unix.ADDR_INET(x,y) ->
-			Printf.printf "got remote connection %s %d\n" (Unix.string_of_inet_addr x) y;
-		  end;
-		  flush stdout;
-		  if initialize_conn_accept s then
-		    Printf.printf "accepted remote connection\n"
-		  else
-		    Printf.printf "rejected remote connection\n"
-	      | None -> ()
-	    end
-	| None -> ()
-      end;
-      (*** check each connection for possible messages ***)
-      List.iter
-	(fun (s,sin,sout,sb,lastmsgtm,lastpingtm,alive) ->
-	  let msgs = rec_msgs_nohang sin 0.1 in
-	  let tm = Int64.of_float(Unix.time()) in
-	  if msgs = [] then
-	    begin
+      try
+	begin (*** possibly check for a new incomming connection ***)
+	  match l with
+	  | Some(l) ->
 	      begin
-		match !lastpingtm with
-		| Some(lptm) ->
-		    if (Int64.sub tm lptm) > 30L then (*** If expecting a pong and haven't gotten it, then drop connection. ***)
-		      begin
-			Printf.printf "Ping-Pong failed. Dropping connection.\n";
-			alive := false
-		      end
+		match accept_nohang l 0.1 with
+		| Some(s,a) ->
+		    begin
+		      match a with
+		      | Unix.ADDR_UNIX(x) ->
+			Printf.printf "got local connection %s\n" x;
+		      | Unix.ADDR_INET(x,y) ->
+			  Printf.printf "got remote connection %s %d\n" (Unix.string_of_inet_addr x) y;
+		    end;
+		    flush stdout;
+		    if initialize_conn_accept s then
+		      Printf.printf "accepted remote connection\n"
+		    else
+		      Printf.printf "rejected remote connection\n"
 		| None -> ()
-	      end;
-	      if (Int64.sub tm !lastmsgtm) > 60L then (*** If no messages in enough time, send a ping. ***)
+	      end
+	  | None -> ()
+	end;
+	(*** check each connection for possible messages ***)
+	List.iter
+	  (fun (s,sin,sout,sb,lastmsgtm,lastpingtm,alive) ->
+	    try
+	      let msgs = rec_msgs_nohang sin 0.1 in
+	      let tm = Int64.of_float(Unix.time()) in
+	      if msgs = [] then
 		begin
-		  Printf.printf "Sending Ping.\n"; flush stdout;
-		  send_msg sout Ping;
-		  Printf.printf "Sent Ping.\n"; flush stdout;
-		  lastpingtm := Some(tm);
-		  lastmsgtm := tm
+		  begin
+		    match !lastpingtm with
+		    | Some(lptm) ->
+			if (Int64.sub tm lptm) > 30L then (*** If expecting a pong and haven't gotten it, then drop connection. ***)
+			  begin
+			    Printf.printf "Ping-Pong failed. Dropping connection.\n";
+			    alive := false
+			  end
+		    | None -> ()
+		  end;
+		  if (Int64.sub tm !lastmsgtm) > 60L then (*** If no messages in enough time, send a ping. ***)
+		    begin
+		      Printf.printf "Sending Ping.\n"; flush stdout;
+		      send_msg sout Ping;
+		      Printf.printf "Sent Ping.\n"; flush stdout;
+		      lastpingtm := Some(tm);
+		      lastmsgtm := tm
+		    end
 		end
-	    end
-	  else
-	    begin
-	      Printf.printf "got a msg, new lastmsgtm %Ld\n" tm; flush stdout;
-	      lastmsgtm := tm;
-	      List.iter (handle_msg sin sout lastpingtm) msgs
-	    end)
-	!conns;
-      conns := List.filter (fun (s,sin,sout,sb,lastmsgtm,lastpingtm,alive) -> !alive) !conns
+	      else
+		begin
+		  Printf.printf "got a msg, new lastmsgtm %Ld\n" tm; flush stdout;
+		  lastmsgtm := tm;
+		  List.iter (handle_msg sin sout lastpingtm) msgs
+		end
+	    with
+	    | End_of_file ->
+		Printf.printf "Lost connection.\n";
+		alive := false
+	    | exn -> (*** unexpected ***)
+		Printf.printf "Other exception: %s\nNot dropping connection yet.\n" (Printexc.to_string exn);
+	  )
+	  !conns;
+	conns := List.filter (fun (s,sin,sout,sb,lastmsgtm,lastpingtm,alive) -> !alive) !conns
+      with _ -> () (*** ensuring no exception escapes the main loop ***)
     done
   end;;
 
