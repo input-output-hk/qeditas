@@ -187,47 +187,43 @@ let main () =
 	    end
 	| None -> ()
       end;
-      (*** check each connection for a possible message ***)
+      (*** check each connection for possible messages ***)
       List.iter
 	(fun (s,sin,sout,sb,lasttm,alive) ->
-	  match rec_msg_nohang sin 0.1 with
-	  | Some(msg) ->
-	      begin
-		let tm = Int64.of_float(Unix.time()) in
-		Printf.printf "got a msg, new lasttm %Ld\n" tm; flush stdout;
-		lasttm := tm;
-		match msg with
-		| Ping ->
-		    Printf.printf "Got Ping. Sending Pong.\n"; flush stdout;
-		    send_msg sout Pong;
-		    Printf.printf "Sent Pong.\n"; flush stdout
-		| _ ->
-		    Printf.printf "Ignoring msg since code to handle msg is unwritten.\n"; flush stdout;
-	      end
-	  | None ->
-	      let tm = Int64.of_float(Unix.time()) in
+	  let msgs = rec_msgs_nohang sin 0.1 in
+	  let tm = Int64.of_float(Unix.time()) in
+	  if msgs = [] then
+	    begin
 	      if (Int64.sub tm !lasttm) > 60L then
 		begin
 		  try
 		    Printf.printf "Sending Ping.\n"; flush stdout;
 		    send_msg sout Ping;
 		    Printf.printf "Sent Ping.\n"; flush stdout;
-		    let m1 = rec_msg_nohang sin 2.0 in
-		    if m1 = Some(Pong) then
+		    let msgs = rec_msgs_nohang sin 2.0 in
+		    if List.mem Pong msgs then
 		      begin
 			Printf.printf "Ping-Pong succeeded. New lasttm: %Ld\n" tm; flush stdout;
-			lasttm := tm
+			lasttm := tm;
+			List.iter (handle_msg sin sout) msgs
 		      end
 		    else
 		      begin
-			Printf.printf "Ping-Pong failed. Dropping connection.\n";
+			Printf.printf "Ping-Pong failed. Dropping connection.\n"; flush stdout;
 			alive := false
 		      end
 		  with _ -> 
 		    Printf.printf "Ping-Pong failed. Dropping connection.\n";
 		    alive := false
 		end
-	)
+
+	    end
+	  else
+	    begin
+	      Printf.printf "got a msg, new lasttm %Ld\n" tm; flush stdout;
+	      lasttm := tm;
+	      List.iter (handle_msg sin sout) msgs
+	    end)
 	!conns;
       conns := List.filter (fun (s,sin,sout,sb,lasttm,alive) -> !alive) !conns
     done

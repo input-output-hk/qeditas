@@ -283,9 +283,9 @@ let send_msg c m =
   | Mempool ->
       output_byte c 12;
       flush c
-  | Alert(msg,sg) ->
+  | Alert(m,sg) ->
       output_byte c 13;
-      send_string c msg;
+      send_string c m;
       seocf (seo_signat seoc sg (c,None));
       flush c
   | Ping ->
@@ -294,9 +294,9 @@ let send_msg c m =
   | Pong ->
       output_byte c 15;
       flush c
-  | Reject(msg,ccode,rsn,data) ->
+  | Reject(m,ccode,rsn,data) ->
       output_byte c 16;
-      send_string c msg;
+      send_string c m;
       output_byte c ccode;
       send_string c rsn;
       send_string c data;
@@ -430,19 +430,19 @@ let rec_msg_2 c by =
   | 12 ->
       Mempool
   | 13 ->
-      let msg = rec_string c in
+      let m = rec_string c in
       let (sg,_) = sei_signat seic (c,None) in
-      Alert(msg,sg)
+      Alert(m,sg)
   | 14 ->
       Ping
   | 15 ->
       Pong
   | 16 ->
-      let msg = rec_string c in
+      let m = rec_string c in
       let ccode = input_byte c in
       let rsn = rec_string c in
       let data = rec_string c in
-      Reject(msg,ccode,rsn,data)
+      Reject(m,ccode,rsn,data)
   | 17 ->
       let (vers,_) = sei_int32 seic (c,None) in
       let (ctr,_) = sei_ctree seic (c,None) in
@@ -468,3 +468,25 @@ let rec_msg_nohang c tm =
   match by with
   | None -> None
   | Some(by) -> Some(rec_msg_2 c by)
+
+let rec rec_msgs_nohang_r c tm msgs =
+  let by = input_byte_nohang c tm in
+  match by with
+  | None -> List.rev msgs
+  | Some(by) -> 
+      let m = rec_msg_2 c by in
+      rec_msgs_nohang_r c tm (m::msgs)
+
+let rec_msgs_nohang c tm =
+  rec_msgs_nohang_r c tm []
+
+let handle_msg sin sout m =
+  match m with
+  | Ping ->
+      Printf.printf "Got Ping. Sending Pong.\n"; flush stdout;
+      send_msg sout Pong;
+      Printf.printf "Sent Pong.\n"; flush stdout
+  | Pong ->
+      Printf.printf "Got Pong. handle_msg ignores it.\n"; flush stdout;
+  | _ ->
+      Printf.printf "Ignoring msg since code to handle msg is unwritten.\n"; flush stdout

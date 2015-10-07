@@ -47,3 +47,7 @@ val send_string : out_channel -> string -> unit
 val rec_string : in_channel -> string
 val send_msg : out_channel -> msg -> unit
 val rec_msg_nohang : in_channel -> float -> msg option
+val rec_msgs_nohang : in_channel -> float -> msg list
+
+val handle_msg : in_channel -> out_channel -> msg -> unit
+
