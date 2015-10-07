@@ -42,7 +42,7 @@ let initialize_conn_accept s =
       let sout = Unix.out_channel_of_descr s in
       set_binary_mode_in sin true;
       set_binary_mode_out sout true;
-      let m2 = rec_msg_nohang sin 2.0 in
+      let m2 = rec_msg_nohang sin 5.0 in
       match m2 with
       | Some(Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,start_height2,relay2)) ->
 	  send_msg sout Verack;
@@ -54,7 +54,7 @@ let initialize_conn_accept s =
 	  let start_height = 0L in
 	  let relay = true in
 	  send_msg sout (Version(vers,srvs,tm,addr_from2,myaddr(),nonce,user_agent,start_height,relay));
-	  let m1 = rec_msg_nohang sin 2.0 in
+	  let m1 = rec_msg_nohang sin 5.0 in
 	  if m1 = Some(Verack) then
 	    begin
 	      Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
@@ -63,10 +63,12 @@ let initialize_conn_accept s =
 	    end
 	  else
 	    begin (*** handshake failed ***)
+	      Printf.printf "Handshake failed.\n"; flush stdout;
 	      Unix.close s;
 	      false
 	    end
       | _ ->
+	  Printf.printf "Handshake failed.\n"; flush stdout;
 	  Unix.close s; (*** handshake failed ***)
 	  false
     end
@@ -86,10 +88,10 @@ let initialize_conn_2 n s sin sout =
   let start_height = 0L in
   let relay = true in
   send_msg sout (Version(vers,srvs,tm,n,myaddr(),nonce,user_agent,start_height,relay));
-  let m1 = rec_msg_nohang sin 2.0 in
+  let m1 = rec_msg_nohang sin 5.0 in
   if m1 = Some(Verack) then
     begin
-      let m2 = rec_msg_nohang sin 2.0 in
+      let m2 = rec_msg_nohang sin 5.0 in
       match m2 with
       | Some(Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,start_height2,relay2)) ->
 	  send_msg sout Verack;
@@ -97,11 +99,13 @@ let initialize_conn_2 n s sin sout =
 	  conns := (s,sin,sout,Buffer.create 100,ref tm,ref true)::!conns;
 	  true
       | _ ->
+	  Printf.printf "Handshake failed.\n"; flush stdout;
 	  Unix.close s; (*** handshake failed ***)
 	  false
     end
   else
     begin (*** handshake failed ***)
+      Printf.printf "Handshake failed.\n"; flush stdout;
       Unix.close s;
       false
     end;;
@@ -200,12 +204,12 @@ let main () =
 		    Printf.printf "Sending Ping.\n"; flush stdout;
 		    send_msg sout Ping;
 		    Printf.printf "Sent Ping.\n"; flush stdout;
-		    let msgs = rec_msgs_nohang sin 2.0 in
+		    let msgs = rec_msgs_nohang sin 5.0 in
+		    List.iter (handle_msg sin sout) msgs;
 		    if List.mem Pong msgs then
 		      begin
 			Printf.printf "Ping-Pong succeeded. New lasttm: %Ld\n" tm; flush stdout;
 			lasttm := tm;
-			List.iter (handle_msg sin sout) msgs
 		      end
 		    else
 		      begin
