@@ -480,13 +480,14 @@ let rec rec_msgs_nohang_r c tm msgs =
 let rec_msgs_nohang c tm =
   rec_msgs_nohang_r c tm []
 
-let handle_msg sin sout m =
+let handle_msg sin sout lastpingtm m =
   match m with
   | Ping ->
       Printf.printf "Got Ping. Sending Pong.\n"; flush stdout;
       send_msg sout Pong;
       Printf.printf "Sent Pong.\n"; flush stdout
   | Pong ->
-      Printf.printf "Got Pong. handle_msg ignores it.\n"; flush stdout;
+      Printf.printf "Got Pong. resetting lastpingtm to None.\n"; flush stdout;
+      lastpingtm := None
   | _ ->
       Printf.printf "Ignoring msg since code to handle msg is unwritten.\n"; flush stdout

@@ -58,7 +58,7 @@ let initialize_conn_accept s =
 	  if m1 = Some(Verack) then
 	    begin
 	      Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
-	      conns := (s,sin,sout,Buffer.create 100,ref tm,ref true)::!conns;
+	      conns := (s,sin,sout,Buffer.create 100,ref tm,ref None,ref true)::!conns;
 	      true
 	    end
 	  else
@@ -96,7 +96,7 @@ let initialize_conn_2 n s sin sout =
       | Some(Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,start_height2,relay2)) ->
 	  send_msg sout Verack;
 	  Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
-	  conns := (s,sin,sout,Buffer.create 100,ref tm,ref true)::!conns;
+	  conns := (s,sin,sout,Buffer.create 100,ref tm,ref None,ref true)::!conns;
 	  true
       | _ ->
 	  Printf.printf "Handshake failed.\n"; flush stdout;
@@ -193,43 +193,38 @@ let main () =
       end;
       (*** check each connection for possible messages ***)
       List.iter
-	(fun (s,sin,sout,sb,lasttm,alive) ->
+	(fun (s,sin,sout,sb,lastmsgtm,lastpingtm,alive) ->
 	  let msgs = rec_msgs_nohang sin 0.1 in
 	  let tm = Int64.of_float(Unix.time()) in
 	  if msgs = [] then
 	    begin
-	      if (Int64.sub tm !lasttm) > 60L then
-		begin
-		  try
-		    Printf.printf "Sending Ping.\n"; flush stdout;
-		    send_msg sout Ping;
-		    Printf.printf "Sent Ping.\n"; flush stdout;
-		    let msgs = rec_msgs_nohang sin 5.0 in
-		    List.iter (handle_msg sin sout) msgs;
-		    if List.mem Pong msgs then
+	      begin
+		match !lastpingtm with
+		| Some(lptm) ->
+		    if (Int64.sub tm lptm) > 30L then (*** If expecting a pong and haven't gotten it, then drop connection. ***)
 		      begin
-			Printf.printf "Ping-Pong succeeded. New lasttm: %Ld\n" tm; flush stdout;
-			lasttm := tm;
-		      end
-		    else
-		      begin
-			Printf.printf "Ping-Pong failed. Dropping connection.\n"; flush stdout;
+			Printf.printf "Ping-Pong failed. Dropping connection.\n";
 			alive := false
 		      end
-		  with _ -> 
-		    Printf.printf "Ping-Pong failed. Dropping connection.\n";
-		    alive := false
+		| None -> ()
+	      end;
+	      if (Int64.sub tm !lastmsgtm) > 60L then (*** If no messages in enough time, send a ping. ***)
+		begin
+		  Printf.printf "Sending Ping.\n"; flush stdout;
+		  send_msg sout Ping;
+		  Printf.printf "Sent Ping.\n"; flush stdout;
+		  lastpingtm := Some(tm);
+		  lastmsgtm := tm
 		end
-
 	    end
 	  else
 	    begin
-	      Printf.printf "got a msg, new lasttm %Ld\n" tm; flush stdout;
-	      lasttm := tm;
-	      List.iter (handle_msg sin sout) msgs
+	      Printf.printf "got a msg, new lastmsgtm %Ld\n" tm; flush stdout;
+	      lastmsgtm := tm;
+	      List.iter (handle_msg sin sout lastpingtm) msgs
 	    end)
 	!conns;
-      conns := List.filter (fun (s,sin,sout,sb,lasttm,alive) -> !alive) !conns
+      conns := List.filter (fun (s,sin,sout,sb,lastmsgtm,lastpingtm,alive) -> !alive) !conns
     done
   end;;
 
