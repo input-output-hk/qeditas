@@ -219,8 +219,12 @@ let main () =
 			lasttm := tm
 		      end
 		    else
-		      alive := false
+		      begin
+			Printf.printf "Ping-Pong failed. Dropping connection.\n";
+			alive := false
+		      end
 		  with _ -> 
+		    Printf.printf "Ping-Pong failed. Dropping connection.\n";
 		    alive := false
 		end
 	)
