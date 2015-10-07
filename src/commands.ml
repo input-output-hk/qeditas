@@ -257,7 +257,7 @@ let bytelist_of_hexstring h =
 let do_rpccom r c =
   match r with
   | AddNode(n) ->
-      let (remip,remport) = extract_ip_and_port n in
+      let (remip,remport,v6) = extract_ip_and_port n in
       if addnode remip remport then
 	output_byte c 1
       else

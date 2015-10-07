@@ -93,9 +93,11 @@ let extract_ip_and_port ipp =
   if l = 0 then
     raise (Failure "Not an ip address with a port number")
   else if ipp.[0] = '[' then
-    extract_ipv6_and_port ipp 1 l
+    let (ip,port) = extract_ipv6_and_port ipp 1 l in
+    (ip,port,true)
   else
-    extract_ipv4_and_port ipp 0 l
+    let (ip,port) = extract_ipv4_and_port ipp 0 l in
+    (ip,port,false)
 
 let connectpeer_socks4 proxyport ip port =
   let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
