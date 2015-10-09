@@ -250,6 +250,26 @@ let sei_varintb i c =
   else
     i 16 c
 
+let seo_string o x c =
+  let l = String.length x in
+  let cr = ref (seo_varint o (Int64.of_int l) c) in
+  for j = 0 to l-1 do
+    cr := seo_int8 o (Char.code x.[j]) !cr
+  done;
+  !cr
+
+let sei_string i c =
+  let (l,c) = sei_varint i c in
+  let l = Int64.to_int l in
+  let cr = ref c in
+  let sb = Buffer.create l in
+  for j = 0 to l-1 do
+    let (y,c) = sei_int8 i !cr in
+    Buffer.add_char sb (Char.chr y);
+    cr := c
+  done;
+  (Buffer.contents sb,!cr)
+
 (*** operators to build serialization for list and option types ***)
 let rec seo_list s o ml c =
   match ml with

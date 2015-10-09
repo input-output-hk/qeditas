@@ -41,6 +41,9 @@ val sei_varint : (int -> 'a -> int * 'a) -> 'a -> int64 * 'a
 val seo_varintb : (int -> int -> 'a -> 'a) -> int -> 'a -> 'a
 val sei_varintb : (int -> 'a -> int * 'a) -> 'a -> int * 'a
 
+val seo_string : (int -> int -> 'a -> 'a) -> string -> 'a -> 'a
+val sei_string : (int -> 'a -> int * 'a) -> 'a -> string * 'a
+
 val seo_list : ((int -> int -> 'a -> 'a) -> 'b -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'b list -> 'a -> 'a)
 val sei_list : ((int -> 'a -> int * 'a) -> 'a -> 'b * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'b list * 'a)
 
