@@ -28,6 +28,17 @@ type frame =
   | FLeaf of bool list * int option
   | FBin of frame * frame
 
+type rframe =
+  | RFHash
+  | RFAll
+  | RFLeaf of bool list * int option
+  | RFLeft of rframe
+  | RFRight of rframe
+  | RFBin of rframe * rframe
+
+val normalize_frame : frame -> rframe
+val rframe_lub : rframe -> rframe -> rframe
+
 type ctree =
   | CLeaf of bool list * nehlist
   | CHash of hashval

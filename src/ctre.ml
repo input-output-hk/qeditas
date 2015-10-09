@@ -159,6 +159,81 @@ type frame =
   | FLeaf of bool list * int option
   | FBin of frame * frame
 
+type rframe =
+  | RFHash
+  | RFAll
+  | RFLeaf of bool list * int option
+  | RFLeft of rframe
+  | RFRight of rframe
+  | RFBin of rframe * rframe
+
+let bin_rframe frl frr =
+  if frl = RFAll && frr = RFAll then
+    RFAll
+  else
+    RFBin(frl,frr)
+
+(***
+ normalize_frame reduces a frame to a form for sharing with peers.
+ FAbbrev nodes are removed since abbrevs are for local storage,
+ FBin(FAll,FAll) are reduced to FAll.
+ As a consequence, every frame that is designed to keep up with the
+ whole ctree will normalize to FAll.
+ ***)
+let rec normalize_frame fr =
+  match fr with
+  | FHash -> RFHash
+  | FAll -> RFAll
+  | FAbbrev(fr1) -> normalize_frame fr1
+  | FLeaf(bl,i) -> RFLeaf(bl,i)
+  | FBin(frl,frr) -> bin_rframe (normalize_frame frl) (normalize_frame frr)
+
+let split_rframe fr =
+  match fr with
+  | RFBin(frl,frr) -> (Some(frl),Some(frr))
+  | RFLeft(frl) -> (Some(frl),None)
+  | RFRight(frr) -> (None,Some(frr))
+  | RFLeaf(false::bl,i) -> (Some(RFLeaf(bl,i)),None)
+  | RFLeaf(true::bl,i) -> (None,Some(RFLeaf(bl,i)))
+  | _ -> (None,None)
+
+(***
+ rframe_lub combines two normalized frames to give a normalized frame
+ describing what at least one of the two frames stores.
+ This is used so a node can describe what parts of the ledger tree it can ask its peers about.
+ ***)
+let rec rframe_lub fr1 fr2 =
+  match (fr1,fr2) with
+  | (RFHash,_) -> fr2
+  | (_,RFHash) -> fr1
+  | (RFAll,_) -> RFAll
+  | (_,RFAll) -> RFAll
+  | (RFLeaf(bl1,Some(i1)),RFLeaf(bl2,Some(i2))) when bl1 = bl2 -> RFLeaf(bl1,Some(max i1 i2))
+  | (RFLeaf(bl1,None),RFLeaf(bl2,_)) when bl1 = bl2 -> RFLeaf(bl1,None)
+  | (RFLeaf(bl1,_),RFLeaf(bl2,None)) when bl1 = bl2 -> RFLeaf(bl2,None)
+  | _ ->
+    match (split_rframe fr1,split_rframe fr2) with
+    | ((None,None),_) -> fr2
+    | (_,(None,None)) -> fr1
+    | ((Some(fr1l),Some(fr1r)),(Some(fr2l),Some(fr2r))) ->
+      bin_rframe (rframe_lub fr1l fr2l) (rframe_lub fr1r fr2r)
+    | ((None,Some(fr1r)),(Some(fr2l),Some(fr2r))) ->
+      bin_rframe fr2l (rframe_lub fr1r fr2r)
+    | ((Some(fr1l),None),(Some(fr2l),Some(fr2r))) ->
+      bin_rframe (rframe_lub fr1l fr2l) fr2r
+    | ((Some(fr1l),Some(fr1r)),(None,Some(fr2r))) ->
+      bin_rframe fr1l (rframe_lub fr1r fr2r)
+    | ((None,Some(fr1r)),(None,Some(fr2r))) ->
+      RFRight(rframe_lub fr1r fr2r)
+    | ((Some(fr1l),None),(None,Some(fr2r))) ->
+      bin_rframe fr1l fr2r
+    | ((Some(fr1l),Some(fr1r)),(Some(fr2l),None)) ->
+      bin_rframe (rframe_lub fr1l fr2l) fr1r
+    | ((None,Some(fr1r)),(Some(fr2l),None)) ->
+      bin_rframe fr2l fr1r
+    | ((Some(fr1l),None),(Some(fr2l),None)) ->
+      RFLeft(rframe_lub fr1l fr2l)
+
 type ctree =
   | CLeaf of bool list * nehlist
   | CHash of hashval
