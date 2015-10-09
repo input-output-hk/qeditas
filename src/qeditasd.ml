@@ -74,6 +74,7 @@ let initialize_conn_accept s =
     end
   else
     begin
+      Printf.printf "Rejecting connection because of maxconns.\n"; flush stdout;
       Unix.close s;
       false
     end;;
