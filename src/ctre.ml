@@ -1082,6 +1082,41 @@ let frame_filter_octree fr oc =
   | Some(c) -> Some(frame_filter_ctree fr c)
   | None -> None
 
+let rec rframe_filter_leaf bl i c =
+  match c with
+  | CLeaf(bl2,hl) ->
+      if bl = bl2 then
+	begin
+	  match i with
+	  | Some(i) -> CLeaf(bl2,frame_filter_nehlist i hl)
+	  | None -> c
+	end
+      else
+	CLeaf(bl2,frame_filter_nehlist 0 hl)
+  | CLeft(c0) ->
+      begin
+	match bl with
+	| (false::br) -> rframe_filter_leaf br i c0
+	| (true::br) -> CLeft(CHash(ctree_hashroot c0))
+	| [] -> raise (Failure "frame level problem")
+      end
+  | CRight(c1) ->
+      begin
+	match bl with
+	| (false::br) -> CRight(CHash(ctree_hashroot c1))
+	| (true::br) -> rframe_filter_leaf br i c1
+	| [] -> raise (Failure "frame level problem")
+      end
+  | CBin(c0,c1) ->
+      begin
+	match bl with
+	| (false::br) -> CBin(rframe_filter_leaf br i c0,CHash(ctree_hashroot c1))
+	| (true::br) -> CBin(CHash(ctree_hashroot c0),rframe_filter_leaf br i c1)
+	| [] -> raise (Failure "frame level problem")
+      end
+  | CAbbrev(cr,ca) -> rframe_filter_leaf bl i (get_ctree_abbrev ca)
+  | _ -> c
+
 let rec rframe_hlist_bitseq f bl =
   match f with
   | RFLeaf(bl2,i) -> if bl = bl2 then i else Some(0)
@@ -1098,7 +1133,7 @@ let rec rframe_filter_ctree f c =
   | RFHash -> CHash(ctree_hashroot c)
   | RFAll -> c
   | RFLeaf(bl,i) ->
-      frame_filter_leaf bl i c
+      rframe_filter_leaf bl i c
   | RFBin(f0,f1) ->
       match c with
       | CLeft(c0) -> CLeft(rframe_filter_ctree f0 c0)
