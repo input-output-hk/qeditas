@@ -60,6 +60,7 @@ fi
 echo let datadir = ref \"$DATADIR\" > src/config.ml
 echo let ctreedatadir = ref \"$CTREEDATADIR\" >> src/config.ml
 echo let chaindatadir = ref \"$CHAINDATADIR\" >> src/config.ml
+echo let testnet = ref false >> src/config.ml
 echo let staking = ref false >> src/config.ml
 echo let ip = ref None >> src/config.ml
 echo let ipv6 = ref false >> src/config.ml

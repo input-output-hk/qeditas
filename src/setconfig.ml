@@ -8,6 +8,7 @@ let stringconfigvars = [
 ("chaindatadir",Config.chaindatadir)
 ];;
 let boolconfigvars = [
+("testnet",Config.testnet);
 ("staking",Config.staking);
 ("ipv6",Config.ipv6)
 ];;

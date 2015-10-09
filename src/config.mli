@@ -5,6 +5,7 @@
 val datadir : string ref
 val ctreedatadir : string ref
 val chaindatadir : string ref
+val testnet : bool ref
 val staking : bool ref
 val ip : string option ref
 val ipv6 : bool ref
