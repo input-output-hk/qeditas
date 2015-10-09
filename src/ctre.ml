@@ -1006,7 +1006,12 @@ let rec frame_filter_leaf bl i c =
   | CLeft(c0) ->
       begin
 	match bl with
-	| (false::br) -> frame_filter_leaf br i c0
+	| (false::br) ->
+	    begin
+	      match frame_filter_leaf br i c0 with
+	      | CLeaf(br2,hl2) -> CLeaf(false::br2,hl2)
+	      | c2 -> CLeft(c2)
+	    end
 	| (true::br) -> CLeft(CHash(ctree_hashroot c0))
 	| [] -> raise (Failure "frame level problem")
       end
@@ -1014,7 +1019,12 @@ let rec frame_filter_leaf bl i c =
       begin
 	match bl with
 	| (false::br) -> CRight(CHash(ctree_hashroot c1))
-	| (true::br) -> frame_filter_leaf br i c1
+	| (true::br) ->
+	    begin
+	      match frame_filter_leaf br i c0 with
+	      | CLeaf(br2,hl2) -> CLeaf(true::br2,hl2)
+	      | c2 -> CRight(c2)
+	    end
 	| [] -> raise (Failure "frame level problem")
       end
   | CBin(c0,c1) ->
@@ -1096,7 +1106,12 @@ let rec rframe_filter_leaf bl i c =
   | CLeft(c0) ->
       begin
 	match bl with
-	| (false::br) -> rframe_filter_leaf br i c0
+	| (false::br) ->
+	    begin
+	      match rframe_filter_leaf br i c0 with
+	      | CLeaf(br2,hl2) -> CLeaf(false::br2,hl2)
+	      | c2 -> CLeft(c2)
+	    end
 	| (true::br) -> CLeft(CHash(ctree_hashroot c0))
 	| [] -> raise (Failure "frame level problem")
       end
@@ -1104,7 +1119,12 @@ let rec rframe_filter_leaf bl i c =
       begin
 	match bl with
 	| (false::br) -> CRight(CHash(ctree_hashroot c1))
-	| (true::br) -> rframe_filter_leaf br i c1
+	| (true::br) ->
+	    begin
+	      match rframe_filter_leaf br i c1 with
+	      | CLeaf(br2,hl2) -> CLeaf(true::br2,hl2)
+	      | c2 -> CRight(c2)
+	    end
 	| [] -> raise (Failure "frame level problem")
       end
   | CBin(c0,c1) ->
