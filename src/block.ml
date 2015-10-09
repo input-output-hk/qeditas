@@ -326,6 +326,28 @@ type blockdelta = {
 
 type block = blockheader * blockdelta
 
+let seo_blockdelta o bd c =
+  let c = seo_list seo_addr_preasset o bd.stakeoutput c in
+  let c = seo_option seo_poforfeit o bd.forfeiture c in
+  let c = seo_cgraft o bd.prevledgergraft c in
+  let c = seo_list seo_stx o bd.blockdelta_stxl c in
+  c
+
+let sei_blockdelta i c =
+  let (stko,c) = sei_list sei_addr_preasset i c in
+  let (forf,c) = sei_option sei_poforfeit i c in
+  let (cg,c) = sei_cgraft i c in
+  let (stxl,c) = sei_list sei_stx i c in
+  ({ stakeoutput = stko;
+     forfeiture = forf;
+     prevledgergraft = cg;
+     blockdelta_stxl = stxl;
+   },
+   c)
+
+let seo_block o b c = seo_prod seo_blockheader seo_blockdelta o b c
+let sei_block i c = sei_prod sei_blockheader sei_blockdelta i c
+
 (*** a partial representation of the block delta using hashvals in place of stxs ***)
 type blockdeltah = addr_preasset list * poforfeit option * cgraft * hashval list
 

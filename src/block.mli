@@ -70,6 +70,11 @@ type blockdelta = {
 
 type block = blockheader * blockdelta
 
+val seo_blockdelta : (int -> int -> 'a -> 'a) -> blockdelta -> 'a -> 'a
+val sei_blockdelta : (int -> 'a -> int * 'a) -> 'a -> blockdelta * 'a
+val seo_block : (int -> int -> 'a -> 'a) -> block -> 'a -> 'a
+val sei_block : (int -> 'a -> int * 'a) -> 'a -> block * 'a
+
 (*** a partial representation of the block delta using hashvals in place of stxs ***)
 type blockdeltah = addr_preasset list * poforfeit option * cgraft * hashval list
 
