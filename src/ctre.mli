@@ -32,8 +32,6 @@ type rframe =
   | RFHash
   | RFAll
   | RFLeaf of bool list * int option
-  | RFLeft of rframe
-  | RFRight of rframe
   | RFBin of rframe * rframe
 
 val normalize_frame : frame -> rframe
@@ -62,6 +60,8 @@ val ctree_pre : bool list -> ctree -> int -> ctree option * int
 val ctree_addr : addr -> ctree -> ctree option * int
 val frame_filter_ctree : frame -> ctree -> ctree
 val frame_filter_octree : frame -> ctree option -> ctree option
+val rframe_filter_ctree : rframe -> ctree -> ctree
+val rframe_filter_octree : rframe -> ctree option -> ctree option
 val get_ctree_abbrev : hashval -> ctree
 
 val strip_bitseq_true : (bool list * 'a) list -> (bool list * 'a) list

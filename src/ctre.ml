@@ -163,8 +163,6 @@ type rframe =
   | RFHash
   | RFAll
   | RFLeaf of bool list * int option
-  | RFLeft of rframe
-  | RFRight of rframe
   | RFBin of rframe * rframe
 
 let bin_rframe frl frr =
@@ -191,8 +189,6 @@ let rec normalize_frame fr =
 let split_rframe fr =
   match fr with
   | RFBin(frl,frr) -> (Some(frl),Some(frr))
-  | RFLeft(frl) -> (Some(frl),None)
-  | RFRight(frr) -> (None,Some(frr))
   | RFLeaf(false::bl,i) -> (Some(RFLeaf(bl,i)),None)
   | RFLeaf(true::bl,i) -> (None,Some(RFLeaf(bl,i)))
   | _ -> (None,None)
@@ -224,7 +220,7 @@ let rec rframe_lub fr1 fr2 =
     | ((Some(fr1l),Some(fr1r)),(None,Some(fr2r))) ->
       bin_rframe fr1l (rframe_lub fr1r fr2r)
     | ((None,Some(fr1r)),(None,Some(fr2r))) ->
-      RFRight(rframe_lub fr1r fr2r)
+      RFBin(RFHash,rframe_lub fr1r fr2r)
     | ((Some(fr1l),None),(None,Some(fr2r))) ->
       bin_rframe fr1l fr2r
     | ((Some(fr1l),Some(fr1r)),(Some(fr2l),None)) ->
@@ -232,7 +228,7 @@ let rec rframe_lub fr1 fr2 =
     | ((None,Some(fr1r)),(Some(fr2l),None)) ->
       bin_rframe fr2l fr1r
     | ((Some(fr1l),None),(Some(fr2l),None)) ->
-      RFLeft(rframe_lub fr1l fr2l)
+      RFBin(rframe_lub fr1l fr2l,RFHash)
 
 type ctree =
   | CLeaf of bool list * nehlist
@@ -722,24 +718,16 @@ let rec seo_rframe o fr c =
   match fr with
   | RFAll -> (* 00 *)
       o 2 0 c
-  | RFHash -> (* 01 0 *)
-      o 3 1 c
-  | RFLeaf(bl,io) -> (* 01 1 *)
-      let c = o 3 5 c in
+  | RFHash -> (* 01 *)
+      o 2 1 c
+  | RFLeaf(bl,io) -> (* 10 *)
+      let c = o 2 2 c in
       let c = seo_list seo_bool o bl c in
       seo_option seo_varint o
 	(match io with
 	| Some(i) -> Some(Int64.of_int i)
 	| None -> None)
 	c
-  | RFLeft(frl) -> (* 10 0 *)
-      let c = o 3 2 c in
-      let c = seo_rframe o frl c in
-      c
-  | RFRight(frr) -> (* 10 1 *)
-      let c = o 3 6 c in
-      let c = seo_rframe o frr c in
-      c
   | RFBin(frl,frr) -> (* 11 *)
       let c = o 2 3 c in
       let c = seo_rframe o frl c in
@@ -751,22 +739,12 @@ let rec sei_rframe i c =
   if x = 0 then
     (RFAll,c)
   else if x = 1 then
-    let (y,c) = i 1 c in
-    if y = 0 then
-      (RFHash,c)
-    else
-      let (bl,c) = sei_list sei_bool i c in
-      let (io,c) = sei_option sei_varint i c in
-      let io2 = (match io with Some(i) -> Some(Int64.to_int i) | None -> None) in
-      (RFLeaf(bl,io2),c)
+    (RFHash,c)
   else if x = 2 then
-    let (y,c) = i 1 c in
-    if y = 0 then
-      let (frl,c) = sei_rframe i c in
-      (RFLeft(frl),c)
-    else
-      let (frr,c) = sei_rframe i c in
-      (RFRight(frr),c)
+    let (bl,c) = sei_list sei_bool i c in
+    let (io,c) = sei_option sei_varint i c in
+    let io2 = (match io with Some(i) -> Some(Int64.to_int i) | None -> None) in
+    (RFLeaf(bl,io2),c)
   else
     let (frl,c) = sei_rframe i c in
     let (frr,c) = sei_rframe i c in
@@ -1102,6 +1080,50 @@ let rec frame_filter_ctree f c =
 let frame_filter_octree fr oc =
   match oc with
   | Some(c) -> Some(frame_filter_ctree fr c)
+  | None -> None
+
+let rec rframe_hlist_bitseq f bl =
+  match f with
+  | RFLeaf(bl2,i) -> if bl = bl2 then i else Some(0)
+  | RFAll -> None
+  | RFHash -> Some(0)
+  | RFBin(f0,f1) ->
+      match bl with
+      | (false::br) -> rframe_hlist_bitseq f0 br
+      | (true::br) -> rframe_hlist_bitseq f1 br
+      | [] -> raise (Failure "frame vs. leaf level problem")
+
+let rec rframe_filter_ctree f c =
+  match f with
+  | RFHash -> CHash(ctree_hashroot c)
+  | RFAll -> c
+  | RFLeaf(bl,i) ->
+      frame_filter_leaf bl i c
+  | RFBin(f0,f1) ->
+      match c with
+      | CLeft(c0) -> CLeft(rframe_filter_ctree f0 c0)
+      | CRight(c1) -> CRight(rframe_filter_ctree f1 c1)
+      | CBin(c0,c1) -> CBin(rframe_filter_ctree f0 c0,rframe_filter_ctree f1 c1)
+      | CLeaf(false::bl,hl) -> (*** Leaves pass over FHash, but uses the FAbbrev to determine the abstraction to use for hl ***)
+	  begin
+	    match rframe_hlist_bitseq f0 bl with
+	    | Some(i) -> CLeaf(false::bl,frame_filter_nehlist i hl)
+	    | None -> c
+	  end
+      | CLeaf(true::bl,hl) -> (*** Leaves pass over FHash, but uses the FAbbrev to determine the abstraction to use for hl ***)
+	  begin
+	    match rframe_hlist_bitseq f1 bl with
+	    | Some(i) -> CLeaf(true::bl,frame_filter_nehlist i hl)
+	    | None -> c
+	  end
+      | CLeaf([],hl) -> raise (Failure "frame vs. ctree level problem")
+      | _ ->
+	  Printf.printf "FBin matched *strange ctree\n"; print_ctree c; flush stdout;
+	  c
+
+let rframe_filter_octree fr oc =
+  match oc with
+  | Some(c) -> Some(rframe_filter_ctree fr c)
   | None -> None
 
 (*** archive_unused_ctrees/remove_unused_ctrees:
