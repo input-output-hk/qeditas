@@ -43,48 +43,54 @@ let initialize_conn_accept s =
       let sout = Unix.out_channel_of_descr s in
       set_binary_mode_in sin true;
       set_binary_mode_out sout true;
-      let m2 = rec_msg_nohang sin 5.0 5.0 in
-      match m2 with
-      | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_height2,last_height2,relay2,lastchkpt2)) ->
-	  send_msg sout Verack;
-	  let vers = 1l in
-	  let srvs = 1L in
-	  let tm = Int64.of_float(Unix.time()) in
-	  let nonce = rand_int64() in
-	  let user_agent = "Qeditas-Testing-Phase" in
-	  let fr0 = RFAll in
-	  let fr1 = RFAll in
-	  let fr2 = RFAll in
-	  let first_height = 0L in
-	  let last_height = 0L in
-	  let relay = true in
-	  let lastchkpt = None in
-	  send_msg sout (Version(vers,srvs,tm,addr_from2,myaddr(),nonce,user_agent,fr0,fr1,fr2,first_height,last_height,relay,lastchkpt));
-	  let m1 = rec_msg_nohang sin 5.0 5.0 in
-	  begin
-	    match m1 with
-	    | Some(_,_,Verack) ->
-		Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
-		let cs =
-		  { alive = true;
-		    lastmsgtm = Unix.time();
-		    pending = [];
-		    rframe0 = fr20;
-		    rframe1 = fr21;
-		    rframe2 = fr22;
-		    first_height = first_height2;
-		    last_height = last_height2;
-		  }
-		in
-		conns := (s,sin,sout,addr_from2,cs)::!conns;
-		true
-	    | _ ->
-		Printf.printf "Handshake failed.\n"; flush stdout;
-		Unix.close s;
-		false
-	  end
-      | _ ->
-	  Printf.printf "Handshake failed.\n"; flush stdout;
+      try
+	let m2 = rec_msg_nohang sin 5.0 5.0 in
+	match m2 with
+	| Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_height2,last_height2,relay2,lastchkpt2)) ->
+	    send_msg sout Verack;
+	    let vers = 1l in
+	    let srvs = 1L in
+	    let tm = Int64.of_float(Unix.time()) in
+	    let nonce = rand_int64() in
+	    let user_agent = "Qeditas-Testing-Phase" in
+	    let fr0 = RFAll in
+	    let fr1 = RFAll in
+	    let fr2 = RFAll in
+	    let first_height = 0L in
+	    let last_height = 0L in
+	    let relay = true in
+	    let lastchkpt = None in
+	    send_msg sout (Version(vers,srvs,tm,addr_from2,myaddr(),nonce,user_agent,fr0,fr1,fr2,first_height,last_height,relay,lastchkpt));
+	    let m1 = rec_msg_nohang sin 5.0 5.0 in
+	    begin
+	      match m1 with
+	      | Some(_,_,Verack) ->
+		  Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
+		  let cs =
+		    { alive = true;
+		      lastmsgtm = Unix.time();
+		      pending = [];
+		      rframe0 = fr20;
+		      rframe1 = fr21;
+		      rframe2 = fr22;
+		      first_height = first_height2;
+		      last_height = last_height2;
+		    }
+		  in
+		  conns := (s,sin,sout,addr_from2,cs)::!conns;
+		  true
+	      | _ ->
+		  Printf.printf "Handshake failed. (No Verack)\n"; flush stdout;
+		  Unix.close s;
+		  false
+	    end
+	| _ ->
+	    Printf.printf "Handshake failed. (No Version)\n"; flush stdout;
+	    Unix.close s; (*** handshake failed ***)
+	    false
+      with
+      | IllformedMsg ->
+	  Printf.printf "Handshake failed. (IllformedMsg)\n"; flush stdout;
 	  Unix.close s; (*** handshake failed ***)
 	  false
     end
@@ -110,39 +116,45 @@ let initialize_conn_2 n s sin sout =
   let relay = true in
   let lastchkpt = None in
   send_msg sout (Version(vers,srvs,tm,myaddr(),n,nonce,user_agent,fr0,fr1,fr2,first_height,last_height,relay,lastchkpt));
-  let m1 = rec_msg_nohang sin 5.0 5.0 in
-  match m1 with
-  | Some(_,_,Verack) ->
-    begin
-      let m2 = rec_msg_nohang sin 5.0 5.0 in
-      match m2 with
-      | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_height2,last_height2,relay2,lastchkpt2)) ->
-	  send_msg sout Verack;
-	  Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
-	  let cs =
-	    { alive = true;
-	      lastmsgtm = Unix.time();
-	      pending = [];
-	      rframe0 = fr20;
-	      rframe1 = fr21;
-	      rframe2 = fr22;
-	      first_height = first_height2;
-	      last_height = last_height2;
-	    }
-	  in
-	  conns := (s,sin,sout,addr_from2,cs)::!conns;
-	  true
-      | _ ->
-	  Printf.printf "Handshake failed.\n"; flush stdout;
-	  Unix.close s; (*** handshake failed ***)
+  try
+    let m1 = rec_msg_nohang sin 5.0 5.0 in
+    match m1 with
+    | Some(_,_,Verack) ->
+	begin
+	  let m2 = rec_msg_nohang sin 5.0 5.0 in
+	  match m2 with
+	  | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_height2,last_height2,relay2,lastchkpt2)) ->
+	      send_msg sout Verack;
+	      Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
+	      let cs =
+		{ alive = true;
+		  lastmsgtm = Unix.time();
+		  pending = [];
+		  rframe0 = fr20;
+		  rframe1 = fr21;
+		  rframe2 = fr22;
+		  first_height = first_height2;
+		  last_height = last_height2;
+		}
+	      in
+	      conns := (s,sin,sout,addr_from2,cs)::!conns;
+	      true
+	  | _ ->
+	      Printf.printf "Handshake failed. (No Version)\n"; flush stdout;
+	      Unix.close s; (*** handshake failed ***)
+	      false
+	end
+    | _ ->
+	begin (*** handshake failed ***)
+	  Printf.printf "Handshake failed. (No Verack)\n"; flush stdout;
+	  Unix.close s;
 	  false
-    end
-  | _ ->
-    begin (*** handshake failed ***)
-      Printf.printf "Handshake failed.\n"; flush stdout;
-      Unix.close s;
-      false
-    end;;
+	end
+  with
+  | IllformedMsg ->
+      Printf.printf "Handshake failed. (IllformedMsg)\n"; flush stdout;
+      Unix.close s; (*** handshake failed ***)
+      false;;
 
 let initialize_conn n s =
   let sin = Unix.in_channel_of_descr s in
@@ -262,6 +274,9 @@ let main () =
 	    with
 	    | End_of_file ->
 		Printf.printf "Lost connection.\n"; flush stdout;
+		cs.alive <- false
+	    | IllformedMsg ->
+		Printf.printf "IllformedMsg. Breaking connection.\n"; flush stdout;
 		cs.alive <- false
 	    | exn -> (*** unexpected ***)
 		Printf.printf "Other exception: %s\nNot dropping connection yet.\n" (Printexc.to_string exn);
