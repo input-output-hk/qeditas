@@ -1021,7 +1021,7 @@ let rec frame_filter_leaf bl i c =
 	| (false::br) -> CRight(CHash(ctree_hashroot c1))
 	| (true::br) ->
 	    begin
-	      match frame_filter_leaf br i c0 with
+	      match frame_filter_leaf br i c1 with
 	      | CLeaf(br2,hl2) -> CLeaf(true::br2,hl2)
 	      | c2 -> CRight(c2)
 	    end
