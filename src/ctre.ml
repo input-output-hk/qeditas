@@ -718,6 +718,60 @@ let rec sei_frame i c =
     let (frr,c) = sei_frame i c in
     (FBin(frl,frr),c)
 
+let rec seo_rframe o fr c =
+  match fr with
+  | RFAll -> (* 00 *)
+      o 2 0 c
+  | RFHash -> (* 01 0 *)
+      o 3 1 c
+  | RFLeaf(bl,io) -> (* 01 1 *)
+      let c = o 3 5 c in
+      let c = seo_list seo_bool o bl c in
+      seo_option seo_varint o
+	(match io with
+	| Some(i) -> Some(Int64.of_int i)
+	| None -> None)
+	c
+  | RFLeft(frl) -> (* 10 0 *)
+      let c = o 3 2 c in
+      let c = seo_rframe o frl c in
+      c
+  | RFRight(frr) -> (* 10 1 *)
+      let c = o 3 6 c in
+      let c = seo_rframe o frr c in
+      c
+  | RFBin(frl,frr) -> (* 11 *)
+      let c = o 2 3 c in
+      let c = seo_rframe o frl c in
+      let c = seo_rframe o frr c in
+      c
+
+let rec sei_rframe i c =
+  let (x,c) = i 2 c in
+  if x = 0 then
+    (RFAll,c)
+  else if x = 1 then
+    let (y,c) = i 1 c in
+    if y = 0 then
+      (RFHash,c)
+    else
+      let (bl,c) = sei_list sei_bool i c in
+      let (io,c) = sei_option sei_varint i c in
+      let io2 = (match io with Some(i) -> Some(Int64.to_int i) | None -> None) in
+      (RFLeaf(bl,io2),c)
+  else if x = 2 then
+    let (y,c) = i 1 c in
+    if y = 0 then
+      let (frl,c) = sei_rframe i c in
+      (RFLeft(frl),c)
+    else
+      let (frr,c) = sei_rframe i c in
+      (RFRight(frr),c)
+  else
+    let (frl,c) = sei_rframe i c in
+    let (frr,c) = sei_rframe i c in
+    (RFBin(frl,frr),c)
+
 let rec seo_ctree o tr c =
   match tr with
   | CLeaf(bl,hl) -> (* 00 *)

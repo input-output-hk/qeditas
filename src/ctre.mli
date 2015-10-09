@@ -91,6 +91,9 @@ val sei_nehlist : (int -> 'a -> int * 'a) -> 'a -> nehlist * 'a
 val seo_frame : (int -> int -> 'a -> 'a) -> frame -> 'a -> 'a
 val sei_frame : (int -> 'a -> int * 'a) -> 'a -> frame * 'a
 
+val seo_rframe : (int -> int -> 'a -> 'a) -> rframe -> 'a -> 'a
+val sei_rframe : (int -> 'a -> int * 'a) -> 'a -> rframe * 'a
+
 val seo_ctree : (int -> int -> 'a -> 'a) -> ctree -> 'a -> 'a
 val sei_ctree : (int -> 'a -> int * 'a) -> 'a -> ctree * 'a
 
