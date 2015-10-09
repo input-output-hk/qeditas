@@ -421,6 +421,7 @@ let send_msg_real c replyto m =
   for j = 0 to msl-1 do
     output_byte c (Char.code ms.[j])
   done;
+  flush c;
   mh
 
 let send_msg c m = send_msg_real c None m
