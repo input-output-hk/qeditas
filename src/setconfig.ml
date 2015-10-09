@@ -26,7 +26,7 @@ let intoptionconfigvars = [
 
 exception Done
 
-let process_config_line l =
+let process_config_line setl l =
   let ll = String.length l in
   begin
     try
@@ -35,6 +35,7 @@ let process_config_line l =
 	  let vl = String.length v in
 	  if ll > 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
 	    begin
+	      setl := v::!setl;
 	      r := String.sub l (vl+1) (ll-(vl+1));
 	      raise Done
 	    end
@@ -46,6 +47,7 @@ let process_config_line l =
 	  if ll > 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
 	    let s = String.sub l (vl+1) (ll-(vl+1)) in
 	    begin
+	      setl := v::!setl;
 	      r := (s = "1" || s = "t" || s = "true");
 	      raise Done
 	    end
@@ -56,6 +58,7 @@ let process_config_line l =
 	  let vl = String.length v in
 	  if ll > 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
 	    begin
+	      setl := v::!setl;
 	      r := int_of_string (String.sub l (vl+1) (ll-(vl+1)));
 	      raise Done
 	    end
@@ -66,6 +69,7 @@ let process_config_line l =
 	  let vl = String.length v in
 	  if ll > 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
 	    begin
+	      setl := v::!setl;
 	      r := Some(String.sub l (vl+1) (ll-(vl+1)));
 	      raise Done
 	    end
@@ -76,6 +80,7 @@ let process_config_line l =
 	  let vl = String.length v in
 	  if ll > 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
 	    begin
+	      setl := v::!setl;
 	      r := Some(int_of_string (String.sub l (vl+1) (ll-(vl+1))));
 	      raise Done
 	    end
@@ -87,6 +92,7 @@ let process_config_line l =
 
 let process_config_file () =
   let fn = Filename.concat !Config.datadir "qeditas.conf" in
+  let setl = ref [] in
   if Sys.file_exists fn then
     begin
       let ch = open_in fn in
@@ -94,21 +100,24 @@ let process_config_file () =
 	while true do
 	  let l = input_line ch in
 	  try
-	    process_config_line l
+	    process_config_line setl l
 	  with Not_found ->
 	    Printf.printf "Do not understand %s in qeditas.conf; skipping\n" l
 	done
-      with End_of_file -> ()
+      with End_of_file ->
+	if List.mem "testnet" !setl && not (List.mem "port" !setl) then Config.port := 20804
     end
   else
     Printf.printf "No qeditas.conf file found. Using default configuration.\n";;
 
 let process_config_args () =
   let a = Array.length Sys.argv in
+  let setl = ref [] in
   for i = 1 to a-1 do
     let arg = Sys.argv.(i) in
     if String.length arg > 1 && arg.[0] = '-' then
       try
-	process_config_line (String.sub arg 1 ((String.length arg) - 1))
-      with Not_found -> ()
+	process_config_line setl (String.sub arg 1 ((String.length arg) - 1))
+      with Not_found ->
+	if List.mem "testnet" !setl && not (List.mem "port" !setl) then Config.port := 20804
   done;;
