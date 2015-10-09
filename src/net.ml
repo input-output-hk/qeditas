@@ -12,6 +12,7 @@ open Block
 
 exception RequestRejected
 exception Hung
+exception IllformedMsg
 
 let sethungsignalhandler () =
   Sys.set_signal Sys.sigalrm (Sys.Signal_handle (fun _ -> raise Hung));;
@@ -129,365 +130,363 @@ let connectpeer_socks4 proxyport ip port =
   (s,sin,sout)
 
 type msg =
-  | Version of int32 * int64 * int64 * string * string * int64 * string * int64 * bool
+  | Version of int32 * int64 * int64 * string * string * int64 * string * rframe * rframe * rframe * int64 * int64 * bool * (int64 * hashval) option
   | Verack
-  | Addr of int * (int64 * string) list
-  | Inv of int * (int * hashval) list
-  | GetData of int * (int * hashval) list
-  | MNotFound of int * (int * hashval) list
-  | GetBlocks of int32 * int * hashval list * hashval option
-  | GetHeaders of int32 * int * hashval list * hashval option
+  | Addr of (int64 * string) list
+  | Inv of (int * hashval) list
+  | GetData of (int * hashval) list
+  | MNotFound of (int * hashval) list
+  | GetBlocks of int32 * int64 * hashval option
+  | GetBlockdeltas of int32 * int64 * hashval option
+  | GetBlockdeltahs of int32 * int64 * hashval option
+  | GetHeaders of int32 * int64 * hashval option
   | MTx of int32 * stx (*** signed tx in principle, but in practice some or all signatures may be missing ***)
-  | MBlock of int32 * hashval * blockdeltah (*** the hashval is for the block header and blockdeltah only has the hashes of stxs in the block; the header and txs themselves can/should/must be requested separately ***)
-  | Headers of int * blockheader list
+  | MBlock of int32 * block
+  | Headers of blockheader list
+  | MBlockdelta of int32 * hashval * blockdelta (*** the hashval is for the block header ***)
+  | MBlockdeltah of int32 * hashval * blockdeltah (*** the hashval is for the block header; the blockdeltah only has the hashes of stxs in the block ***)
   | GetAddr
   | Mempool
   | Alert of string * signat
   | Ping
   | Pong
   | Reject of string * int * string * string
-  | MCTree of int32 * ctree
-  | MNehList of int32 * nehlist
-  | MHList of int32 * hlist
-  | GetFramedCTree of int32 * hashval * frame
+  | GetFramedCTree of int32 * int64 option * hashval * rframe
+  | Checkpoint of int64 * hashval
+  | AntiCheckpoint of int64 * hashval
 
-let send_string c x =
-  let l = String.length x in
-  let c2 = seo_varint seoc (Int64.of_int l) (c,None) in
-  seocf c2;
-  for i = 0 to l-1 do
-    output_byte c (Char.code x.[i])
-  done
+type pendingcallback = PendingCallback of (msg -> pendingcallback option)
 
-let rec_string c =
-  let (l64,_) = sei_varint seic (c,None) in
-  let l = Int64.to_int l64 in
-  let x = Buffer.create l in
-  for i = 0 to l-1 do
-    let b = input_byte c in
-    Buffer.add_char x (Char.chr b)
-  done;
-  Buffer.contents x
+type connstate = {
+    alive : bool;
+    lastmsgtime : float;
+    pending : (hashval * float * float * pendingcallback) list;
+    rframe0 : rframe; (*** which parts of the ctree the node is keeping ***)
+    rframe1 : rframe; (*** what parts of the ctree are stored by a node one hop away ***)
+    rframe2 : rframe; (*** what parts of the ctree are stored by a node two hops away ***)
+    first_height : int64; (*** how much history is stored at the node ***)
+    last_height : int64; (*** how up to date the node is ***)
+  }
 
-let send_msg c m =
+let seo_msg o m c =
   match m with
-  | Version(vers,srvs,tm,addr_recv,addr_from,nonce,user_agent,start_height,relay) ->
-      output_byte c 0;
-      let c2 = (c,None) in
-      let c2 = seo_int32 seoc vers c2 in
-      let c2 = seo_int64 seoc srvs c2 in
-      let c2 = seo_int64 seoc tm c2 in
-      let c2 = seo_int64 seoc nonce c2 in
-      let c2 = seo_int64 seoc start_height c2 in
-      let c2 = seo_bool seoc relay c2 in
-      seocf c2;
-      send_string c addr_recv;
-      send_string c addr_from;
-      send_string c user_agent;
-      flush c
-  | Verack ->
-      output_byte c 1;
-      flush c
-  | Addr(cnt,addr_list) ->
-      if cnt > 1000 then raise (Failure "Cannot send more than 1000 node addresses");
-      if not (List.length addr_list = cnt) then raise (Failure "List does not match declared length");
-      output_byte c 2;
-      seocf (seo_varint seoc (Int64.of_int cnt) (c,None));
-      List.iter
-	(fun (tm,a) ->
-	  seocf (seo_int64 seoc tm (c,None));
-	  send_string c a)
-	addr_list;
-      flush c
-  | Inv(cnt,invl) ->
-      if cnt > 50000 then raise (Failure "Cannot send more than 50000 inventory items");
-      if not (List.length invl = cnt) then raise (Failure "List does not match declared length");
-      output_byte c 3;
-      seocf (seo_varint seoc (Int64.of_int cnt) (c,None));
-      List.iter
-	(fun (tp,h) ->
-	  output_byte c tp;
-	  seocf (seo_hashval seoc h (c,None)))
-	invl;
-      flush c
-  | GetData(cnt,invl) ->
-      if cnt > 50000 then raise (Failure "Cannot send more than 50000 data requests");
-      if not (List.length invl = cnt) then raise (Failure "List does not match declared length");
-      output_byte c 4;
-      seocf (seo_varint seoc (Int64.of_int cnt) (c,None));
-      List.iter
-	(fun (tp,h) ->
-	  output_byte c tp;
-	  seocf (seo_hashval seoc h (c,None)))
-	invl;
-      flush c
-  | MNotFound(cnt,invl) ->
-      if cnt > 50000 then raise (Failure "Cannot send more than 50000 'not found' replies");
-      if not (List.length invl = cnt) then raise (Failure "List does not match declared length");
-      output_byte c 5;
-      seocf (seo_varint seoc (Int64.of_int cnt) (c,None));
-      List.iter
-	(fun (tp,h) ->
-	  output_byte c tp;
-	  seocf (seo_hashval seoc h (c,None)))
-	invl;
-      flush c
-  | GetBlocks(vers,hash_count,blklocl,hash_stop) ->
-      if not (List.length blklocl = hash_count) then raise (Failure "List does not match declared length");
-      if hash_count > 50000 then raise (Failure "Cannot send more than 50000 of block locator hashes");
-      output_byte c 6;
-      seocf (seo_int32 seoc vers (c,None));
-      seocf (seo_varint seoc (Int64.of_int hash_count) (c,None));
-      List.iter
-	(fun h ->
-	  seocf (seo_hashval seoc h (c,None)))
-	blklocl;
-      seocf (seo_option seo_hashval seoc hash_stop (c,None));
-      flush c
-  | GetHeaders(vers,hash_count,blklocl,hash_stop) ->
-      if not (List.length blklocl = hash_count) then raise (Failure "List does not match declared length");
-      if hash_count > 50000 then raise (Failure "Cannot send more than 50000 of block locator hashes");
-      output_byte c 7;
-      seocf (seo_int32 seoc vers (c,None));
-      seocf (seo_varint seoc (Int64.of_int hash_count) (c,None));
-      List.iter
-	(fun h ->
-	  seocf (seo_hashval seoc h (c,None)))
-	blklocl;
-      seocf (seo_option seo_hashval seoc hash_stop (c,None));
-      flush c
+  | Version(vers,srvs,tm,addr_recv,addr_from,nonce,user_agent,fr0,fr1,fr2,first_height,latest_height,relay,lastchkpt) ->
+      let c = o 8 0 c in
+      let c = seo_int32 o vers c in
+      let c = seo_int64 o srvs c in
+      let c = seo_int64 o tm c in
+      let c = seo_string o addr_recv c in
+      let c = seo_string o addr_from c in
+      let c = seo_int64 o nonce c in
+      let c = seo_string o user_agent c in
+      let c = seo_rframe o fr0 c in
+      let c = seo_rframe o fr1 c in
+      let c = seo_rframe o fr2 c in
+      let c = seo_int64 o first_height c in
+      let c = seo_int64 o latest_height c in
+      let c = seo_bool o relay c in
+      let c = seo_option (seo_prod seo_int64 seo_hashval) o lastchkpt c in
+      c
+  | Verack -> o 8 1 c
+  | Addr(addr_list) ->
+      if List.length addr_list > 1000 then raise (Failure "Cannot send more than 1000 node addresses");
+      let c = o 8 2 c in
+      let c = seo_list (seo_prod seo_int64 seo_string) o addr_list c in
+      c
+  | Inv(invl) ->
+      if List.length invl > 50000 then raise (Failure "Cannot send more than 50000 inventory items");
+      let c = o 8 3 c in
+      let c = seo_list (seo_prod seo_int8 seo_hashval) o invl c in
+      c
+  | GetData(invl) ->
+      if List.length invl > 50000 then raise (Failure "Cannot send more than 50000 data requests");
+      let c = o 8 4 c in
+      let c = seo_list (seo_prod seo_int8 seo_hashval) o invl c in
+      c
+  | MNotFound(invl) ->
+      if List.length invl > 50000 then raise (Failure "Cannot send more than 50000 'not found' replies");
+      let c = o 8 5 c in
+      let c = seo_list (seo_prod seo_int8 seo_hashval) o invl c in
+      c
+  | GetBlocks(vers,blkh,hash_stop) ->
+      let c = o 8 6 c in
+      let c = seo_int32 o vers c in
+      let c = seo_int64 o blkh c in
+      let c = seo_option seo_hashval o hash_stop c in
+      c
+  | GetBlockdeltas(vers,blkh,hash_stop) ->
+      let c = o 8 7 c in
+      let c = seo_int32 o vers c in
+      let c = seo_int64 o blkh c in
+      let c = seo_option seo_hashval o hash_stop c in
+      c
+  | GetBlockdeltahs(vers,blkh,hash_stop) ->
+      let c = o 8 8 c in
+      let c = seo_int32 o vers c in
+      let c = seo_int64 o blkh c in
+      let c = seo_option seo_hashval o hash_stop c in
+      c
+  | GetHeaders(vers,blkh,hash_stop) ->
+      let c = o 8 9 c in
+      let c = seo_int32 o vers c in
+      let c = seo_int64 o blkh c in
+      let c = seo_option seo_hashval o hash_stop c in
+      c
   | MTx(vers,tau) ->
-      output_byte c 8;
-      seocf (seo_int32 seoc vers (c,None));
-      seocf (seo_stx seoc tau (c,None));
-      flush c
-  | MBlock(vers,h,del) ->
-      output_byte c 9;
-      seocf (seo_int32 seoc vers (c,None));
-      seocf (seo_hashval seoc h (c,None));
-      seocf (seo_blockdeltah seoc del (c,None));
-      flush c
-  | Headers(cnt,bhl) ->
-      if cnt > 1000 then raise (Failure "Cannot send more than 1000 headers");
-      if not (List.length bhl = cnt) then raise (Failure "List does not match declared length");
-      output_byte c 10;
-      seocf (seo_varint seoc (Int64.of_int cnt) (c,None));
-      List.iter
-	(fun bh ->
-	  seocf (seo_blockheader seoc bh (c,None)))
-	bhl;
-      flush c
-  | GetAddr ->
-      output_byte c 11;
-      flush c
-  | Mempool ->
-      output_byte c 12;
-      flush c
+      let c = o 8 10 c in
+      let c = seo_int32 o vers c in
+      let c = seo_stx o tau c in
+      c
+  | MBlock(vers,b) ->
+      let c = o 8 11 c in
+      let c = seo_int32 o vers c in
+      let c = seo_block o b c in
+      c
+  | Headers(bhl) ->
+      if List.length bhl > 1000 then raise (Failure "Cannot send more than 1000 headers");
+      let c = o 8 12 c in
+      let c = seo_list seo_blockheader o bhl c in
+      c
+  | MBlockdelta(vers,h,del) ->
+      let c = o 8 13 c in
+      let c = seo_int32 o vers c in
+      let c = seo_hashval o h c in
+      let c = seo_blockdelta o del c in
+      c
+  | MBlockdeltah(vers,h,del) ->
+      let c = o 8 14 c in
+      let c = seo_int32 o vers c in
+      let c = seo_hashval o h c in
+      let c = seo_blockdeltah o del c in
+      c
+  | GetAddr -> o 8 15 c
+  | Mempool -> o 8 16 c
   | Alert(m,sg) ->
-      output_byte c 13;
-      send_string c m;
-      seocf (seo_signat seoc sg (c,None));
-      flush c
-  | Ping ->
-      output_byte c 14;
-      flush c
-  | Pong ->
-      output_byte c 15;
-      flush c
+      let c = o 8 17 c in
+      let c = seo_string o m c in
+      let c = seo_signat o sg c in
+      c
+  | Ping -> o 8 18 c
+  | Pong -> o 8 19 c
   | Reject(m,ccode,rsn,data) ->
-      output_byte c 16;
-      send_string c m;
-      output_byte c ccode;
-      send_string c rsn;
-      send_string c data;
-      flush c
-  | MCTree(vers,ctr) ->
-      output_byte c 17;
-      seocf (seo_int32 seoc vers (c,None));
-      seocf (seo_ctree seoc ctr (c,None));
-      flush c
-  | MNehList(vers,hl) ->
-      output_byte c 18;
-      seocf (seo_int32 seoc vers (c,None));
-      seocf (seo_nehlist seoc hl (c,None));
-      flush c
-  | MHList(vers,hl) ->
-      output_byte c 19;
-      seocf (seo_int32 seoc vers (c,None));
-      seocf (seo_hlist seoc hl (c,None));
-      flush c
-  | GetFramedCTree(vers,cr,fr) ->
-      output_byte c 20;
-      seocf (seo_int32 seoc vers (c,None));
-      seocf (seo_hashval seoc cr (c,None));
-      seocf (seo_frame seoc fr (c,None));
-      flush c
+      let c = o 8 20 c in
+      let c = seo_string o m c in
+      let c = seo_int8 o ccode c in
+      let c = seo_string o rsn c in
+      let c = seo_string o data c in
+      c
+  | GetFramedCTree(vers,blkh,cr,fr) ->
+      let c = o 8 21 c in
+      let c = seo_int32 o vers c in
+      let c = seo_option seo_int64 o blkh c in
+      let c = seo_hashval o cr c in
+      let c = seo_rframe o fr c in
+      c
+  | Checkpoint(blkh,h) ->
+      let c = o 8 22 c in
+      let c = seo_int64 o blkh c in
+      let c = seo_hashval o h c in
+      c
+  | AntiCheckpoint(blkh,h) ->
+      let c = o 8 23 c in
+      let c = seo_int64 o blkh c in
+      let c = seo_hashval o h c in
+      c
 
-let rec_msg_2 c by =
+let sei_msg i c =
+  let (by,c) = i 8 c in
   match by with
   | 0 ->
-      let (vers,c2) = sei_int32 seic (c,None) in
-      let (srvs,c2) = sei_int64 seic c2 in
-      let (tm,c2) = sei_int64 seic c2 in
-      let (nonce,c2) = sei_int64 seic c2 in
-      let (start_height,c2) = sei_int64 seic c2 in
-      let (relay,_) = sei_bool seic c2 in
-      let addr_recv = rec_string c in
-      let addr_from = rec_string c in
-      let user_agent = rec_string c in
-      Version(vers,srvs,tm,addr_recv,addr_from,nonce,user_agent,start_height,relay)
+      let (vers,c) = sei_int32 i c in
+      let (srvs,c) = sei_int64 i c in
+      let (tm,c) = sei_int64 i c in
+      let (addr_recv,c) = sei_string i c in
+      let (addr_from,c) = sei_string i c in
+      let (nonce,c) = sei_int64 i c in
+      let (user_agent,c) = sei_string i c in
+      let (fr0,c) = sei_rframe i c in
+      let (fr1,c) = sei_rframe i c in
+      let (fr2,c) = sei_rframe i c in
+      let (first_height,c) = sei_int64 i c in
+      let (latest_height,c) = sei_int64 i c in
+      let (relay,c) = sei_bool i c in
+      let (lastchkpt,c) = sei_option (sei_prod sei_int64 sei_hashval) i c in
+      (Version(vers,srvs,tm,addr_recv,addr_from,nonce,user_agent,fr0,fr1,fr2,first_height,latest_height,relay,lastchkpt),c)
   | 1 ->
-      Verack
+      (Verack,c)
   | 2 ->
-      let (cnt,_) = sei_varint seic (c,None) in
-      let cnt = Int64.to_int cnt in
-      if cnt > 1000 then raise (Failure "Cannot receive more than 1000 node addresses");
-      let aa = Array.make cnt (0L,"") in
-      for i = 0 to cnt-1 do
-	let (tm,_) = sei_int64 seic (c,None) in
-	let a = rec_string c in
-	aa.(i) <- (tm,a)
-      done;
-      Addr(cnt,Array.to_list aa)
+      let (addr_list,c) = sei_list (sei_prod sei_int64 sei_string) i c in
+      (Addr(addr_list),c)
   | 3 ->
-      let (cnt,_) = sei_varint seic (c,None) in
-      let cnt = Int64.to_int cnt in
-      if cnt > 50000 then raise (Failure "Cannot receive more than 50000 inventory items");
-      let aa = Array.make cnt (0,(0l,0l,0l,0l,0l)) in
-      for i = 0 to cnt-1 do
-	let tp = input_byte c in
-	let (h,_) = sei_hashval seic (c,None) in
-	aa.(i) <- (tp,h)
-      done;
-      Inv(cnt,Array.to_list aa)
+      let (invl,c) = sei_list (sei_prod sei_int8 sei_hashval) i c in
+      (Inv(invl),c)
   | 4 ->
-      let (cnt,_) = sei_varint seic (c,None) in
-      let cnt = Int64.to_int cnt in
-      if cnt > 50000 then raise (Failure "Cannot receive more than 50000 data requests");
-      let aa = Array.make cnt (0,(0l,0l,0l,0l,0l)) in
-      for i = 0 to cnt-1 do
-	let tp = input_byte c in
-	let (h,_) = sei_hashval seic (c,None) in
-	aa.(i) <- (tp,h)
-      done;
-      GetData(cnt,Array.to_list aa)
+      let (invl,c) = sei_list (sei_prod sei_int8 sei_hashval) i c in
+      (GetData(invl),c)
   | 5 ->
-      let (cnt,_) = sei_varint seic (c,None) in
-      let cnt = Int64.to_int cnt in
-      if cnt > 50000 then raise (Failure "Cannot receive more than 50000 'not found' replies");
-      let aa = Array.make cnt (0,(0l,0l,0l,0l,0l)) in
-      for i = 0 to cnt-1 do
-	let tp = input_byte c in
-	let (h,_) = sei_hashval seic (c,None) in
-	aa.(i) <- (tp,h)
-      done;
-      MNotFound(cnt,Array.to_list aa)
+      let (invl,c) = sei_list (sei_prod sei_int8 sei_hashval) i c in
+      (MNotFound(invl),c)
   | 6 ->
-      let (vers,_) = sei_int32 seic (c,None) in
-      let (hash_count,_) = sei_varint seic (c,None) in
-      let hash_count = Int64.to_int hash_count in
-      if hash_count > 50000 then raise (Failure "Cannot receive more than 50000 block locator hashes");
-      let aa = Array.make hash_count (0l,0l,0l,0l,0l) in
-      for i = 0 to hash_count-1 do
-	let (h,_) = sei_hashval seic (c,None) in
-	aa.(i) <- h
-      done;
-      let (hash_stop,_) = sei_option sei_hashval seic (c,None) in
-      GetBlocks(vers,hash_count,Array.to_list aa,hash_stop)
+      let (vers,c) = sei_int32 i c in
+      let (blkh,c) = sei_int64 i c in
+      let (hash_stop,c) = sei_option sei_hashval i c in
+      (GetBlocks(vers,blkh,hash_stop),c)
   | 7 ->
-      let (vers,_) = sei_int32 seic (c,None) in
-      let (hash_count,_) = sei_varint seic (c,None) in
-      let hash_count = Int64.to_int hash_count in
-      if hash_count > 50000 then raise (Failure "Cannot receive more than 50000 block locator hashes");
-      let aa = Array.make hash_count (0l,0l,0l,0l,0l) in
-      for i = 0 to hash_count-1 do
-	let (h,_) = sei_hashval seic (c,None) in
-	aa.(i) <- h
-      done;
-      let (hash_stop,_) = sei_option sei_hashval seic (c,None) in
-      GetHeaders(vers,hash_count,Array.to_list aa,hash_stop)
+      let (vers,c) = sei_int32 i c in
+      let (blkh,c) = sei_int64 i c in
+      let (hash_stop,c) = sei_option sei_hashval i c in
+      (GetBlockdeltas(vers,blkh,hash_stop),c)
   | 8 ->
-      let (vers,_) = sei_int32 seic (c,None) in
-      let (tau,_) = sei_stx seic (c,None) in
-      MTx(vers,tau)
+      let (vers,c) = sei_int32 i c in
+      let (blkh,c) = sei_int64 i c in
+      let (hash_stop,c) = sei_option sei_hashval i c in
+      (GetBlockdeltahs(vers,blkh,hash_stop),c)
   | 9 ->
-      let (vers,_) = sei_int32 seic (c,None) in
-      let (h,_) = sei_hashval seic (c,None) in
-      let (del,_) = sei_blockdeltah seic (c,None) in
-      MBlock(vers,h,del)
+      let (vers,c) = sei_int32 i c in
+      let (blkh,c) = sei_int64 i c in
+      let (hash_stop,c) = sei_option sei_hashval i c in
+      (GetHeaders(vers,blkh,hash_stop),c)
   | 10 ->
-      let (cnt,_) = sei_varint seic (c,None) in
-      let cnt = Int64.to_int cnt in
-      if cnt > 1000 then raise (Failure "Cannot receive more than 1000 headers");
-      let aa = Array.make cnt fake_blockheader in
-      for i = 0 to cnt-1 do
-	let (bh,_) = sei_blockheader seic (c,None) in
-	aa.(i) <- bh
-      done;
-      Headers(cnt,Array.to_list aa)
+      let (vers,c) = sei_int32 i c in
+      let (tau,c) = sei_stx i c in
+      (MTx(vers,tau),c)
   | 11 ->
-      GetAddr
+      let (vers,c) = sei_int32 i c in
+      let (b,c) = sei_block i c in
+      (MBlock(vers,b),c)
   | 12 ->
-      Mempool
+      let (bhl,c) = sei_list sei_blockheader i c in
+      (Headers(bhl),c)
   | 13 ->
-      let m = rec_string c in
-      let (sg,_) = sei_signat seic (c,None) in
-      Alert(m,sg)
+      let (vers,c) = sei_int32 i c in
+      let (h,c) = sei_hashval i c in
+      let (del,c) = sei_blockdelta i c in
+      (MBlockdelta(vers,h,del),c)
   | 14 ->
-      Ping
-  | 15 ->
-      Pong
-  | 16 ->
-      let m = rec_string c in
-      let ccode = input_byte c in
-      let rsn = rec_string c in
-      let data = rec_string c in
-      Reject(m,ccode,rsn,data)
+      let (vers,c) = sei_int32 i c in
+      let (h,c) = sei_hashval i c in
+      let (del,c) = sei_blockdeltah i c in
+      (MBlockdeltah(vers,h,del),c)
+  | 15 -> (GetAddr,c)
+  | 16 -> (Mempool,c)
   | 17 ->
-      let (vers,_) = sei_int32 seic (c,None) in
-      let (ctr,_) = sei_ctree seic (c,None) in
-      MCTree(vers,ctr)
-  | 18 ->
-      let (vers,_) = sei_int32 seic (c,None) in
-      let (hl,_) = sei_nehlist seic (c,None) in
-      MNehList(vers,hl)
-  | 19 ->
-      let (vers,_) = sei_int32 seic (c,None) in
-      let (hl,_) = sei_hlist seic (c,None) in
-      MHList(vers,hl)
+      let (m,c) = sei_string i c in
+      let (sg,c) = sei_signat i c in
+      (Alert(m,sg),c)
+  | 18 -> (Ping,c)
+  | 19 -> (Pong,c)
   | 20 ->
-      let (vers,_) = sei_int32 seic (c,None) in
-      let (cr,_) = sei_hashval seic (c,None) in
-      let (fr,_) = sei_frame seic (c,None) in
-      GetFramedCTree(vers,cr,fr)
+      let (m,c) = sei_string i c in
+      let (ccode,c) = sei_int8 i c in
+      let (rsn,c) = sei_string i c in
+      let (data,c) = sei_string i c in
+      (Reject(m,ccode,rsn,data),c)
+  | 21 ->
+      let (vers,c) = sei_int32 i c in
+      let (blkh,c) = sei_option sei_int64 i c in
+      let (cr,c) = sei_hashval i c in
+      let (fr,c) = sei_rframe i c in
+      (GetFramedCTree(vers,blkh,cr,fr),c)
+  | 22 ->
+      let (blkh,c) = sei_int64 i c in
+      let (h,c) = sei_hashval i c in
+      (Checkpoint(blkh,h),c)
+  | 23 ->
+      let (blkh,c) = sei_int64 i c in
+      let (h,c) = sei_hashval i c in
+      (AntiCheckpoint(blkh,h),c)
   | _ ->
       raise (Failure "Unrecognized Message Type")
 
-let rec_msg_nohang c tm =
-  let by = input_byte_nohang c tm in
-  match by with
+let send_msg_real c replyto m =
+  let magic = if !Config.testnet then 0x51656454l else 0x5165644dl in
+  let sb = Buffer.create 1000 in
+  seosbf (seo_msg seosb m (sb,None));
+  let ms = Buffer.contents sb in
+  let msl = String.length ms in
+  (*** Magic Number for mainnet: QedM ***)
+  seocf (seo_int32 seoc magic (c,None));
+  begin
+    match replyto with
+    | None ->
+	output_byte c 0
+    | Some(h) ->
+	output_byte c 1;
+	seocf (seo_hashval seoc h (c,None))
+  end;
+  output_byte c (Char.code ms.[0]);
+  seocf (seo_int32 seoc (Int32.of_int msl) (c,None));
+  let mh = hash160 ms in
+  seocf (seo_hashval seoc mh (c,None));
+  for j = 0 to msl-1 do
+    output_byte c (Char.code ms.[j])
+  done
+
+let send_msg c m = send_msg_real c None m
+let send_reply c h m = send_msg_real c (Some(h)) m
+
+(***
+ Throw IllformedMsg if something's wrong with the format or if it reads the first byte but times out before reading the full message.
+ If IllformedMsg is thrown, the connection should be severed.
+ ***)
+let rec_msg_nohang c tm tm2 =
+  let (mag0,mag1,mag2,mag3) = if !Config.testnet then (0x51,0x65,0x64,0x54) else (0x51,0x65,0x64,0x4d) in
+  let by0 = input_byte_nohang c tm in
+  match by0 with
   | None -> None
-  | Some(by) -> Some(rec_msg_2 c by)
+  | Some(by0) ->
+      begin
+	if not (by0 = mag0) then raise IllformedMsg;
+	try
+	  ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = tm2 });
+	  let by1 = input_byte c in
+	  if not (by1 = mag1) then raise IllformedMsg;
+	  let by2 = input_byte c in
+	  if not (by2 = mag2) then raise IllformedMsg;
+	  let by3 = input_byte c in
+	  if not (by3 = mag3) then raise IllformedMsg;
+	  let replyto =
+	    let by4 = input_byte c in
+	    if by4 = 0 then (*** not a reply ***)
+	      None
+	    else if by4 = 1 then
+	      let (h,_) = sei_hashval seic (c,None) in
+	      (Some(h))
+	    else
+	      raise IllformedMsg
+	  in
+	  let comm = input_byte c in
+	  let (msl,_) = sei_int32 seic (c,None) in
+	  if msl > 67108863l then raise IllformedMsg;
+	  let msl = Int32.to_int msl in
+	  let (mh,_) = sei_hashval seic (c,None) in
+	  let sb = Buffer.create msl in
+	  let by0 = input_byte c in
+	  if not (by0 = comm) then raise IllformedMsg;
+	  for j = 1 to msl-1 do
+	    let by = input_byte c in
+	    Buffer.add_char sb (Char.chr by)
+	  done;
+	  ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 }); (*** finished reading the message, so no need to time out now ***)
+	  let ms = Buffer.contents sb in
+	  if not (mh = hash160 ms) then raise IllformedMsg;
+	  let (m,_) = sei_msg seis (ms,msl,None,0,0) in
+	  Some(replyto,mh,m)
+	with
+	| _ -> (*** consider it an IllformedMsg no matter what the exception raised was ***)
+	    ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
+	    raise IllformedMsg
+      end
 
-let rec rec_msgs_nohang_r c tm msgs =
-  let by = input_byte_nohang c tm in
-  match by with
-  | None -> List.rev msgs
-  | Some(by) -> 
-      let m = rec_msg_2 c by in
-      rec_msgs_nohang_r c tm (m::msgs)
-
-let rec_msgs_nohang c tm =
-  rec_msgs_nohang_r c tm []
-
-let handle_msg sin sout lastpingtm m =
+let handle_msg sin sout cst replyto mh m =
   match m with
   | Ping ->
-      Printf.printf "Got Ping. Sending Pong.\n"; flush stdout;
-      send_msg sout Pong;
+      Printf.printf "Handling Ping. Sending Pong.\n"; flush stdout;
+      send_reply sout mh Pong;
       Printf.printf "Sent Pong.\n"; flush stdout
   | Pong ->
-      Printf.printf "Got Pong. resetting lastpingtm to None.\n"; flush stdout;
-      lastpingtm := None
+      Printf.printf "Handling Pong.\n"; flush stdout;
+      
+
   | _ ->
       Printf.printf "Ignoring msg since code to handle msg is unwritten.\n"; flush stdout
