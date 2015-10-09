@@ -10,6 +10,10 @@ let fallbacknodes = [
 "108.61.219.125:20805"
 ];;
 
+let testnetfallbacknodes = [
+"108.61.219.125:20804"
+];;
+
 let conns = ref [];;
 
 let rand_int64 () =
@@ -192,7 +196,7 @@ let search_for_conns () =
 		| _ -> Printf.printf "here 3\n"; flush stdout;
 	      end
 	  )
-	  fallbacknodes
+	(if !Config.testnet then testnetfallbacknodes else fallbacknodes)
       with Connected -> ()
     end;;
 
