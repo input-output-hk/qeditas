@@ -1083,6 +1083,7 @@ let rec frame_filter_ctree f c =
 	    | None -> c
 	  end
       | CLeaf([],hl) -> raise (Failure "frame vs. ctree level problem")
+      | CAbbrev(cr,ca) -> frame_filter_ctree f (get_ctree_abbrev ca)
       | _ ->
 	  Printf.printf "FBin matched *strange ctree\n"; print_ctree c; flush stdout;
 	  c
@@ -1172,6 +1173,7 @@ let rec rframe_filter_ctree f c =
 	    | None -> c
 	  end
       | CLeaf([],hl) -> raise (Failure "frame vs. ctree level problem")
+      | CAbbrev(cr,ca) -> rframe_filter_ctree f (get_ctree_abbrev ca)
       | _ ->
 	  Printf.printf "FBin matched *strange ctree\n"; print_ctree c; flush stdout;
 	  c
