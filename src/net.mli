@@ -50,18 +50,18 @@ type msg =
 type pendingcallback = PendingCallback of (msg -> pendingcallback option)
 
 type connstate = {
-    alive : bool;
-    lastmsgtime : float;
-    pending : (hashval * float * float * pendingcallback) list;
-    rframe0 : rframe; (*** which parts of the ctree the node is keeping ***)
-    rframe1 : rframe; (*** what parts of the ctree are stored by a node one hop away ***)
-    rframe2 : rframe; (*** what parts of the ctree are stored by a node two hops away ***)
-    first_height : int64; (*** how much history is stored at the node ***)
-    last_height : int64; (*** how up to date the node is ***)
+    mutable alive : bool;
+    mutable lastmsgtm : float;
+    mutable pending : (hashval * bool * float * float * pendingcallback option) list;
+    mutable rframe0 : rframe; (*** which parts of the ctree the node is keeping ***)
+    mutable rframe1 : rframe; (*** what parts of the ctree are stored by a node one hop away ***)
+    mutable rframe2 : rframe; (*** what parts of the ctree are stored by a node two hops away ***)
+    mutable first_height : int64; (*** how much history is stored at the node ***)
+    mutable last_height : int64; (*** how up to date the node is ***)
   }
 
-val send_msg : out_channel -> msg -> unit
-val send_reply : out_channel -> hashval -> msg -> unit
+val send_msg : out_channel -> msg -> hashval
+val send_reply : out_channel -> hashval -> msg -> hashval
 
 val rec_msg_nohang : in_channel -> float -> float -> (hashval option * hashval * msg) option
 

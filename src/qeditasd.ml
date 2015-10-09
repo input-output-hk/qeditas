@@ -2,6 +2,7 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Ctre;;
 open Net;;
 open Setconfig;;
 
@@ -42,31 +43,46 @@ let initialize_conn_accept s =
       let sout = Unix.out_channel_of_descr s in
       set_binary_mode_in sin true;
       set_binary_mode_out sout true;
-      let m2 = rec_msg_nohang sin 5.0 in
+      let m2 = rec_msg_nohang sin 5.0 5.0 in
       match m2 with
-      | Some(Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,start_height2,relay2)) ->
+      | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_height2,last_height2,relay2,lastchkpt2)) ->
 	  send_msg sout Verack;
 	  let vers = 1l in
 	  let srvs = 1L in
 	  let tm = Int64.of_float(Unix.time()) in
 	  let nonce = rand_int64() in
 	  let user_agent = "Qeditas-Testing-Phase" in
-	  let start_height = 0L in
+	  let fr0 = RFAll in
+	  let fr1 = RFAll in
+	  let fr2 = RFAll in
+	  let first_height = 0L in
+	  let last_height = 0L in
 	  let relay = true in
-	  send_msg sout (Version(vers,srvs,tm,addr_from2,myaddr(),nonce,user_agent,start_height,relay));
-	  let m1 = rec_msg_nohang sin 5.0 in
-	  if m1 = Some(Verack) then
-	    begin
-	      Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
-	      conns := (s,sin,sout,Buffer.create 100,ref tm,ref None,ref true)::!conns;
-	      true
-	    end
-	  else
-	    begin (*** handshake failed ***)
-	      Printf.printf "Handshake failed.\n"; flush stdout;
-	      Unix.close s;
-	      false
-	    end
+	  let lastchkpt = None in
+	  send_msg sout (Version(vers,srvs,tm,addr_from2,myaddr(),nonce,user_agent,fr0,fr1,fr2,first_height,last_height,relay,lastchkpt));
+	  let m1 = rec_msg_nohang sin 5.0 5.0 in
+	  begin
+	    match m1 with
+	    | Some(_,_,Verack) ->
+		Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
+		let cs =
+		  { alive = true;
+		    lastmsgtm = Unix.time();
+		    pending = [];
+		    rframe0 = fr20;
+		    rframe1 = fr21;
+		    rframe2 = fr22;
+		    first_height = first_height2;
+		    last_height = last_height2;
+		  }
+		in
+		conns := (s,sin,sout,addr_from2,cs)::!conns;
+		true
+	    | _ ->
+		Printf.printf "Handshake failed.\n"; flush stdout;
+		Unix.close s;
+		false
+	  end
       | _ ->
 	  Printf.printf "Handshake failed.\n"; flush stdout;
 	  Unix.close s; (*** handshake failed ***)
@@ -86,25 +102,42 @@ let initialize_conn_2 n s sin sout =
   let tm = Int64.of_float(Unix.time()) in
   let nonce = rand_int64() in
   let user_agent = "Qeditas-Testing-Phase" in
-  let start_height = 0L in
+  let fr0 = RFAll in
+  let fr1 = RFAll in
+  let fr2 = RFAll in
+  let first_height = 0L in
+  let last_height = 0L in
   let relay = true in
-  send_msg sout (Version(vers,srvs,tm,n,myaddr(),nonce,user_agent,start_height,relay));
-  let m1 = rec_msg_nohang sin 5.0 in
-  if m1 = Some(Verack) then
+  let lastchkpt = None in
+  send_msg sout (Version(vers,srvs,tm,myaddr(),n,nonce,user_agent,fr0,fr1,fr2,first_height,last_height,relay,lastchkpt));
+  let m1 = rec_msg_nohang sin 5.0 5.0 in
+  match m1 with
+  | Some(_,_,Verack) ->
     begin
-      let m2 = rec_msg_nohang sin 5.0 in
+      let m2 = rec_msg_nohang sin 5.0 5.0 in
       match m2 with
-      | Some(Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,start_height2,relay2)) ->
+      | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_height2,last_height2,relay2,lastchkpt2)) ->
 	  send_msg sout Verack;
 	  Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
-	  conns := (s,sin,sout,Buffer.create 100,ref tm,ref None,ref true)::!conns;
+	  let cs =
+	    { alive = true;
+	      lastmsgtm = Unix.time();
+	      pending = [];
+	      rframe0 = fr20;
+	      rframe1 = fr21;
+	      rframe2 = fr22;
+	      first_height = first_height2;
+	      last_height = last_height2;
+	    }
+	  in
+	  conns := (s,sin,sout,addr_from2,cs)::!conns;
 	  true
       | _ ->
 	  Printf.printf "Handshake failed.\n"; flush stdout;
 	  Unix.close s; (*** handshake failed ***)
 	  false
     end
-  else
+  | _ ->
     begin (*** handshake failed ***)
       Printf.printf "Handshake failed.\n"; flush stdout;
       Unix.close s;
@@ -196,46 +229,45 @@ let main () =
 	end;
 	(*** check each connection for possible messages ***)
 	List.iter
-	  (fun (s,sin,sout,sb,lastmsgtm,lastpingtm,alive) ->
+	  (fun (s,sin,sout,peeraddr,cs) ->
 	    try
-	      let msgs = rec_msgs_nohang sin 0.1 in
-	      let tm = Int64.of_float(Unix.time()) in
-	      if msgs = [] then
-		begin
+	      let tm = Unix.time() in
+	      match rec_msg_nohang sin 0.1 1.0 with
+	      | None ->
 		  begin
-		    match !lastpingtm with
-		    | Some(lptm) ->
-			if (Int64.sub tm lptm) > 30L then (*** If expecting a pong and haven't gotten it, then drop connection. ***)
-			  begin
-			    Printf.printf "Ping-Pong failed. Dropping connection.\n"; flush stdout;
-			    alive := false
-			  end
-		    | None -> ()
-		  end;
-		  if (Int64.sub tm !lastmsgtm) > 60L then (*** If no messages in enough time, send a ping. ***)
-		    begin
-		      Printf.printf "Sending Ping.\n"; flush stdout;
-		      send_msg sout Ping;
-		      Printf.printf "Sent Ping.\n"; flush stdout;
-		      lastpingtm := Some(tm);
-		      lastmsgtm := tm
-		    end
-		end
-	      else
+		    try
+		      ignore (List.find (fun (h,p,tm1,tm2,f) -> p && (tm -. tm2 > 30.0)) cs.pending);
+			(*** Something that required a response didn't respond in time (e.g., a Ping).
+			     Drop the connection
+			 ***)
+                      Printf.printf "Ping-Pong failed. Dropping connection.\n"; flush stdout;
+                      Unix.close s;
+                      cs.alive <- false
+                    with Not_found ->
+		    if (tm -. cs.lastmsgtm) > 60.0 then (*** If no messages in enough time, send a ping. ***)
+		      begin
+			Printf.printf "Sending Ping.\n"; flush stdout;
+			let mh = send_msg sout Ping in
+			Printf.printf "Sent Ping.\n"; flush stdout;
+                        cs.pending <- (mh,true,tm,tm,None)::cs.pending;
+                        cs.lastmsgtm <- tm
+		      end
+		  end
+	      | Some(replyto,mh,m) ->
 		begin
-		  Printf.printf "got a msg, new lastmsgtm %Ld\n" tm; flush stdout;
-		  lastmsgtm := tm;
-		  List.iter (handle_msg sin sout lastpingtm) msgs
+		  Printf.printf "got a msg, new lastmsgtm %f\n" tm; flush stdout;
+                  cs.lastmsgtm <- tm;
+		  handle_msg sin sout cs replyto mh m
 		end
 	    with
 	    | End_of_file ->
 		Printf.printf "Lost connection.\n"; flush stdout;
-		alive := false
+		cs.alive <- false
 	    | exn -> (*** unexpected ***)
 		Printf.printf "Other exception: %s\nNot dropping connection yet.\n" (Printexc.to_string exn);
 	  )
 	  !conns;
-	conns := List.filter (fun (s,sin,sout,sb,lastmsgtm,lastpingtm,alive) -> !alive) !conns
+	conns := List.filter (fun (s,sin,sout,peeraddr,cs) -> cs.alive) !conns
       with _ -> () (*** ensuring no exception escapes the main loop ***)
     done
   end;;

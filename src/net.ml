@@ -158,14 +158,14 @@ type msg =
 type pendingcallback = PendingCallback of (msg -> pendingcallback option)
 
 type connstate = {
-    alive : bool;
-    lastmsgtime : float;
-    pending : (hashval * float * float * pendingcallback) list;
-    rframe0 : rframe; (*** which parts of the ctree the node is keeping ***)
-    rframe1 : rframe; (*** what parts of the ctree are stored by a node one hop away ***)
-    rframe2 : rframe; (*** what parts of the ctree are stored by a node two hops away ***)
-    first_height : int64; (*** how much history is stored at the node ***)
-    last_height : int64; (*** how up to date the node is ***)
+    mutable alive : bool;
+    mutable lastmsgtm : float;
+    mutable pending : (hashval * bool * float * float * pendingcallback option) list;
+    mutable rframe0 : rframe; (*** which parts of the ctree the node is keeping ***)
+    mutable rframe1 : rframe; (*** what parts of the ctree are stored by a node one hop away ***)
+    mutable rframe2 : rframe; (*** what parts of the ctree are stored by a node two hops away ***)
+    mutable first_height : int64; (*** how much history is stored at the node ***)
+    mutable last_height : int64; (*** how up to date the node is ***)
   }
 
 let seo_msg o m c =
@@ -420,7 +420,8 @@ let send_msg_real c replyto m =
   seocf (seo_hashval seoc mh (c,None));
   for j = 0 to msl-1 do
     output_byte c (Char.code ms.[j])
-  done
+  done;
+  mh
 
 let send_msg c m = send_msg_real c None m
 let send_reply c h m = send_msg_real c (Some(h)) m
@@ -478,15 +479,26 @@ let rec_msg_nohang c tm tm2 =
 	    raise IllformedMsg
       end
 
-let handle_msg sin sout cst replyto mh m =
-  match m with
-  | Ping ->
+let rec update_pending pendl k m =
+  match pendl with
+  | [] -> []
+  | (h,p,tm1,tm2,None)::pendr when not (h = k) ->
+      (h,p,tm1,tm2,None)::update_pending pendr k m
+  | (h,p,tm1,tm2,None)::pendr ->
+      pendr
+  | (h,p,tm1,tm2,Some(PendingCallback(f)))::pendr ->
+      match f m with
+      | None -> pendr
+      | g -> (h,p,tm1,Unix.time(),g)::pendr
+	  
+let handle_msg sin sout cs replyto mh m =
+  match (replyto,m) with
+  | (None,Ping) ->
       Printf.printf "Handling Ping. Sending Pong.\n"; flush stdout;
       send_reply sout mh Pong;
       Printf.printf "Sent Pong.\n"; flush stdout
-  | Pong ->
+  | (Some(pingh),Pong) ->
       Printf.printf "Handling Pong.\n"; flush stdout;
-      
-
+      cs.pending <- update_pending cs.pending pingh m
   | _ ->
       Printf.printf "Ignoring msg since code to handle msg is unwritten.\n"; flush stdout
