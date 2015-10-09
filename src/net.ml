@@ -465,6 +465,7 @@ let rec_msg_nohang c tm tm2 =
 	  let sb = Buffer.create msl in
 	  let by0 = input_byte c in
 	  if not (by0 = comm) then raise IllformedMsg;
+	  Buffer.add_char sb (Char.chr by0);
 	  for j = 1 to msl-1 do
 	    let by = input_byte c in
 	    Buffer.add_char sb (Char.chr by)
