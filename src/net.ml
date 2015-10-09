@@ -152,6 +152,7 @@ type msg =
   | Pong
   | Reject of string * int * string * string
   | GetFramedCTree of int32 * int64 option * hashval * rframe
+  | MCTree of int32 * ctree
   | Checkpoint of int64 * hashval
   | AntiCheckpoint of int64 * hashval
 
@@ -282,13 +283,18 @@ let seo_msg o m c =
       let c = seo_hashval o cr c in
       let c = seo_rframe o fr c in
       c
-  | Checkpoint(blkh,h) ->
+  | MCTree(vers,ctr) ->
       let c = o 8 22 c in
+      let c = seo_int32 o vers c in
+      let c = seo_ctree o ctr c in
+      c
+  | Checkpoint(blkh,h) ->
+      let c = o 8 23 c in
       let c = seo_int64 o blkh c in
       let c = seo_hashval o h c in
       c
   | AntiCheckpoint(blkh,h) ->
-      let c = o 8 23 c in
+      let c = o 8 24 c in
       let c = seo_int64 o blkh c in
       let c = seo_hashval o h c in
       c
@@ -388,10 +394,14 @@ let sei_msg i c =
       let (fr,c) = sei_rframe i c in
       (GetFramedCTree(vers,blkh,cr,fr),c)
   | 22 ->
+      let (vers,c) = sei_int32 i c in
+      let (ctr,c) = sei_ctree i c in
+      (MCTree(vers,ctr),c)
+  | 23 ->
       let (blkh,c) = sei_int64 i c in
       let (h,c) = sei_hashval i c in
       (Checkpoint(blkh,h),c)
-  | 23 ->
+  | 24 ->
       let (blkh,c) = sei_int64 i c in
       let (h,c) = sei_hashval i c in
       (AntiCheckpoint(blkh,h),c)
@@ -497,10 +507,31 @@ let handle_msg sin sout cs replyto mh m =
   match (replyto,m) with
   | (None,Ping) ->
       Printf.printf "Handling Ping. Sending Pong.\n"; flush stdout;
-      send_reply sout mh Pong;
+      ignore (send_reply sout mh Pong);
       Printf.printf "Sent Pong.\n"; flush stdout
   | (Some(pingh),Pong) ->
       Printf.printf "Handling Pong.\n"; flush stdout;
       cs.pending <- update_pending cs.pending pingh m
+  | (None,GetFramedCTree(vers,blkho,cr,fr)) ->
+      Printf.printf "Handling GetFramedCTree.\n"; flush stdout;
+      begin (*** ignore blkho for now; it will be used to look up the ctree abbrev associated with root cr if it is not known; for now cr will be the root of the initial ledger 7b47514ebb7fb6ab06389940224d09df2951e97e ***)
+	if cr = (2068271438l, -1149258069l, 104372544l, 575474143l, 693234046l) then (*** initial distribution ledger ***)
+	  let ca = (-549354862l, -406501321l, -337823390l, -872486444l, -1131632255l) in (*** abbrev for the root of the ctree ***)
+	  let c = CAbbrev(cr,ca) in
+	  begin
+	    try
+	      let ctosend = rframe_filter_ctree fr c in
+	      ignore (send_reply sout mh (MCTree(0l,ctosend)))
+	    with
+	    | Failure(x) ->
+		ignore (send_reply sout mh (Reject("GetFramedCTree",1,"could not build framed ctree","")))
+	  end
+	else
+	  ignore (send_reply sout mh (Reject("GetFramedCTree",1,"unknown ctree root","")))
+      end
+  | (Some(qh),Reject(msgcom,by,rsn,data)) ->
+      Printf.printf "Message %s %s rejected: %d %s\n" (hashval_hexstring mh) msgcom by rsn;
+      flush stdout;
+      cs.pending <- update_pending cs.pending qh m
   | _ ->
-      Printf.printf "Ignoring msg since code to handle msg is unwritten.\n"; flush stdout
+      Printf.printf "Ignoring msg, probably because the code to handle the msg is unwritten.\n"; flush stdout

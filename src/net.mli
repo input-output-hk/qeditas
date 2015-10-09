@@ -44,6 +44,7 @@ type msg =
   | Pong
   | Reject of string * int * string * string
   | GetFramedCTree of int32 * int64 option * hashval * rframe
+  | MCTree of int32 * ctree
   | Checkpoint of int64 * hashval
   | AntiCheckpoint of int64 * hashval
 
