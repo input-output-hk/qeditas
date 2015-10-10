@@ -22,10 +22,10 @@ val connectpeer : string -> int -> Unix.file_descr
 val connectpeer_socks4 : int -> string -> int -> Unix.file_descr * in_channel * out_channel
 
 type msg =
-  | Version of int32 * int64 * int64 * string * string * int64 * string * rframe * rframe * rframe * int64 * int64 * bool * (int64 * hashval) option
+  | Version of int32 * int64 * int64 * string * string * int64 * string * rframe * rframe * rframe * int64 * int64 * int64 * bool * (int64 * hashval) option
   | Verack
   | Addr of (int64 * string) list
-  | Inv of (int * hashval) list
+  | Inv of (int * int64 * hashval) list (*** for blocks (headers, deltahs, deltas) and ctrees, include the corrsponding block height (int64) ***)
   | GetData of (int * hashval) list
   | MNotFound of (int * hashval) list
   | GetBlocks of int32 * int64 * hashval option
@@ -57,7 +57,8 @@ type connstate = {
     mutable rframe0 : rframe; (*** which parts of the ctree the node is keeping ***)
     mutable rframe1 : rframe; (*** what parts of the ctree are stored by a node one hop away ***)
     mutable rframe2 : rframe; (*** what parts of the ctree are stored by a node two hops away ***)
-    mutable first_height : int64; (*** how much history is stored at the node ***)
+    mutable first_header_height : int64; (*** how much header history is stored at the node ***)
+    mutable first_full_height : int64; (*** how much block/ctree history is stored at the node ***)
     mutable last_height : int64; (*** how up to date the node is ***)
   }
 

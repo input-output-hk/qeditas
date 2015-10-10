@@ -130,10 +130,10 @@ let connectpeer_socks4 proxyport ip port =
   (s,sin,sout)
 
 type msg =
-  | Version of int32 * int64 * int64 * string * string * int64 * string * rframe * rframe * rframe * int64 * int64 * bool * (int64 * hashval) option
+  | Version of int32 * int64 * int64 * string * string * int64 * string * rframe * rframe * rframe * int64 * int64 * int64 * bool * (int64 * hashval) option
   | Verack
   | Addr of (int64 * string) list
-  | Inv of (int * hashval) list
+  | Inv of (int * int64 * hashval) list (*** for blocks (headers, deltahs, deltas) and ctrees, include the corrsponding block height (int64) ***)
   | GetData of (int * hashval) list
   | MNotFound of (int * hashval) list
   | GetBlocks of int32 * int64 * hashval option
@@ -165,13 +165,14 @@ type connstate = {
     mutable rframe0 : rframe; (*** which parts of the ctree the node is keeping ***)
     mutable rframe1 : rframe; (*** what parts of the ctree are stored by a node one hop away ***)
     mutable rframe2 : rframe; (*** what parts of the ctree are stored by a node two hops away ***)
-    mutable first_height : int64; (*** how much history is stored at the node ***)
+    mutable first_header_height : int64; (*** how much header history is stored at the node ***)
+    mutable first_full_height : int64; (*** how much block/ctree history is stored at the node ***)
     mutable last_height : int64; (*** how up to date the node is ***)
   }
 
 let seo_msg o m c =
   match m with
-  | Version(vers,srvs,tm,addr_recv,addr_from,nonce,user_agent,fr0,fr1,fr2,first_height,latest_height,relay,lastchkpt) ->
+  | Version(vers,srvs,tm,addr_recv,addr_from,nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,latest_height,relay,lastchkpt) ->
       let c = o 8 0 c in
       let c = seo_int32 o vers c in
       let c = seo_int64 o srvs c in
@@ -183,7 +184,8 @@ let seo_msg o m c =
       let c = seo_rframe o fr0 c in
       let c = seo_rframe o fr1 c in
       let c = seo_rframe o fr2 c in
-      let c = seo_int64 o first_height c in
+      let c = seo_int64 o first_header_height c in
+      let c = seo_int64 o first_full_height c in
       let c = seo_int64 o latest_height c in
       let c = seo_bool o relay c in
       let c = seo_option (seo_prod seo_int64 seo_hashval) o lastchkpt c in
@@ -197,7 +199,7 @@ let seo_msg o m c =
   | Inv(invl) ->
       if List.length invl > 50000 then raise (Failure "Cannot send more than 50000 inventory items");
       let c = o 8 3 c in
-      let c = seo_list (seo_prod seo_int8 seo_hashval) o invl c in
+      let c = seo_list (seo_prod3 seo_int8 seo_int64 seo_hashval) o invl c in
       c
   | GetData(invl) ->
       if List.length invl > 50000 then raise (Failure "Cannot send more than 50000 data requests");
@@ -313,18 +315,19 @@ let sei_msg i c =
       let (fr0,c) = sei_rframe i c in
       let (fr1,c) = sei_rframe i c in
       let (fr2,c) = sei_rframe i c in
-      let (first_height,c) = sei_int64 i c in
+      let (first_header_height,c) = sei_int64 i c in
+      let (first_full_height,c) = sei_int64 i c in
       let (latest_height,c) = sei_int64 i c in
       let (relay,c) = sei_bool i c in
       let (lastchkpt,c) = sei_option (sei_prod sei_int64 sei_hashval) i c in
-      (Version(vers,srvs,tm,addr_recv,addr_from,nonce,user_agent,fr0,fr1,fr2,first_height,latest_height,relay,lastchkpt),c)
+      (Version(vers,srvs,tm,addr_recv,addr_from,nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,latest_height,relay,lastchkpt),c)
   | 1 ->
       (Verack,c)
   | 2 ->
       let (addr_list,c) = sei_list (sei_prod sei_int64 sei_string) i c in
       (Addr(addr_list),c)
   | 3 ->
-      let (invl,c) = sei_list (sei_prod sei_int8 sei_hashval) i c in
+      let (invl,c) = sei_list (sei_prod3 sei_int8 sei_int64 sei_hashval) i c in
       (Inv(invl),c)
   | 4 ->
       let (invl,c) = sei_list (sei_prod sei_int8 sei_hashval) i c in
@@ -512,6 +515,10 @@ let handle_msg sin sout cs replyto mh m =
   | (Some(pingh),Pong) ->
       Printf.printf "Handling Pong.\n"; flush stdout;
       cs.pending <- update_pending cs.pending pingh m
+  | (Some(qh),Reject(msgcom,by,rsn,data)) ->
+      Printf.printf "Message %s %s rejected: %d %s\n" (hashval_hexstring mh) msgcom by rsn;
+      flush stdout;
+      cs.pending <- update_pending cs.pending qh m
   | (None,GetFramedCTree(vers,blkho,cr,fr)) ->
       Printf.printf "Handling GetFramedCTree.\n"; flush stdout;
       begin (*** ignore blkho for now; it will be used to look up the ctree abbrev associated with root cr if it is not known; for now cr will be the root of the initial ledger 7b47514ebb7fb6ab06389940224d09df2951e97e ***)
@@ -529,9 +536,9 @@ let handle_msg sin sout cs replyto mh m =
 	else
 	  ignore (send_reply sout mh (Reject("GetFramedCTree",1,"unknown ctree root","")))
       end
-  | (Some(qh),Reject(msgcom,by,rsn,data)) ->
-      Printf.printf "Message %s %s rejected: %d %s\n" (hashval_hexstring mh) msgcom by rsn;
-      flush stdout;
-      cs.pending <- update_pending cs.pending qh m
+  | (Some(qh),MCTree(vers,ctr)) ->
+      begin
+	
+      end
   | _ ->
       Printf.printf "Ignoring msg, probably because the code to handle the msg is unwritten.\n"; flush stdout

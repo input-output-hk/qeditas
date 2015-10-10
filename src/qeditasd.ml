@@ -2,9 +2,24 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Hash;;
+open Tx;;
 open Ctre;;
+open Block;;
 open Net;;
 open Setconfig;;
+
+(*** recent (provisional) data ***)
+(*** recentledgerroots: associate ledger (ctree) roots with a block height and abbrev hashval ***)
+(*** recentblockheaders: associate block header hash with block height and block header ***)
+(*** recentblockdeltahs: associate block header hash with a blockdeltah (summarizing stxs by hashvals) ***)
+(*** recentblockdeltas: associate block header hash with a blockdelta (with all stxs explicit) ***)
+(*** recentstxs: associate hashes of txs/stxs with stxs (may or may not be in blocks) ***)
+let recentledgerroots : (hashval, int64 * hashval) Hashtbl.t = Hashtbl.create 1024;;
+let recentblockheaders : (hashval, int64 * blockheader) Hashtbl.t = Hashtbl.create 1024;;
+let recentblockdeltahs : (hashval, blockdeltah) Hashtbl.t = Hashtbl.create 1024;;
+let recentblockdeltas : (hashval, blockdelta) Hashtbl.t = Hashtbl.create 1024;;
+let recentstxs : (hashval, stx) Hashtbl.t = Hashtbl.create 65536;;
 
 let fallbacknodes = [
 "108.61.219.125:20805"
@@ -50,7 +65,7 @@ let initialize_conn_accept s =
       try
 	let m2 = rec_msg_nohang sin 5.0 5.0 in
 	match m2 with
-	| Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_height2,last_height2,relay2,lastchkpt2)) ->
+	| Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_header_height2,first_full_height2,last_height2,relay2,lastchkpt2)) ->
 	    send_msg sout Verack;
 	    let vers = 1l in
 	    let srvs = 1L in
@@ -60,11 +75,12 @@ let initialize_conn_accept s =
 	    let fr0 = RFAll in
 	    let fr1 = RFAll in
 	    let fr2 = RFAll in
-	    let first_height = 0L in
+	    let first_header_height = 0L in
+	    let first_full_height = 0L in
 	    let last_height = 0L in
 	    let relay = true in
 	    let lastchkpt = None in
-	    send_msg sout (Version(vers,srvs,tm,addr_from2,myaddr(),nonce,user_agent,fr0,fr1,fr2,first_height,last_height,relay,lastchkpt));
+	    send_msg sout (Version(vers,srvs,tm,addr_from2,myaddr(),nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt));
 	    let m1 = rec_msg_nohang sin 5.0 5.0 in
 	    begin
 	      match m1 with
@@ -77,7 +93,8 @@ let initialize_conn_accept s =
 		      rframe0 = fr20;
 		      rframe1 = fr21;
 		      rframe2 = fr22;
-		      first_height = first_height2;
+		      first_header_height = first_header_height2;
+		      first_full_height = first_full_height2;
 		      last_height = last_height2;
 		    }
 		  in
@@ -115,11 +132,12 @@ let initialize_conn_2 n s sin sout =
   let fr0 = RFAll in
   let fr1 = RFAll in
   let fr2 = RFAll in
-  let first_height = 0L in
+  let first_header_height = 0L in
+  let first_full_height = 0L in
   let last_height = 0L in
   let relay = true in
   let lastchkpt = None in
-  send_msg sout (Version(vers,srvs,tm,myaddr(),n,nonce,user_agent,fr0,fr1,fr2,first_height,last_height,relay,lastchkpt));
+  send_msg sout (Version(vers,srvs,tm,myaddr(),n,nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt));
   try
     let m1 = rec_msg_nohang sin 5.0 5.0 in
     match m1 with
@@ -127,7 +145,7 @@ let initialize_conn_2 n s sin sout =
 	begin
 	  let m2 = rec_msg_nohang sin 5.0 5.0 in
 	  match m2 with
-	  | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_height2,last_height2,relay2,lastchkpt2)) ->
+	  | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_header_height2,first_full_height2,last_height2,relay2,lastchkpt2)) ->
 	      send_msg sout Verack;
 	      Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
 	      let cs =
@@ -137,7 +155,8 @@ let initialize_conn_2 n s sin sout =
 		  rframe0 = fr20;
 		  rframe1 = fr21;
 		  rframe2 = fr22;
-		  first_height = first_height2;
+		  first_header_height = first_header_height2;
+		  first_full_height = first_full_height2;
 		  last_height = last_height2;
 		}
 	      in
