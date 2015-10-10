@@ -210,9 +210,9 @@ let search_for_conns () =
 		  | Some(z) ->
 		      raise (Failure ("socks" ^ (string_of_int z) ^ " is not yet supported"))
 		with
-		| RequestRejected -> Printf.printf "here RequestRejected\n"; flush stdout;
+		| RequestRejected -> Printf.printf "RequestRejected\n"; flush stdout;
 		| Connected -> raise Connected
-		| _ -> Printf.printf "here 3\n"; flush stdout;
+		| _ -> ()
 	      end
 	  )
 	(if !Config.testnet then testnetfallbacknodes else fallbacknodes)
@@ -223,6 +223,19 @@ let main () =
   begin
     process_config_args();
     process_config_file();
+    if !Config.seed = "" && !Config.lastcheckpoint = "" then
+      begin
+	raise (Failure "Need either a seed (to validate the genesis block) or a lastcheckpoint (to start later in the blockchain); have neither")
+      end;
+    if not (!Config.seed = "") then
+      begin
+	if not (String.length !Config.seed = 40) then raise (Failure "Bad seed");
+	try
+	  set_genesis_stakemods !Config.seed
+	with
+	| Invalid_argument(_) ->
+	    raise (Failure "Bad seed")
+      end;
     let l = 
       match !Config.ip with
       | Some(ip) ->
@@ -310,4 +323,10 @@ let main () =
     done
   end;;
 
-main ();;
+try
+  main ()
+with
+| Failure(x) ->
+    Printf.printf "%s\nExiting.\n" x
+| exn -> (*** unexpected ***)
+    Printf.printf "Exception: %s\nExiting.\n" (Printexc.to_string exn);;

@@ -68,6 +68,8 @@ echo let port = ref 20805 >> src/config.ml
 echo let socks = ref None >> src/config.ml
 echo let socksport = ref 9050 >> src/config.ml
 echo let maxconns = ref 200 >> src/config.ml
+echo let seed = ref \"\" >> src/config.ml
+echo let lastcheckpoint = ref \"\" >> src/config.ml
 if [ $BYTECODE ]; then
     if [ $INSTALLDIR ]; then
 	echo "bytecode cannot be installed"

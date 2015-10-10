@@ -13,4 +13,6 @@ val port : int ref
 val socks : int option ref
 val socksport : int ref
 val maxconns : int ref
+val seed : string ref
+val lastcheckpoint : string ref
 

@@ -5,7 +5,9 @@
 let stringconfigvars = [
 ("datadir",Config.datadir);
 ("ctreedatadir",Config.ctreedatadir);
-("chaindatadir",Config.chaindatadir)
+("chaindatadir",Config.chaindatadir);
+("seed",Config.seed);
+("lastcheckpoint",Config.lastcheckpoint)
 ];;
 let boolconfigvars = [
 ("testnet",Config.testnet);
@@ -26,7 +28,9 @@ let intoptionconfigvars = [
 
 exception Done
 
-let process_config_line setl l =
+let setl = ref []
+
+let process_config_line l =
   let ll = String.length l in
   begin
     try
@@ -37,6 +41,7 @@ let process_config_line setl l =
 	    begin
 	      setl := v::!setl;
 	      r := String.sub l (vl+1) (ll-(vl+1));
+	      Printf.printf "v=%s\n" v; flush stdout;
 	      raise Done
 	    end
 	  )
@@ -49,6 +54,11 @@ let process_config_line setl l =
 	    begin
 	      setl := v::!setl;
 	      r := (s = "1" || s = "t" || s = "true");
+	      if v = "testnet" && !Config.testnet then (*** if testnet, then change some default values ***)
+		begin
+		  if not (List.mem "port" !setl) then Config.port := 20804;
+		  if not (List.mem "seed" !setl) then Config.seed := "testnet seed";
+		end;
 	      raise Done
 	    end
 	  )
@@ -92,7 +102,6 @@ let process_config_line setl l =
 
 let process_config_file () =
   let fn = Filename.concat !Config.datadir "qeditas.conf" in
-  let setl = ref [] in
   if Sys.file_exists fn then
     begin
       let ch = open_in fn in
@@ -100,24 +109,21 @@ let process_config_file () =
 	while true do
 	  let l = input_line ch in
 	  try
-	    process_config_line setl l
+	    process_config_line l
 	  with Not_found ->
 	    Printf.printf "Do not understand %s in qeditas.conf; skipping\n" l
 	done
-      with End_of_file ->
-	if List.mem "testnet" !setl && not (List.mem "port" !setl) then Config.port := 20804
+      with End_of_file -> ()
     end
   else
     Printf.printf "No qeditas.conf file found. Using default configuration.\n";;
 
 let process_config_args () =
   let a = Array.length Sys.argv in
-  let setl = ref [] in
   for i = 1 to a-1 do
     let arg = Sys.argv.(i) in
     if String.length arg > 1 && arg.[0] = '-' then
       try
-	process_config_line setl (String.sub arg 1 ((String.length arg) - 1))
-      with Not_found ->
-	if List.mem "testnet" !setl && not (List.mem "port" !setl) then Config.port := 20804
+	process_config_line (String.sub arg 1 ((String.length arg) - 1))
+      with Not_found -> ()
   done;;
