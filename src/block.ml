@@ -68,7 +68,11 @@ let set_genesis_stakemods x =
  ***)
 set_genesis_stakemods "0000000000000000000000000000000000000000"
 
-let genesistarget = ref (shift_left_big_int unit_big_int 245)
+let genesistimestamp = ref 1444587923L;; (*** Too early, but OK for testing. For the mainnet, this should be the timestamp in the same bitcoin block used to initialize the stake modifiers ***)
+
+(*** max target/min difficulty: 2^220 (for mainnet) ***)
+let max_target = ref (shift_left_big_int unit_big_int 220)
+let genesistarget = ref !max_target (*** initialize to minimum difficulty for testing ***)
 let genesisledgerroot : hashval ref = ref (0l,0l,0l,0l,0l)
 
 (*** base reward of 50 fraenks (50 trillion cants) like bitcoin, but assume the first 350000 blocks have passed. ***)
@@ -77,7 +81,7 @@ let basereward = 50000000000000L
 let rewfn blkh =
   if blkh < 11410000L then
     let blki = Int64.to_int blkh in
-    Int64.shift_right basereward ((blki + 350000) / 210000)
+    Int64.shift_right basereward ((blki + 349999) / 210000) (*** start counting here at blkh = 1L, corresponding to Bitcoin block at height 350000 ***)
   else
     0L
 
@@ -857,13 +861,10 @@ let ledgerroot_of_blockchain bc =
   let (((bhd,bhs),bd),bl) = bc in
   bhd.newledgerroot
 
-(*** max target/min difficulty: 2^220 ***)
-let max_target = shift_left_big_int unit_big_int 220
-
 (*** retargeting at each step ***)
 let retarget tar deltm =
   min_big_int
-    max_target
+    !max_target
     (div_big_int
        (mult_big_int tar
 	  (big_int_of_int32 (Int32.add 9000l deltm)))
@@ -873,7 +874,7 @@ let retarget tar deltm =
 let cumul_stake cs tar deltm =
   add_big_int
     cs
-    (div_big_int max_target (mult_big_int tar (big_int_of_int32 deltm)))
+    (div_big_int !max_target (mult_big_int tar (big_int_of_int32 deltm)))
 
 let blockheader_succ bh1 bh2 =
   let (bhd1,bhs1) = bh1 in

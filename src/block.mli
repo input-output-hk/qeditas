@@ -20,7 +20,9 @@ val set_genesis_stakemods : string -> unit
 val genesiscurrentstakemod : stakemod ref
 val genesisfuturestakemod : stakemod ref
 val genesisledgerroot : hashval ref
+val genesistimestamp : int64 ref
 val genesistarget : big_int ref
+val max_target : big_int ref
 
 val stakemod_pushbit : bool -> stakemod -> stakemod
 val stakemod_lastbit : stakemod -> bool
@@ -110,6 +112,7 @@ val ctree_of_block : block -> ctree
 val txl_of_block : block -> tx list
 
 val retarget : big_int -> int32 -> big_int
+val cumul_stake : big_int -> big_int -> int32 -> big_int
 
 val valid_block : ttree option -> stree option -> int64 -> block -> bool
 
