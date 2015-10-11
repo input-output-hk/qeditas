@@ -2,7 +2,9 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Ser;;
 open Hash;;
+open Assets;;
 open Tx;;
 open Ctre;;
 open Block;;
@@ -20,6 +22,8 @@ let recentblockheaders : (hashval, int64 * blockheader) Hashtbl.t = Hashtbl.crea
 let recentblockdeltahs : (hashval, blockdeltah) Hashtbl.t = Hashtbl.create 1024;;
 let recentblockdeltas : (hashval, blockdelta) Hashtbl.t = Hashtbl.create 1024;;
 let recentstxs : (hashval, stx) Hashtbl.t = Hashtbl.create 65536;;
+
+let stakingproccomm : (in_channel * out_channel * in_channel) option ref = ref None;;
 
 let fallbacknodes = [
 "108.61.219.125:20805"
@@ -219,6 +223,20 @@ let search_for_conns () =
       with Connected -> ()
     end;;
 
+let rec hlist_insertstakingassets tostkr alpha hl =
+  match hl with
+  | HCons((aid,bday,obl,Currency(v)),hr) ->
+      Commands.stakingassets := (alpha,aid,bday,obl,v)::!Commands.stakingassets;
+      output_byte tostkr 67;
+      seocf (seo_hashval seoc alpha (tostkr,None));
+      seocf (seo_hashval seoc aid (tostkr,None));
+      seocf (seo_int64 seoc bday (tostkr,None));
+      seocf (seo_int64 seoc v (tostkr,None));
+      seocf (seo_obligation seoc obl (tostkr,None));
+      hlist_insertstakingassets tostkr alpha hr
+  | HCons(_,hr) -> hlist_insertstakingassets tostkr alpha hr
+  | _ -> ();;
+
 let main () =
   begin
     process_config_args();
@@ -248,10 +266,83 @@ let main () =
 	  flush stdout;
 	  None
     in
+    if !Config.staking then (*** start a staking process ***)
+      begin
+	let stkexec = Filename.concat (Filename.dirname (Sys.argv.(0))) "qeditasstk" in
+	Printf.printf "about to start staker\n"; flush stdout;
+	let (fromstkr,tostkr,stkerr) = Unix.open_process_full stkexec [||] in
+	Printf.printf "started staker\n"; flush stdout;
+	let reasontostake = ref false in
+	stakingproccomm := Some(fromstkr,tostkr,stkerr);
+	Commands.read_wallet();
+	List.iter
+	  (fun (k,b,(x,y),w,h,alpha) ->
+	    let ctr = Ctre.CAbbrev(hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",hexstring_hashval "df418292e7c54837ebdd3962cbfee9d4bc8ca981") in
+	    match Ctre.ctree_addr (hashval_p2pkh_addr h) ctr with
+	    | (Some(Ctre.CLeaf(_,hl)),_) ->
+		reasontostake := true;
+		hlist_insertstakingassets tostkr h (Ctre.nehlist_hlist hl)
+	    | _ ->
+		()
+	  )
+	  !Commands.walletkeys;
+	flush tostkr;
+	let blkh = 0L in
+	let tar = !genesistarget in
+	let csm = !genesiscurrentstakemod in
+	output_byte tostkr 66; (*** send the staking process the block height, the target and the stake modifier ***)
+	seocf (seo_int64 seoc blkh (tostkr,None));
+	seocf (seo_big_int_256 seoc tar (tostkr,None));
+	seocf (seo_stakemod seoc csm (tostkr,None));
+	output_byte tostkr 83; (*** start staking ***)
+	flush tostkr
+      end;
     sethungsignalhandler();
     search_for_conns ();
     while true do (*** main process loop ***)
       try
+	begin (*** if staking check to see if staking has found a hit ***)
+	  match !stakingproccomm with
+	  | None -> ()
+	  | Some(fromstkr,tostkr,stkerr) ->
+	      try
+		match input_byte_nohang fromstkr 0.1 with
+		| Some(z) when z = 72 -> (*** hit with no storage ***)
+		    let c = (fromstkr,None) in
+		    let (stktm,c) = sei_int64 seic c in
+		    let (alpha,c) = sei_hashval seic c in
+		    let (aid,_) = sei_hashval seic c in
+		    Printf.printf "Asset %s at address %s can stake at time %Ld (%Ld seconds from now)\n" (hashval_hexstring aid) (Cryptocurr.addr_qedaddrstr (hashval_p2pkh_addr alpha)) stktm (Int64.sub stktm (Int64.of_float (Unix.time())));
+		    flush stdout;
+		    begin
+		      try
+			let (_,_,bday,obl,v) = List.find (fun (_,h,_,_,_) -> h = aid) !Commands.stakingassets in
+			if check_hit_b 0L bday obl v !genesiscurrentstakemod !genesistarget stktm aid alpha None then
+			  Printf.printf "Confirmed\n"
+			else
+			  Printf.printf "Bug. Not really a hit.\n"
+		      with Not_found -> Printf.printf "Bug. Cannot find staking asset.\n"
+		    end;
+		    flush stdout;
+		| Some(z) when z = 83 -> (*** hit with storage ***)
+		    ()
+		| Some(z) -> (*** something has gone wrong. die ***)
+		    Printf.printf "The staking process sent back %d which is meaningless.\nKilling staker\n" z;
+		    Unix.close_process_full (fromstkr,tostkr,stkerr);
+		    stakingproccomm := None
+		| None ->
+		    match input_byte_nohang stkerr 0.1 with
+		    | Some(z) -> (*** something has gone wrong. die ***)
+			Printf.printf "The staking process sent error code %d.\nKilling staker\n" z;
+			Unix.close_process_full (fromstkr,tostkr,stkerr);
+			stakingproccomm := None
+		    | None -> ()
+	      with
+	      | _ ->
+		  Printf.printf "Exception thrown while trying to read from the staking process.\nKilling staker\n";
+		  Unix.close_process_full (fromstkr,tostkr,stkerr);
+		  stakingproccomm := None
+	end;
 	begin (*** possibly check for a new incomming connection ***)
 	  match l with
 	  | Some(l) ->
@@ -323,10 +414,17 @@ let main () =
     done
   end;;
 
+let stop_staking () =
+  match !stakingproccomm with
+  | Some(sti,sto,ste) -> ignore (Unix.close_process_full (sti,sto,ste))
+  | None -> ();;
+
 try
   main ()
 with
 | Failure(x) ->
-    Printf.printf "%s\nExiting.\n" x
+    Printf.printf "%s\nExiting.\n" x;
+    stop_staking ()
 | exn -> (*** unexpected ***)
-    Printf.printf "Exception: %s\nExiting.\n" (Printexc.to_string exn);;
+    Printf.printf "Exception: %s\nExiting.\n" (Printexc.to_string exn);
+    stop_staking ();;
