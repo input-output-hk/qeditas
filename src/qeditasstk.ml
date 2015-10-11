@@ -121,12 +121,14 @@ let main () =
 	  while !stktm < futuretime do
 	    List.iter
 	      (fun (stkaddr,h,bday,obl,v,corrstrtrmassets,corrstrdocassets) ->
-		let mtar = mult_big_int !tar (coinage !blkh bday obl (incrstake v)) in
+		if !staking then
+		  let mtar = mult_big_int !tar (coinage !blkh bday obl (incrstake v)) in
 		(*** first check if it would be a hit with some storage component: ***)
-		if lt_big_int (hitval !stktm h !sm) mtar then
+		  if lt_big_int (hitval !stktm h !sm) mtar then
 		  begin (*** if so, then check if it's a hit without some storage component ***)
 		    if lt_big_int (hitval !stktm h !sm) !tar then
 		      begin
+			staking := false;
 			output_byte stdout 72; (*** Report Pure Stake Hit ***)
 			let c = (stdout,None) in
 			let c = seo_int64 seoc !stktm c in
@@ -144,6 +146,7 @@ let main () =
 				lt_big_int (hitval !stktm betak !sm) mtar)
 			      !corrstrtrmassets
 			  in
+			  staking := false;
 			  output_byte stdout 83; (*** Report Hit With Storage ***)
 			  let c = (stdout,None) in
 			  let c = seo_int64 seoc !stktm c in
@@ -160,6 +163,7 @@ let main () =
 				  lt_big_int (hitval !stktm betak !sm) mtar)
 				!corrstrdocassets
 			    in
+			    staking := false;
 			    output_byte stdout 83; (*** Report Hit With Storage ***)
 			    let c = (stdout,None) in
 			    let c = seo_int64 seoc !stktm c in
