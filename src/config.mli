@@ -15,4 +15,7 @@ val socksport : int ref
 val maxconns : int ref
 val seed : string ref
 val lastcheckpoint : string ref
+val localframeabbrevlevels : int list ref
+val localframeabbrevpoints : string list ref
+val localframehashpoints : string list ref
 

@@ -3,27 +3,30 @@
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 let stringconfigvars = [
-("datadir",Config.datadir);
-("ctreedatadir",Config.ctreedatadir);
-("chaindatadir",Config.chaindatadir);
-("seed",Config.seed);
-("lastcheckpoint",Config.lastcheckpoint)
+("datadir",fun x -> Config.datadir := x);
+("ctreedatadir",fun x -> Config.ctreedatadir := x);
+("chaindatadir",fun x -> Config.chaindatadir := x);
+("seed",fun x -> Config.seed := x);
+("lastcheckpoint",fun x -> Config.lastcheckpoint := x);
+("localframeabbrevpoint",fun x -> Config.localframeabbrevpoints := x::!Config.localframeabbrevpoints);
+("localframehashpoint",fun x -> Config.localframehashpoints := x::!Config.localframehashpoints)
 ];;
 let boolconfigvars = [
-("testnet",Config.testnet);
-("staking",Config.staking);
-("ipv6",Config.ipv6)
+("testnet",fun x -> Config.testnet := x);
+("staking",fun x -> Config.staking := x);
+("ipv6",fun x -> Config.ipv6 := x)
 ];;
 let intconfigvars = [
-("port",Config.port);
-("socksport",Config.socksport);
-("maxconns",Config.maxconns)
+("port",fun x -> Config.port := x);
+("socksport",fun x -> Config.socksport := x);
+("maxconns",fun x -> Config.maxconns := x);
+("localframeabbrevlevel",fun x -> Config.localframeabbrevlevels := x::!Config.localframeabbrevlevels)
 ];;
 let stringoptionconfigvars = [
-("ip",Config.ip)
+("ip",fun x -> Config.ip := x)
 ];;
 let intoptionconfigvars = [
-("socks",Config.socks);
+("socks",fun x -> Config.socks := x)
 ];;
 
 exception Done
@@ -40,7 +43,7 @@ let process_config_line l =
 	  if ll > 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
 	    begin
 	      setl := v::!setl;
-	      r := String.sub l (vl+1) (ll-(vl+1));
+	      r (String.sub l (vl+1) (ll-(vl+1)));
 	      Printf.printf "v=%s\n" v; flush stdout;
 	      raise Done
 	    end
@@ -53,7 +56,7 @@ let process_config_line l =
 	    let s = String.sub l (vl+1) (ll-(vl+1)) in
 	    begin
 	      setl := v::!setl;
-	      r := (s = "1" || s = "t" || s = "true");
+	      r (s = "1" || s = "t" || s = "true");
 	      if v = "testnet" && !Config.testnet then (*** if testnet, then change some default values ***)
 		begin
 		  if not (List.mem "port" !setl) then Config.port := 20804;
@@ -69,7 +72,7 @@ let process_config_line l =
 	  if ll > 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
 	    begin
 	      setl := v::!setl;
-	      r := int_of_string (String.sub l (vl+1) (ll-(vl+1)));
+	      r (int_of_string (String.sub l (vl+1) (ll-(vl+1))));
 	      raise Done
 	    end
 	  )
@@ -80,7 +83,7 @@ let process_config_line l =
 	  if ll > 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
 	    begin
 	      setl := v::!setl;
-	      r := Some(String.sub l (vl+1) (ll-(vl+1)));
+	      r (Some(String.sub l (vl+1) (ll-(vl+1))));
 	      raise Done
 	    end
 	  )
@@ -91,7 +94,7 @@ let process_config_line l =
 	  if ll > 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
 	    begin
 	      setl := v::!setl;
-	      r := Some(int_of_string (String.sub l (vl+1) (ll-(vl+1))));
+	      r (Some(int_of_string (String.sub l (vl+1) (ll-(vl+1)))));
 	      raise Done
 	    end
 	  )

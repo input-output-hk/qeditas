@@ -70,6 +70,9 @@ echo let socksport = ref 9050 >> src/config.ml
 echo let maxconns = ref 200 >> src/config.ml
 echo let seed = ref \"\" >> src/config.ml
 echo let lastcheckpoint = ref \"\" >> src/config.ml
+echo let localframeabbrevlevels = ref [] >> src/config.ml
+echo let localframeabbrevpoints = ref [] >> src/config.ml
+echo let localframehashpoints = ref [] >> src/config.ml
 if [ $BYTECODE ]; then
     if [ $INSTALLDIR ]; then
 	echo "bytecode cannot be installed"
