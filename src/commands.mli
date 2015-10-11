@@ -4,25 +4,9 @@
 
 open Big_int
 open Hash
+open Mathdata
+open Assets
 open Signat
-
-type rpccom =
-    Stop
-  | AddNode of string
-  | GetInfo
-  | ImportWatchAddr of string
-  | ImportPrivKey of string
-  | ImportWatchBtcAddr of string
-  | ImportBtcPrivKey of string
-  | ImportP2sh of string
-  | ImportEndorsement of string * string * string
-
-val send_string : out_channel -> string -> unit
-val rec_string : in_channel -> string
-
-val send_rpccom : out_channel -> rpccom -> unit
-val rec_rpccom : in_channel -> rpccom
-val do_rpccom : rpccom -> out_channel -> unit
 
 (***
 val addnode : string -> int -> bool
@@ -31,6 +15,18 @@ val addnode : string -> int -> bool
 val walletkeys : (big_int * bool * (big_int * big_int) * string * hashval * string) list ref
 val walletendorsements : (payaddr * payaddr * int * signat) list ref
 val walletwatchaddrs : addr list ref
+val stakingassets : (p2pkhaddr * hashval * int64 * obligation * int64) list ref
+val storagetrmassets : (hashval option * tm * tp * hashval * hashval) list ref
+val storagedocassets : (pubaddr * hashval * hashval option * pdoc * hashval * hashval) list ref
 
 val read_wallet : unit -> unit
 val write_wallet : unit -> unit
+
+val printassets : unit -> unit
+
+val importprivkey : string -> unit
+val importbtcprivkey : string -> unit
+(***
+val importwatchaddr : string -> unit
+val importwatchbtcaddr : string -> unit
+***)

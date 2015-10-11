@@ -15,100 +15,10 @@ let walletkeys = ref []
 let walletp2shs = ref []
 let walletendorsements = ref []
 let walletwatchaddrs = ref []
+let stakingassets = ref []
+let storagetrmassets = ref []
+let storagedocassets = ref []
   
-type rpccom =
-    Stop
-  | AddNode of string
-  | GetInfo
-  | ImportWatchAddr of string
-  | ImportPrivKey of string
-  | ImportWatchBtcAddr of string
-  | ImportBtcPrivKey of string
-  | ImportP2sh of string
-  | ImportEndorsement of string * string * string
-
-let send_string c x =
-  let l = String.length x in
-  let c2 = seo_varint seoc (Int64.of_int l) (c,None) in
-  seocf c2;
-  for i = 0 to l-1 do
-    output_byte c (Char.code x.[i])
-  done
-
-let rec_string c =
-  let (l64,_) = sei_varint seic (c,None) in
-  let l = Int64.to_int l64 in
-  let x = Buffer.create l in
-  for i = 0 to l-1 do
-    let b = input_byte c in
-    Buffer.add_char x (Char.chr b)
-  done;
-  Buffer.contents x
-
-let send_rpccom c r =
-  begin
-    match r with
-    | Stop ->
-	output_byte c 0
-    | AddNode(n) ->
-	output_byte c 1;
-	send_string c n
-    | GetInfo ->
-	output_byte c 2
-    | ImportWatchAddr(a) ->
-	output_byte c 3;
-	send_string c a
-    | ImportPrivKey(w) ->
-	output_byte c 4;
-	send_string c w
-    | ImportWatchBtcAddr(a) ->
-	output_byte c 5;
-	send_string c a
-    | ImportBtcPrivKey(w) ->
-	output_byte c 6;
-	send_string c w
-    | ImportP2sh(scr) ->
-	output_byte c 7;
-	send_string c scr;
-    | ImportEndorsement(a,b,s) ->
-	output_byte c 8;
-	send_string c a;
-	send_string c b;
-	send_string c s;
-    | _ -> ()
-  end;
-  flush c
-
-let rec_rpccom c =
-  let by0 = input_byte c in
-  match by0 with
-  | 0 -> Stop
-  | 1 ->
-      let n = rec_string c in
-      AddNode(n)
-  | 2 -> GetInfo
-  | 3 ->
-      let a = rec_string c in
-      ImportWatchAddr(a)
-  | 4 ->
-      let w = rec_string c in
-      ImportPrivKey(w)
-  | 5 ->
-      let a = rec_string c in
-      ImportWatchBtcAddr(a)
-  | 6 ->
-      let w = rec_string c in
-      ImportBtcPrivKey(w)
-  | 7 ->
-      let scr = rec_string c in
-      ImportP2sh(scr)
-  | 8 ->
-      let a = rec_string c in
-      let b = rec_string c in
-      let s = rec_string c in
-      ImportEndorsement(a,b,s)
-  | _ -> raise (Failure "Unknown rpc command")
-
 let read_wallet () =
   let wallfn = Filename.concat !Config.datadir "wallet.dat" in
   if not (Sys.file_exists wallfn) then
@@ -123,42 +33,71 @@ let read_wallet () =
     end
   else
     let s = open_in_bin wallfn in
-    let c = (s,None) in
-    let (pkeys,c) = sei_list (sei_prod sei_big_int_256 sei_bool) seic c in
-    let (p2shscripts,c) = sei_list (sei_list sei_int8) seic c in
-    let (endorsements,c) = sei_list (sei_prod4 sei_payaddr sei_payaddr sei_int8 sei_signat) seic c in (*** For each (alpha,beta,esg) beta can use esg to justify signing for alpha; endorsements can be used for spending/moving, but not for staking. ***)
-    let (watchaddrs,c) = sei_list sei_addr seic c in
-    close_in s;
-    walletkeys :=
-      List.map
-	(fun (k,b) ->
-	  match Secp256k1.smulp k Secp256k1._g with
-	  | Some(x,y) ->
-	      let h = pubkey_hashval (x,y) b in
-	      (k,b,(x,y),qedwif k b,h,addr_qedaddrstr (Hash.hashval_p2pkh_addr h))
-	  | None ->
-	      raise (Failure "A private key in the wallet did not give a public key.")
-	)
-	pkeys;
-    walletp2shs :=
-      List.map
-	(fun scr ->
-	  let h = hash160_bytelist scr in
-	  let a = addr_qedaddrstr (hashval_p2sh_addr h) in
-	  (h,a,scr))
-	p2shscripts;
-    walletendorsements := endorsements;
-    walletwatchaddrs := watchaddrs
+    try
+      while true do
+	let by = input_byte s in
+	match by with
+	| 0 ->
+	    let ((k,b),_) = sei_prod sei_big_int_256 sei_bool seic (s,None) in
+	    walletkeys :=
+	      (match Secp256k1.smulp k Secp256k1._g with
+	      | Some(x,y) ->
+		  let h = pubkey_hashval (x,y) b in
+		  let alpha = addr_qedaddrstr (Hash.hashval_p2pkh_addr h) in
+		  (k,b,(x,y),qedwif k b,h,alpha)
+	      | None ->
+		  raise (Failure "A private key in the wallet did not give a public key.")
+	      )::!walletkeys
+	| 1 ->
+	    let (scr,_) = sei_list sei_int8 seic (s,None) in
+	    walletp2shs :=
+	      (let h = hash160_bytelist scr in
+	      let a = addr_qedaddrstr (hashval_p2sh_addr h) in
+	      (h,a,scr))::!walletp2shs
+	| 2 ->
+	    let (endors,_) = sei_prod4 sei_payaddr sei_payaddr sei_int8 sei_signat seic (s,None) in (*** For each (alpha,beta,esg) beta can use esg to justify signing for alpha; endorsements can be used for spending/moving, but not for staking. ***)
+	    walletendorsements := endors::!walletendorsements
+	| 3 ->
+	    let (watchaddr,_) = sei_addr seic (s,None) in
+	    walletwatchaddrs := watchaddr::!walletwatchaddrs
+	| _ ->
+	    raise (Failure "Bad entry in wallet file")
+      done
+    with
+    | End_of_file -> close_in s
+    | Failure(x) ->
+	Printf.printf "Warning: %s\nIgnoring the rest of the wallet file.\n" x; flush stdout;
+	close_in s
 
 let write_wallet () =
   let wallfn = Filename.concat !Config.datadir "wallet.dat" in
   let s = open_out_bin wallfn in
-  let c = (s,None) in
-  let c = seo_list (seo_prod seo_big_int_256 seo_bool) seoc (List.map (fun (k,b,_,_,_,_) -> (k,b)) !walletkeys) c in
-  let c = seo_list (seo_list seo_int8) seoc (List.map (fun (_,_,scr) -> scr) !walletp2shs) c in
-  let c = seo_list (seo_prod4 seo_payaddr seo_payaddr seo_int8 Signat.seo_signat) seoc !walletendorsements c in
-  let c = seo_list seo_addr seoc !walletwatchaddrs c in
-  seocf c;
+  List.iter
+    (fun (k,b,_,_,_,_) ->
+      output_byte s 0;
+      seocf (seo_prod seo_big_int_256 seo_bool seoc (k,b) (s,None)))
+    !walletkeys;
+  List.iter
+    (fun (_,_,scr) ->
+      output_byte s 1;
+      seocf (seo_list seo_int8 seoc scr (s,None)))
+    !walletp2shs;
+  List.iter
+    (fun endors ->
+      output_byte s 2;
+      seocf (seo_prod4 seo_payaddr seo_payaddr seo_int8 seo_signat seoc endors (s,None)))
+    !walletendorsements;
+  List.iter
+    (fun watchaddr ->
+      output_byte s 3;
+      seocf (seo_addr seoc watchaddr (s,None)))
+    !walletwatchaddrs;
+  close_out s
+
+let append_wallet f =
+  let wallfn = Filename.concat !Config.datadir "wallet.dat" in
+  let s = open_out_gen [Open_append;Open_wronly] 0x660 wallfn in
+  f s;
   close_out s
 
 let addnode remip remport =
@@ -239,7 +178,7 @@ let hexchar_invi x =
   | 'd' -> 13
   | 'e' -> 14
   | 'f' -> 15
-  | _ -> raise (Failure("not a hexit: " ^ (string_of_int (Char.code x))))
+  | _ -> raise (Failure("not a hex: " ^ (string_of_int (Char.code x))))
 
 let hexsubstring_int8 h i =
   (hexchar_invi h.[i]) lsl 4 + (hexchar_invi h.[i+1])
@@ -254,6 +193,100 @@ let bytelist_of_hexstring h =
   done;
   !bl
 
+let importprivkey_real (k,b) =
+  match Secp256k1.smulp k Secp256k1._g with
+  | Some(x,y) ->
+      let h = pubkey_hashval (x,y) b in
+      let alpha = Hash.hashval_p2pkh_addr h in
+      let a = addr_qedaddrstr alpha in
+      let replwall = ref false in
+      if privkey_in_wallet_p alpha then raise (Failure "Private key already in wallet.");
+      walletkeys := (k,b,(x,y),qedwif k b,h,a)::!walletkeys;
+      walletendorsements := (*** remove endorsements if the wallet has the private key for the address, since it can now sign directly ***)
+	List.filter
+	  (fun (alpha2,beta,by0,esg) -> if alpha = payaddr_addr alpha2 then (replwall := true; false) else true)
+	  !walletendorsements;
+      walletwatchaddrs :=
+	List.filter
+	  (fun alpha2 -> if alpha = alpha2 then (replwall := true; false) else true)
+	  !walletwatchaddrs;
+      if !replwall then
+	write_wallet()
+      else
+	append_wallet
+	  (fun s ->
+	    output_byte s 0;
+	    seocf (seo_prod seo_big_int_256 seo_bool seoc (k,b) (s,None)))
+  | None ->
+      raise (Failure "This private key does not give a public key.")
+
+let importprivkey w =
+  let (k,b) = privkey_from_wif w in
+  let w2 = qedwif k b in
+  if not (w2 = w) then raise (Failure (w ^ " is not a valid Qeditas wif"));
+  importprivkey_real (k,b)
+
+let importbtcprivkey w =
+  let (k,b) = privkey_from_btcwif w in
+  importprivkey_real (k,b)
+
+let printassets () =
+  let ctr = Ctre.CAbbrev(hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",hexstring_hashval "df418292e7c54837ebdd3962cbfee9d4bc8ca981") in
+  Printf.printf "Controlled p2pkh assets:\n";
+  List.iter
+    (fun (k,b,(x,y),w,h,z) ->
+      match Ctre.ctree_addr (hashval_p2pkh_addr h) ctr with
+      | (Some(Ctre.CLeaf(_,hl)),_) ->
+	  Printf.printf "%s:\n" z;
+	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
+      | (None,_) ->
+	  Printf.printf "%s: empty\n" z;
+      | _ ->
+	  Printf.printf "%s: no information\n" z;
+    )
+    !walletkeys;
+  Printf.printf "Possibly controlled p2sh assets:\n";
+  List.iter
+    (fun (h,z,scr) ->
+      match Ctre.ctree_addr (hashval_p2sh_addr h) ctr with
+      | (Some(Ctre.CLeaf(_,hl)),_) ->
+	  Printf.printf "%s:\n" z;
+	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
+      | (None,_) ->
+	  Printf.printf "%s: empty\n" z;
+      | _ ->
+	  Printf.printf "%s: no information\n" z;
+    )
+    !walletp2shs;
+  Printf.printf "Assets via endorsement:\n";
+  List.iter
+    (fun (alpha,beta,by0,esg) ->
+      let alpha2 = payaddr_addr alpha in
+      match Ctre.ctree_addr alpha2 ctr with
+      | (Some(Ctre.CLeaf(_,hl)),_) ->
+	  Printf.printf "%s:\n" (addr_qedaddrstr alpha2);
+	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
+      | (None,_) ->
+	  Printf.printf "%s: empty\n" (addr_qedaddrstr alpha2);
+      | _ ->
+	  Printf.printf "%s: no information\n" (addr_qedaddrstr alpha2);
+    )
+    !walletendorsements;
+  Printf.printf "Watched assets:\n";
+  List.iter
+    (fun alpha ->
+      match Ctre.ctree_addr alpha ctr with
+      | (Some(Ctre.CLeaf(_,hl)),_) ->
+	  Printf.printf "%s:\n" (addr_qedaddrstr alpha);
+	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
+      | (None,_) ->
+	  Printf.printf "%s: empty\n" (addr_qedaddrstr alpha);
+      | _ ->
+	  Printf.printf "%s: no information\n" (addr_qedaddrstr alpha);
+    )
+    !walletwatchaddrs
+    
+(***
 let do_rpccom r c =
   match r with
   | AddNode(n) ->
@@ -264,72 +297,7 @@ let do_rpccom r c =
 	output_byte c 0
   | GetInfo ->
       let sb = Buffer.create 100 in
-      let ctr = Ctre.CAbbrev(hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",hexstring_hashval "df418292e7c54837ebdd3962cbfee9d4bc8ca981") in
-      Buffer.add_string sb "Controlled p2pkh assets:\n";
-      List.iter
-	(fun (k,b,(x,y),w,h,z) ->
-	  match Ctre.ctree_addr (hashval_p2pkh_addr h) ctr with
-	  | (Some(Ctre.CLeaf(_,hl)),_) ->
-	      Buffer.add_string sb z;
-	      Buffer.add_string sb ":\n";
-	      Ctre.print_hlist_to_buffer sb 0L (Ctre.nehlist_hlist hl)
-	  | (None,_) ->
-	      Buffer.add_string sb z;
-	      Buffer.add_string sb ": empty\n";
-	  | _ ->
-	      Buffer.add_string sb z;
-	      Buffer.add_string sb ": no information\n";
-	  )
-	!walletkeys;
-      Buffer.add_string sb "Possibly controlled p2sh assets:\n";
-      List.iter
-	(fun (h,z,scr) ->
-	  match Ctre.ctree_addr (hashval_p2sh_addr h) ctr with
-	  | (Some(Ctre.CLeaf(_,hl)),_) ->
-	      Buffer.add_string sb z;
-	      Buffer.add_string sb ":\n";
-	      Ctre.print_hlist_to_buffer sb 0L (Ctre.nehlist_hlist hl)
-	  | (None,_) ->
-	      Buffer.add_string sb z;
-	      Buffer.add_string sb ": empty\n";
-	  | _ ->
-	      Buffer.add_string sb z;
-	      Buffer.add_string sb ": no information\n";
-	  )
-	!walletp2shs;
-      Buffer.add_string sb "Assets via endorsement:\n";
-      List.iter
-	(fun (alpha,beta,by0,esg) ->
-	  let alpha2 = payaddr_addr alpha in
-	  match Ctre.ctree_addr alpha2 ctr with
-	  | (Some(Ctre.CLeaf(_,hl)),_) ->
-	      Buffer.add_string sb (addr_qedaddrstr alpha2);
-	      Buffer.add_string sb ":\n";
-	      Ctre.print_hlist_to_buffer sb 0L (Ctre.nehlist_hlist hl)
-	  | (None,_) ->
-	      Buffer.add_string sb (addr_qedaddrstr alpha2);
-	      Buffer.add_string sb ": empty\n";
-	  | _ ->
-	      Buffer.add_string sb (addr_qedaddrstr alpha2);
-	      Buffer.add_string sb ": no information\n";
-	  )
-	!walletendorsements;
-      Buffer.add_string sb "Watched assets:\n";
-      List.iter
-	(fun alpha ->
-	  match Ctre.ctree_addr alpha ctr with
-	  | (Some(Ctre.CLeaf(_,hl)),_) ->
-	      Buffer.add_string sb (addr_qedaddrstr alpha);
-	      Buffer.add_string sb ":\n";
-	      Ctre.print_hlist_to_buffer sb 0L (Ctre.nehlist_hlist hl)
-	  | (None,_) ->
-	      Buffer.add_string sb (addr_qedaddrstr alpha);
-	      Buffer.add_string sb ": empty\n";
-	  | _ ->
-	      Buffer.add_string sb (addr_qedaddrstr alpha);
-	      Buffer.add_string sb ": no information\n";
-	  )
-	!walletwatchaddrs;
+
       send_string c (Buffer.contents sb)
   | ImportWatchAddr(a) ->
       begin
@@ -353,37 +321,6 @@ let do_rpccom r c =
       end
   | ImportPrivKey(w) ->
       begin
-	try
-	  let (k,b) = privkey_from_wif w in
-	  let w2 = qedwif k b in
-	  if not (w2 = w) then raise (Failure (w ^ " is not a valid Qeditas wif"));
-	  match Secp256k1.smulp k Secp256k1._g with
-	  | Some(x,y) ->
-	      let h = pubkey_hashval (x,y) b in
-	      let alpha = Hash.hashval_p2pkh_addr h in
-	      let a = addr_qedaddrstr alpha in
-	      if privkey_in_wallet_p alpha then raise (Failure "Private key already in wallet.");
-	      walletkeys := (k,b,(x,y),qedwif k b,h,a)::!walletkeys;
-	      walletendorsements := (*** remove endorsements if the wallet has the private key for the address, since it can now sign directly ***)
-		List.filter
-		  (fun (alpha2,beta,by0,esg) -> not (alpha = payaddr_addr alpha2))
-		  !walletendorsements;
-	      walletwatchaddrs :=
-		List.filter
-		  (fun alpha2 -> not (alpha = alpha2))
-		  !walletwatchaddrs;
-	      write_wallet();
-	      output_byte c 1;
-	      send_string c a
-	  | None ->
-	      raise (Failure "This private key does not give a public key.")
-	with
-	| Failure(m) ->
-	    output_byte c 0;
-	    send_string c m
-	| _ ->
-	    output_byte c 0;
-	    send_string c "Exception raised."
       end
   | ImportWatchBtcAddr(a) ->
       begin
@@ -488,4 +425,4 @@ let do_rpccom r c =
 	    send_string c "Exception raised."
       end
   | _ -> ()
-
+***)
