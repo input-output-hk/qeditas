@@ -28,6 +28,10 @@ type frame =
   | FLeaf of bool list * int option
   | FBin of frame * frame
 
+val localframe : frame ref
+val set_localframe : unit -> unit
+val wrap_frame : frame -> frame
+
 type rframe =
   | RFHash
   | RFAll

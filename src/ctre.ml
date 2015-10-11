@@ -2097,3 +2097,39 @@ let rec get_txl_supporting_octree txl oc =
       | Some(c) -> Some(CHash(ctree_hashroot c))
       | None -> None
 
+let localframe = ref FAll
+
+let rec make_specified_frame l fabls fabps fhps =
+  if fabls = [] && fabps = [] && fhps = [] then
+    FAll
+  else if List.mem [] fhps then
+    FHash
+  else
+    if List.mem [] fabps then
+      FAbbrev(make_specified_frame l (List.filter (fun n -> n > l) fabls) (List.filter (fun p -> not (p = [])) fabps) fhps)
+    else if List.mem l fabls then
+      FAbbrev(make_specified_frame l (List.filter (fun n -> n > l) fabls) fabps fhps)
+    else
+      FBin(make_specified_frame (l+1) (List.filter (fun n -> n > l) fabls) (strip_bitseq_false0 fabps) (strip_bitseq_false0 fhps),make_specified_frame (l+1) (List.filter (fun n -> n > l) fabls) (strip_bitseq_true0 fabps) (strip_bitseq_true0 fhps))
+
+let bitseq_of_str x =
+  let bl = ref [] in
+  for i = (String.length x) - 1 downto 0 do
+    if x.[i] = '0' then
+      bl := false::!bl
+    else
+      bl := true::!bl
+  done;
+  !bl
+
+let set_localframe () =
+  localframe := make_specified_frame 0
+      !Config.localframeabbrevlevels
+      (List.map bitseq_of_str !Config.localframeabbrevpoints)
+      (List.map bitseq_of_str !Config.localframehashpoints)
+
+let wrap_frame fr =
+  match fr with
+  | FAbbrev(_) -> fr
+  | _ -> FAbbrev(fr)
+
