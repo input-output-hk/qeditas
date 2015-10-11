@@ -66,9 +66,9 @@ let set_genesis_stakemods x =
 (*** Here the last 20 bytes (40 hex chars) of the block hash for a particular bitcoin block should be included.
  sha256 is used to extract 512 bits to set the genesis current and future stake modifiers.
  ***)
-set_genesis_stakemods "0000000000000000000000000000000000000000";;
+set_genesis_stakemods "0000000000000000000000000000000000000000"
 
-let genesistarget = ref (big_int_of_string "1000000000")
+let genesistarget = ref (shift_left_big_int unit_big_int 245)
 let genesisledgerroot : hashval ref = ref (0l,0l,0l,0l,0l)
 
 (*** base reward of 50 fraenks (50 trillion cants) like bitcoin, but assume the first 350000 blocks have passed. ***)
@@ -471,8 +471,7 @@ let check_postor_pdoc tm csm mtar alpha beta m =
  in a way that has 16 0 bits as the least significant bits.
  That is, for each stake address there are 0.0015% of proofs-of-storage that can be used by that address.
 ***)
-let check_hit_a blkh bday obl v tinf tmstmp stkid stkaddr strd =
-  let (csm,fsm,tar) = tinf in
+let check_hit_b blkh bday obl v csm tar tmstmp stkid stkaddr strd =
   match strd with
   | None -> lt_big_int (hitval tmstmp stkid csm) (mult_big_int tar (coinage blkh bday obl v))
   | Some(PostorTrm(th,m,a,h)) -> (*** h is not relevant here; it is the asset id to look it up in the ctree ***)
@@ -487,6 +486,10 @@ let check_hit_a blkh bday obl v tinf tmstmp stkid stkaddr strd =
       lt_big_int (hitval tmstmp stkid csm) mtar
 	&&
       check_postor_pdoc tmstmp csm mtar stkaddr prebeta d
+
+let check_hit_a blkh bday obl v tinf tmstmp stkid stkaddr strd =
+  let (csm,fsm,tar) = tinf in
+  check_hit_b blkh bday obl v csm tar tmstmp stkid stkaddr strd
 
 let check_hit blkh bh bday obl v =
   check_hit_a blkh bday obl v bh.tinfo bh.timestamp bh.stakeassetid bh.stakeaddr bh.stored

@@ -13,6 +13,9 @@ open Ctregraft
 
 type stakemod = int64 * int64 * int64 * int64
 
+val seo_stakemod : (int -> int -> 'a -> 'a) -> stakemod -> 'a -> 'a
+val sei_stakemod :(int -> 'a -> int * 'a) -> 'a -> stakemod * 'a
+
 val set_genesis_stakemods : string -> unit
 val genesiscurrentstakemod : stakemod ref
 val genesisfuturestakemod : stakemod ref
@@ -31,6 +34,9 @@ val hitval : int64 -> hashval -> stakemod -> big_int
 type postor =
   | PostorTrm of hashval option * tm * tp * hashval
   | PostorDoc of payaddr * hashval * hashval option * pdoc * hashval
+
+val seo_postor : (int -> int -> 'a -> 'a) -> postor -> 'a -> 'a
+val sei_postor : (int -> 'a -> int * 'a) -> 'a -> postor * 'a
 
 type blockheaderdata = {
     prevblockhash : hashval option;
@@ -83,6 +89,14 @@ val sei_blockdeltah : (int -> 'a -> int * 'a) -> 'a -> blockdeltah * 'a
 
 val coinstake : block -> tx
 
+val incrstake : int64 -> int64
+
+exception InappropriatePostor
+val check_postor_tm_r : tm -> hashval
+val check_postor_pdoc_r : pdoc -> hashval
+
+val check_hit_b : int64 -> int64 -> obligation -> int64
+  -> stakemod -> big_int -> int64 -> hashval -> p2pkhaddr -> postor option -> bool
 val check_hit_a : int64 -> int64 -> obligation -> int64
   -> targetinfo -> int64 -> hashval -> p2pkhaddr -> postor option -> bool
 val check_hit : int64 -> blockheaderdata -> int64 -> obligation -> int64 -> bool
