@@ -2,11 +2,23 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Big_int
 open Hash
 open Signat
 open Tx
 open Ctre
 open Block
+
+val recentledgerroots : (hashval, int64 * hashval) Hashtbl.t
+val recentblockheaders : (hashval * (big_int * int64 * blockheader)) list ref
+val recentcommitments : (int64 * hashval) list ref
+val recentblockdeltahs : (hashval, blockdeltah) Hashtbl.t
+val recentblockdeltas : (hashval, blockdelta) Hashtbl.t
+val recentstxs : (hashval, stx) Hashtbl.t
+
+val waitingblock : (int64 * int64 * hashval * blockheader * blockdelta * big_int) option ref
+
+val insertnewblockheader : hashval -> big_int -> bool -> int64 -> blockheader -> unit
 
 exception RequestRejected
 exception IllformedMsg
@@ -34,7 +46,7 @@ type msg =
   | GetHeaders of int32 * int64 * hashval option
   | MTx of int32 * stx (*** signed tx in principle, but in practice some or all signatures may be missing ***)
   | MBlock of int32 * block
-  | Headers of blockheader list
+  | Headers of (int64 * blockheader) list
   | MBlockdelta of int32 * hashval * blockdelta (*** the hashval is for the block header ***)
   | MBlockdeltah of int32 * hashval * blockdeltah (*** the hashval is for the block header; the blockdeltah only has the hashes of stxs in the block ***)
   | GetAddr
@@ -62,6 +74,9 @@ type connstate = {
     mutable last_height : int64; (*** how up to date the node is ***)
   }
 
+val conns : (Unix.file_descr * in_channel * out_channel * string * connstate) list ref
+
+val broadcast_msg : msg -> unit
 val send_msg : out_channel -> msg -> hashval
 val send_reply : out_channel -> hashval -> msg -> hashval
 

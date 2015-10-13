@@ -2,6 +2,7 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Big_int
 open Ser
 open Hash
 open Assets
@@ -9,6 +10,37 @@ open Signat
 open Tx
 open Ctre
 open Block
+
+(*** recent (provisional) data ***)
+(*** recentledgerroots: associate ledger (ctree) roots with a block height and abbrev hashval ***)
+(*** recentblockheaders: associate block header hash with block height and block header ***)
+(*** recentblockdeltahs: associate block header hash with a blockdeltah (summarizing stxs by hashvals) ***)
+(*** recentblockdeltas: associate block header hash with a blockdelta (with all stxs explicit) ***)
+(*** recentstxs: associate hashes of txs/stxs with stxs (may or may not be in blocks) ***)
+let recentledgerroots : (hashval, int64 * hashval) Hashtbl.t = Hashtbl.create 1024
+let recentblockheaders : (hashval * (big_int * int64 * blockheader)) list ref = ref [] (*** ordered by cumulative stake ***)
+let recentcommitments : (int64 * hashval) list ref = ref []
+let recentblockdeltahs : (hashval, blockdeltah) Hashtbl.t = Hashtbl.create 1024
+let recentblockdeltas : (hashval, blockdelta) Hashtbl.t = Hashtbl.create 1024
+let recentstxs : (hashval, stx) Hashtbl.t = Hashtbl.create 65536
+
+let waitingblock : (int64 * int64 * hashval * blockheader * blockdelta * big_int) option ref = ref None;;
+
+let rec insertnewblockheader_real bhh cs mine blkh bh l =
+  match l with
+  | (bhh1,(cs1,blkh1,bh1))::r when lt_big_int cs1 cs || (mine && eq_big_int cs1 cs) -> (bhh,(cs,blkh,bh))::l (*** consider the ones this process has created preferable to others with the same cumulative stake ***)
+  | x::r -> x::insertnewblockheader_real bhh cs mine blkh bh r
+  | [] -> [(bhh,(cs,blkh,bh))]
+
+let insertnewblockheader bhh cs mine blkh bh =
+  recentblockheaders := insertnewblockheader_real bhh cs mine blkh bh !recentblockheaders;
+  Printf.printf "After insertnewblockheader\n";
+  List.iter
+    (fun (bhh1,(cs1,blkh1,bh1)) ->
+      Printf.printf "%Ld %s cs: %s\n" blkh1 (hashval_hexstring bhh1) (string_of_big_int cs1)
+      )
+    !recentblockheaders;
+  flush stdout
 
 exception RequestRejected
 exception Hung
@@ -142,7 +174,7 @@ type msg =
   | GetHeaders of int32 * int64 * hashval option
   | MTx of int32 * stx (*** signed tx in principle, but in practice some or all signatures may be missing ***)
   | MBlock of int32 * block
-  | Headers of blockheader list
+  | Headers of (int64 * blockheader) list
   | MBlockdelta of int32 * hashval * blockdelta (*** the hashval is for the block header ***)
   | MBlockdeltah of int32 * hashval * blockdeltah (*** the hashval is for the block header; the blockdeltah only has the hashes of stxs in the block ***)
   | GetAddr
@@ -169,6 +201,8 @@ type connstate = {
     mutable first_full_height : int64; (*** how much block/ctree history is stored at the node ***)
     mutable last_height : int64; (*** how up to date the node is ***)
   }
+
+let conns = ref [];;
 
 let seo_msg o m c =
   match m with
@@ -248,7 +282,7 @@ let seo_msg o m c =
   | Headers(bhl) ->
       if List.length bhl > 1000 then raise (Failure "Cannot send more than 1000 headers");
       let c = o 8 12 c in
-      let c = seo_list seo_blockheader o bhl c in
+      let c = seo_list (seo_prod seo_int64 seo_blockheader) o bhl c in
       c
   | MBlockdelta(vers,h,del) ->
       let c = o 8 13 c in
@@ -364,7 +398,7 @@ let sei_msg i c =
       let (b,c) = sei_block i c in
       (MBlock(vers,b),c)
   | 12 ->
-      let (bhl,c) = sei_list sei_blockheader i c in
+      let (bhl,c) = sei_list (sei_prod sei_int64 sei_blockheader) i c in
       (Headers(bhl),c)
   | 13 ->
       let (vers,c) = sei_int32 i c in
@@ -439,6 +473,14 @@ let send_msg_real c replyto m =
 
 let send_msg c m = send_msg_real c None m
 let send_reply c h m = send_msg_real c (Some(h)) m
+
+let broadcast_msg m =
+  List.iter
+    (fun (s,sin,sout,peeraddr,cs) ->
+      try
+	if cs.alive then ignore (send_msg sout m)
+      with _ -> ())
+    !conns
 
 (***
  Throw IllformedMsg if something's wrong with the format or if it reads the first byte but times out before reading the full message.
@@ -519,26 +561,84 @@ let handle_msg sin sout cs replyto mh m =
       Printf.printf "Message %s %s rejected: %d %s\n" (hashval_hexstring mh) msgcom by rsn;
       flush stdout;
       cs.pending <- update_pending cs.pending qh m
+  | (None,Inv(invl)) ->
+      let toget = ref [] in
+      List.iter
+	(fun (k,blkh,h) ->
+	  match k with
+	  | 1 -> (*** block header ***)
+	      if not (List.mem_assoc h !recentblockheaders) then toget := (k,h)::!toget
+	  | _ -> () (*** ignore everything else for now ***)
+	)
+	invl;
+      if not (!toget = []) then
+	let mh = send_msg sout (GetData(!toget)) in
+	()
+  | (None,GetData(invl)) ->
+      let headerhl =
+	List.filter (fun (k,h) -> k = 1) invl
+      in
+      let headerl =
+	List.map
+	  (fun (k,h) -> let (_,blkh,bh) = List.assoc h !recentblockheaders in (blkh,bh))
+	  headerhl
+      in
+      ignore (send_msg sout (Headers(List.rev headerl)));
+      List.iter
+	(fun (k,h) ->
+	  match k with
+	  | 1 -> () (*** block headers sent above ***)
+	  | _ -> () (*** ignore everything else for now ***)
+	  )
+	invl
+  | (None,Headers(bhl)) ->
+      List.iter
+	(fun (blkh,(bhd,bhs)) ->
+	  if valid_blockheader blkh (bhd,bhs) then
+	    match 
+	      match bhd.prevblockhash with
+	      | None ->
+		  if valid_blockheaderchain blkh ((bhd,bhs),[]) (*** first block, special conditions ***)
+		  then Some(zero_big_int)
+		  else None
+	      | Some(pbhh) ->
+		  begin
+		    try
+		      let (cs,_,pbh) = List.assoc pbhh !recentblockheaders in
+		      if blockheader_succ pbh (bhd,bhs) then
+			Some(cs)
+		      else
+			None
+		    with Not_found -> None (*** reject orphan headers ***)
+		  end
+	    with
+	    | Some(cs) -> (*** header is accepted, put it on the list with the new cumulative stake ***)
+		let (_,_,tar) = bhd.tinfo in
+		insertnewblockheader (hash_blockheaderdata bhd) (cumul_stake cs tar bhd.deltatime) false blkh (bhd,bhs);
+		begin (*** If there is some block we are waiting to publish, see if it has more cumulative stake that this one. If not, forget it. ***)
+		  match !waitingblock with
+		  | Some(_,_,_,_,_,mycs) when lt_big_int mycs cs ->
+		      Printf.printf "A better block was found. Not publishing mine.\n";
+		      waitingblock := None
+		  | _ -> ()
+		end
+	    | None -> (*** header is rejected, ignore it for now, maybe should ignore it forever? ***)
+		())
+	bhl
   | (None,GetFramedCTree(vers,blkho,cr,fr)) ->
       Printf.printf "Handling GetFramedCTree.\n"; flush stdout;
-      begin (*** ignore blkho for now; it will be used to look up the ctree abbrev associated with root cr if it is not known; for now cr will be the root of the initial ledger 7b47514ebb7fb6ab06389940224d09df2951e97e ***)
-	if cr = (2068271438l, -1149258069l, 104372544l, 575474143l, 693234046l) then (*** initial distribution ledger ***)
-	  let ca = (-549354862l, -406501321l, -337823390l, -872486444l, -1131632255l) in (*** abbrev for the root of the ctree ***)
-	  let c = CAbbrev(cr,ca) in
-	  begin
-	    try
-	      let ctosend = rframe_filter_ctree fr c in
-	      ignore (send_reply sout mh (MCTree(0l,ctosend)))
-	    with
-	    | Failure(x) ->
-		ignore (send_reply sout mh (Reject("GetFramedCTree",1,"could not build framed ctree","")))
-	  end
-	else
-	  ignore (send_reply sout mh (Reject("GetFramedCTree",1,"unknown ctree root","")))
-      end
+      List.iter
+        (fun (_,ca) ->
+    	  let c = CAbbrev(cr,ca) in
+	  try
+	    let ctosend = rframe_filter_ctree fr c in
+	    ignore (send_reply sout mh (MCTree(0l,ctosend)))
+	  with
+	  | _ -> () (*** try a different abbrev corresponding to the root ***)
+	)
+	(lookup_all_ctree_root_abbrevs cr);
+      ignore (send_reply sout mh (Reject("GetFramedCTree",1,"could not build framed ctree","")))
   | (Some(qh),MCTree(vers,ctr)) ->
-      begin
-	
-      end
+      cs.pending <- update_pending cs.pending qh m
   | _ ->
       Printf.printf "Ignoring msg, probably because the code to handle the msg is unwritten.\n"; flush stdout
