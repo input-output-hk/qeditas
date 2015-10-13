@@ -31,14 +31,21 @@ let lastcheckpoint : (big_int * int64 * hashval) option ref = ref None;; (*** cu
 let currstaking : (int64 * big_int * hashval * blockheaderdata option * (stakemod * stakemod * big_int)) option ref = ref None;;
 let waitingblock : (int64 * int64 * hashval * blockheader * blockdelta * big_int) option ref = ref None;;
 
-let rec insertnewblockheader_real bhh cs blkh bh l =
+let rec insertnewblockheader_real bhh cs mine blkh bh l =
   match l with
-  | (bhh1,(cs1,blkh1,bh1))::r when lt_big_int cs1 cs -> (bhh,(cs,blkh,bh))::l
-  | x::r -> x::insertnewblockheader_real bhh cs blkh bh r
+  | (bhh1,(cs1,blkh1,bh1))::r when lt_big_int cs1 cs || (mine && eq_big_int cs1 cs) -> (bhh,(cs,blkh,bh))::l (*** consider the ones this process has created preferable to others with the same cumulative stake ***)
+  | x::r -> x::insertnewblockheader_real bhh cs mine blkh bh r
   | [] -> [(bhh,(cs,blkh,bh))]
 
-let insertnewblockheader bhh cs blkh bh =
-  recentblockheaders := insertnewblockheader_real bhh cs blkh bh !recentblockheaders
+let insertnewblockheader bhh cs mine blkh bh =
+  recentblockheaders := insertnewblockheader_real bhh cs mine blkh bh !recentblockheaders;
+  Printf.printf "After insertnewblockheader\n";
+  List.iter
+    (fun (bhh1,(cs1,blkh1,bh1)) ->
+      Printf.printf "%Ld %s cs: %s\n" blkh1 (hashval_hexstring bhh1) (string_of_big_int cs1)
+      )
+    !recentblockheaders;
+  flush stdout
 
 let compute_recid (r,s) k =
   match smulp k _g with
@@ -408,10 +415,10 @@ let main () =
       end;
     if !Config.testnet then
       begin
-	max_target := shift_left_big_int unit_big_int 248; (*** make the max_target much higher (so difficulty can be easier for testing) ***)
-	genesistarget := !max_target;
+	max_target := shift_left_big_int unit_big_int 255; (*** make the max_target much higher (so difficulty can be easier for testing) ***)
+	genesistarget := shift_left_big_int unit_big_int 245; (*** make the genesistarget much higher (so difficulty can be easier for testing) ***)
       end;
-    set_localframe();
+    Ctre.localframe := Commands.load_currentframe();
     let l = 
       match !Config.ip with
       | Some(ip) ->
@@ -432,10 +439,10 @@ let main () =
 	Printf.printf "started staker\n"; flush stdout;
 	let reasontostake = ref false in
 	stakingproccomm := Some(fromstkr,tostkr,stkerr);
-	Commands.read_wallet();
+	Commands.load_wallet();
 	List.iter
 	  (fun (k,b,(x,y),w,h,alpha) ->
-	    let ctr = Ctre.CAbbrev(hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",hexstring_hashval "df418292e7c54837ebdd3962cbfee9d4bc8ca981") in
+	    let ctr = Ctre.CAbbrev(hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",hexstring_hashval "df418292e7c54837ebdd3962cbfee9d4bc8ca981") in (*** too specific, rethink ***)
 	    match Ctre.ctree_addr (hashval_p2pkh_addr h) ctr with
 	    | (Some(Ctre.CLeaf(_,hl)),_) ->
 		reasontostake := true;
@@ -444,6 +451,21 @@ let main () =
 		()
 	  )
 	  !Commands.walletkeys;
+	List.iter
+	  (fun (alpha,beta,_,_,_) ->
+	    let (p,x4,x3,x2,x1,x0) = alpha in
+	    let (q,_,_,_,_,_) = beta in
+	    if not p && not q then (*** only p2pkh can stake ***)
+	      begin
+		let ctr = Ctre.CAbbrev(hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",hexstring_hashval "df418292e7c54837ebdd3962cbfee9d4bc8ca981") in (*** too specific, rethink ***)
+		match Ctre.ctree_addr (payaddr_addr alpha) ctr with
+		| (Some(Ctre.CLeaf(_,hl)),_) ->
+		    reasontostake := true;
+		    hlist_insertstakingassets tostkr (x4,x3,x2,x1,x0) (Ctre.nehlist_hlist hl)
+		| _ ->
+		    ()		
+	      end)
+	  !Commands.walletendorsements;
 	flush tostkr;
 	try
 	  let (blkh,cs,currledgerroot,bho,(csm,fsmprev,tar)) = beststakingoption () in
@@ -462,7 +484,6 @@ let main () =
     search_for_conns ();
     while true do (*** main process loop ***)
       try
-	Printf.printf "here 0\n"; flush stdout;
 	begin (*** if staking check to see if staking has found a hit ***)
 	  match !stakingproccomm with
 	  | None -> ()
@@ -479,16 +500,13 @@ let main () =
 		    let (alpha,c) = sei_hashval seic c in
 		    let alpha2 = hashval_p2pkh_addr alpha in
 		    let (aid,_) = sei_hashval seic c in
-		    Printf.printf "here 0a\n"; flush stdout;
 		    Printf.printf "Asset %s at address %s can stake at time %Ld (%Ld seconds from now)\n" (hashval_hexstring aid) (Cryptocurr.addr_qedaddrstr alpha2) stktm (Int64.sub stktm (Int64.of_float (Unix.time())));
 		    flush stdout;
 		    begin
 		      try
 			let (_,_,bday,obl,v) = List.find (fun (_,h,_,_,_) -> h = aid) !Commands.stakingassets in
-			Printf.printf "here 0b\n"; flush stdout;
 			  match !currstaking with
 			  | Some(blkh,cs,prevledgerroot,pbh,(csm,fsmprev,tar)) ->
-			      Printf.printf "here 0c\n"; flush stdout;
 			      if check_hit_b blkh bday obl v csm tar stktm aid alpha None then (*** confirm the staking process is correct ***)
 
 				let (pbhtm,pbhh) =
@@ -496,14 +514,11 @@ let main () =
 				  | Some(pbh) -> (pbh.timestamp,Some(hash_blockheaderdata pbh))
 				  | None -> (!genesistimestamp,None)
 				in
-				Printf.printf "here 0d\n"; flush stdout;
 				let newrandbit = rand_bit() in
-				Printf.printf "here 0e\n"; flush stdout;
 				let fsm = stakemod_pushbit newrandbit fsmprev in
-				let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh 512L,true),Currency(rewfn blkh)))] in
+				let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh reward_locktime,true),Currency(rewfn blkh)))] in
 
 				let coinstk : tx = ([(alpha2,aid)],stkoutl) in
-				Printf.printf "here 0f\n"; flush stdout;
 				let prevcforblock =
 				  match
 				    get_tx_supporting_octree
@@ -513,9 +528,7 @@ let main () =
 				  | Some(c) -> c
 				  | None -> raise (Failure "ctree should not have become empty")
 				in
-				Printf.printf "here 0g\n"; flush stdout;
 				let (prevcforheader,cgr) = factor_inputs_ctree_cgraft [(alpha2,aid)] prevcforblock in
-				Printf.printf "here 0h\n"; flush stdout;
 				let (newcr,newca) =
 				  match tx_octree_trans blkh coinstk (Some(CAbbrev(prevledgerroot,lookup_ctree_root_abbrev prevledgerroot))) with
 				  | None -> raise (Failure "ctree should not have become empty")
@@ -525,7 +538,6 @@ let main () =
 				      | _ -> raise (Failure "frame_filter_ctree was given a wrapped frame but did not return an abbrev")
 				in
 				Hashtbl.add recentledgerroots newcr (blkh,newca); (*** remember the association so the relevant parts of the new ctree can be reloaded when needed ***)
-				Printf.printf "here 0i\n"; flush stdout;
 				let bhdnew : blockheaderdata
 				    = { prevblockhash = pbhh;
 					newtheoryroot = None; (*** leave this as None for now ***)
@@ -540,18 +552,42 @@ let main () =
 					prevledger = prevcforheader
 				      }
 				in
-				Printf.printf "here 0j\n"; flush stdout;
 				let bhdnewh = hash_blockheaderdata bhdnew in
-				let (prvk,b,_,_,_,_) = List.find (fun (_,_,_,_,beta,_) -> beta = alpha) !Commands.walletkeys in
-				Printf.printf "here 0k\n"; flush stdout;
-				let r = rand_256() in
-				Printf.printf "here 0l\n"; flush stdout;
-				let sg : signat = signat_hashval bhdnewh prvk r in
-				let bhsnew : blockheadersig = 
-				  { blocksignat = sg;
-				    blocksignatrecid = compute_recid sg r;
-				    blocksignatfcomp = b
-				  }
+				let bhsnew =
+				  try
+				    let (prvk,b,_,_,_,_) = List.find (fun (_,_,_,_,beta,_) -> beta = alpha) !Commands.walletkeys in
+				    let r = rand_256() in
+				    let sg : signat = signat_hashval bhdnewh prvk r in
+				    { blocksignat = sg;
+				      blocksignatrecid = compute_recid sg r;
+				      blocksignatfcomp = b;
+				      blocksignatendorsement = None
+				    }
+				  with Not_found ->
+				    try
+				      let (_,beta,recid,fcomp,esg) =
+					List.find
+					  (fun (alpha2,beta,recid,fcomp,esg) ->
+					    let (p,x0,x1,x2,x3,x4) = alpha2 in
+					    let (q,_,_,_,_,_) = beta in
+					    not p && (x0,x1,x2,x3,x4) = alpha && not q)
+					  !Commands.walletendorsements
+				      in
+				      let (_,x0,x1,x2,x3,x4) = beta in
+				      let betah = (x0,x1,x2,x3,x4) in
+				      let (prvk,b,_,_,_,_) =
+					List.find
+					  (fun (_,_,_,_,beta2,_) -> beta2 = betah)
+					  !Commands.walletkeys in
+				      let r = rand_256() in
+				      let sg : signat = signat_hashval bhdnewh prvk r in
+				      { blocksignat = sg;
+					blocksignatrecid = compute_recid sg r;
+					blocksignatfcomp = b;
+					blocksignatendorsement = Some(betah,recid,fcomp,esg)
+				      }
+				    with Not_found ->
+				      raise (Failure("Was staking for " ^ Cryptocurr.addr_qedaddrstr (hashval_p2pkh_addr alpha) ^ " but have neither the private key nor an appropriate endorsement for it."))
 				in
 				let bhnew = (bhdnew,bhsnew) in
 				let bdnew : blockdelta =
@@ -561,7 +597,6 @@ let main () =
 				    blockdelta_stxl = []
 				  }
 				in
-				Printf.printf "here 0m\n"; flush stdout;
 				if valid_block None None blkh (bhnew,bdnew) then
 				  (Printf.printf "New block is valid\n"; flush stdout)
 				else
@@ -599,13 +634,12 @@ let main () =
 		  Unix.close_process_full (fromstkr,tostkr,stkerr);
 		  stakingproccomm := None
 	end;
-	Printf.printf "here 1\n"; flush stdout;
 	begin (*** check to see if a new block can be published ***)
 	  match !waitingblock with
 	  | Some(stktm,blkh,bhh,bh,bd,cs) when Int64.of_float (Unix.time()) >= stktm ->
 	      waitingblock := None;
 	      Printf.printf "Publishing block %s at height %Ld\n" (hashval_hexstring bhh) blkh; flush stdout;
-	      insertnewblockheader bhh cs blkh bh;
+	      insertnewblockheader bhh cs true blkh bh;
 	      (*** now should share it via Inv and then replying to GetData ***)
 	      begin
 		match !stakingproccomm with
@@ -614,7 +648,6 @@ let main () =
 		      match !currstaking with
 		      | Some(_) ->
 			  (*** pause staking ***)
-			  Printf.printf "Pausing staking while publishing block\n"; flush stdout;
 			  output_byte tostkr 80;
 			  flush tostkr;
 		      | None -> ()
@@ -630,12 +663,8 @@ let main () =
 		    currstaking := Some(blkh,cs,currledgerroot,bho,(csm,fsmprev,tar))
 		| None -> ()
 	      end;
-	  | Some(stktm,blkh,bhh,bh,bd,cs) ->
-	      let currtm = Int64.of_float (Unix.time()) in
-	      Printf.printf "Waiting to publish block at level %Ld in %Ld seconds (%Ld - %Ld)\n" blkh (Int64.sub stktm currtm) stktm currtm; flush stdout;
 	  | _ -> ()
 	end;
-	Printf.printf "here 2\n"; flush stdout;
 	begin (*** possibly check for a new incomming connection ***)
 	  match l with
 	  | Some(l) ->
@@ -659,7 +688,6 @@ let main () =
 	      end
 	  | None -> ()
 	end;
-	Printf.printf "here 3\n"; flush stdout;
 	(*** check each connection for possible messages ***)
 	List.iter
 	  (fun (s,sin,sout,peeraddr,cs) ->
@@ -669,7 +697,7 @@ let main () =
 	      | None ->
 		  begin
 		    try
-		      ignore (List.find (fun (h,p,tm1,tm2,f) -> p && (tm -. tm2 > 30.0)) cs.pending);
+		      ignore (List.find (fun (h,p,tm1,tm2,f) -> p && (tm -. tm2 > 90.0)) cs.pending);
 			(*** Something that required a response didn't respond in time (e.g., a Ping).
 			     Drop the connection
 			 ***)
@@ -677,7 +705,7 @@ let main () =
                       Unix.close s;
                       cs.alive <- false
                     with Not_found ->
-		    if (tm -. cs.lastmsgtm) > 60.0 then (*** If no messages in enough time, send a ping. ***)
+		    if (tm -. cs.lastmsgtm) > 5400.0 then (*** If no messages in enough time (90 minutes), send a ping. ***)
 		      begin
 			Printf.printf "Sending Ping.\n"; flush stdout;
 			let mh = send_msg sout Ping in
@@ -705,7 +733,7 @@ let main () =
 	  !conns;
 	conns := List.filter (fun (s,sin,sout,peeraddr,cs) -> cs.alive) !conns
       with
-      | Failure(x) -> Printf.printf "Failure: %s\n...but continuing\n"; flush stdout
+      | Failure(x) -> Printf.printf "Failure: %s\n...but continuing\n" x; flush stdout
       | _ -> () (*** ensuring no exception escapes the main loop ***)
     done
   end;;
