@@ -58,6 +58,7 @@ type blockheadersig = {
     blocksignat : signat;
     blocksignatrecid : int;
     blocksignatfcomp : bool;
+    blocksignatendorsement : (p2pkhaddr * int * bool * signat) option;
   }
 
 type blockheader = blockheaderdata * blockheadersig

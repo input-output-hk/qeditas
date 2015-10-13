@@ -221,6 +221,7 @@ type blockheadersig = {
     blocksignat : signat;
     blocksignatrecid : int;
     blocksignatfcomp : bool;
+    blocksignatendorsement : (p2pkhaddr * int * bool * signat) option;
   }
 
 type blockheader = blockheaderdata * blockheadersig
@@ -242,6 +243,7 @@ let fake_blockheader : blockheader =
    { blocksignat = (zero_big_int,zero_big_int);
      blocksignatrecid = 0;
      blocksignatfcomp = false;
+     blocksignatendorsement = None;
    })
 
 let seo_blockheaderdata o bh c =
@@ -290,16 +292,19 @@ let seo_blockheadersig o bhs c =
   let c = seo_signat o bhs.blocksignat c in
   let c = o 2 bhs.blocksignatrecid c in
   let c = seo_bool o bhs.blocksignatfcomp c in
+  let c = seo_option (seo_prod4 seo_hashval seo_varintb seo_bool seo_signat) o bhs.blocksignatendorsement c in
   c
 
 let sei_blockheadersig i c = 
   let (x,c) = sei_signat i c in
   let (r,c) = i 2 c in
   let (f,c) = sei_bool i c in
+  let (e,c) = sei_option (sei_prod4 sei_hashval sei_varintb sei_bool sei_signat) i c in
   let bhs : blockheadersig =
     { blocksignat = x;
       blocksignatrecid = r;
       blocksignatfcomp = f;
+      blocksignatendorsement = e;
     }
   in
   (bhs,c)
@@ -523,7 +528,14 @@ let hash_blockheaderdata bh =
 		   (ctree_hashroot bh.prevledger))))))
 
 let valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v) =
-  verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) bhd.stakeaddr bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
+  begin
+    match bhs.blocksignatendorsement with
+    | None -> verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) bhd.stakeaddr bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
+    | Some(beta,recid,fcomp,esg) -> (*** signature via endorsement ***)
+	verifybitcoinmessage_a bhd.stakeaddr recid fcomp esg ("endorse " ^ (addr_qedaddrstr (hashval_p2pkh_addr beta)))
+	  &&
+	verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) beta bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
+  end
     &&
   bhd.stakeassetid = aid
     &&
@@ -593,7 +605,6 @@ let rec check_bhl pbh bhl oth =
 	  raise Not_found
 
 let rec check_poforfeit_a blkh alpha alphabs v fal tr =
-  Printf.printf "cpa v %Ld\n" v; flush stdout;
   match fal with
   | [] -> v = 0L
   | fa::far ->
@@ -648,8 +659,8 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
 	       v2 = v
 		 &&
 	       begin
-		 try (*** all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for at least reward_maturation many blocks ***)
-		   ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh reward_maturation -> false | _ -> true) remouts);
+		 try (*** all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for at least reward_locktime many blocks ***)
+		   ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh reward_locktime -> false | _ -> true) remouts);
 		   false
 		 with Not_found -> true
 	       end
@@ -657,7 +668,7 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
 	       false
 	 end
      | _ -> (*** stake has the default obligation ***)
-	 begin (*** the first output is optionally the stake with the default obligation (not a reward, immediately spendable) with all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for at least reward_maturation many blocks ***)
+	 begin (*** the first output is optionally the stake with the default obligation (not a reward, immediately spendable) with all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for at least reward_locktime many blocks ***)
 	   match bd.stakeoutput with
 	   | (alpha2,(None,Currency(v2)))::remouts ->
 	       begin
@@ -666,13 +677,13 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
 		 v2 = v
 		   &&
 		 try
-		   ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh reward_maturation -> false | _ -> true) remouts);
+		   ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh reward_locktime -> false | _ -> true) remouts);
 		   false
 		 with Not_found -> true
 	       end
 	   | _ ->
 	       try
-		 ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh reward_maturation -> false | _ -> true) bd.stakeoutput);
+		 ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh reward_locktime -> false | _ -> true) bd.stakeoutput);
 		 false
 	       with Not_found -> true
 	 end
@@ -842,6 +853,7 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
   | None -> false
 
 let valid_block tht sigt blkh (b:block) =
+  Printf.printf "in valid_block\n";
   let ((bhd,_),_) = b in
   let stkaddr = p2pkhaddr_addr bhd.stakeaddr in
   let stkaddrbs = addr_bitseq stkaddr in
@@ -874,7 +886,7 @@ let retarget tar deltm =
 let cumul_stake cs tar deltm =
   add_big_int
     cs
-    (div_big_int !max_target (mult_big_int tar (big_int_of_int32 deltm)))
+    (max_big_int unit_big_int (div_big_int !max_target (shift_right_towards_zero_big_int (mult_big_int tar (big_int_of_int32 deltm)) 20)))
 
 let blockheader_succ bh1 bh2 =
   let (bhd1,bhs1) = bh1 in
