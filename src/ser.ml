@@ -176,7 +176,7 @@ let sei_big_int_256 i c =
   let xr = ref zero_big_int in
   let cr = ref c in
   for j = 0 to 31 do
-    let (x,c) = i 8 c in
+    let (x,c) = i 8 !cr in
     cr := c;
     xr := or_big_int (shift_left_big_int (big_int_of_int x) (j*8)) !xr
   done;
