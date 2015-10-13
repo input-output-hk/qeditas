@@ -644,7 +644,6 @@ let main () =
 		      | None -> ()
 		    end;
 		    let (blkh,cs,currledgerroot,tm,bho,(csm,fsmprev,tar)) = beststakingoption () in
-		    Printf.printf "Starting staking for block at height %Ld, currledgerroot %s, target %s\n" blkh (hashval_hexstring currledgerroot) (string_of_big_int tar); flush stdout;
 		    let ca = lookup_frame_ctree_root_abbrev !localframehash currledgerroot in
 		    output_byte tostkr 114; (*** remove all staking and storage assets **)
 		    if send_assets_to_staker tostkr (CAbbrev(currledgerroot,ca)) then
@@ -657,6 +656,7 @@ let main () =
 			seocf (seo_int64 seoc (Int64.add 1L tm) (tostkr,None));
 			output_byte tostkr 83; (*** start staking ***)
 			flush tostkr;
+			Printf.printf "Starting staking for block at height %Ld, currledgerroot %s, target %s\n" blkh (hashval_hexstring currledgerroot) (string_of_big_int tar); flush stdout;
 			currstaking := Some(blkh,cs,currledgerroot,bho,(csm,fsmprev,tar))
 		      end
 		    else
@@ -674,7 +674,6 @@ let main () =
 		      match !currstaking with
 		      | None ->
 			  let (blkh,cs,currledgerroot,tm,bho,(csm,fsmprev,tar)) = beststakingoption () in
-			  Printf.printf "Starting staking for block at height %Ld, currledgerroot %s, target %s\n" blkh (hashval_hexstring currledgerroot) (string_of_big_int tar); flush stdout;
 			  let ca = lookup_frame_ctree_root_abbrev !localframehash currledgerroot in
 			  output_byte tostkr 114; (*** remove all staking and storage assets **)
 			  if send_assets_to_staker tostkr (CAbbrev(currledgerroot,ca)) then
@@ -687,6 +686,7 @@ let main () =
 			      seocf (seo_int64 seoc (Int64.add 1L tm) (tostkr,None));
 			      output_byte tostkr 83; (*** start staking ***)
 			      flush tostkr;
+			      Printf.printf "Starting staking for block at height %Ld, currledgerroot %s, target %s\n" blkh (hashval_hexstring currledgerroot) (string_of_big_int tar); flush stdout;
 			      currstaking := Some(blkh,cs,currledgerroot,bho,(csm,fsmprev,tar))
 			    end
 			  else
@@ -700,7 +700,6 @@ let main () =
 			    begin
 			      output_byte tostkr 80;
 			      flush tostkr;
-			      Printf.printf "Starting staking for block at height %Ld, currledgerroot %s, target %s\n" blkh (hashval_hexstring currledgerroot) (string_of_big_int tar); flush stdout;
 			      let ca = lookup_frame_ctree_root_abbrev !localframehash currledgerroot in
 			      output_byte tostkr 114; (*** remove all staking and storage assets **)
 			      if send_assets_to_staker tostkr (CAbbrev(currledgerroot,ca)) then
@@ -713,6 +712,7 @@ let main () =
 				  seocf (seo_int64 seoc (Int64.add 1L tm) (tostkr,None));
 				  output_byte tostkr 83; (*** start staking ***)
 				  flush tostkr;
+				  Printf.printf "Starting staking for block at height %Ld, currledgerroot %s, target %s\n" blkh (hashval_hexstring currledgerroot) (string_of_big_int tar); flush stdout;
 				  currstaking := Some(blkh,cs,currledgerroot,bho,(csm,fsmprev,tar))
 				end
 			      else
