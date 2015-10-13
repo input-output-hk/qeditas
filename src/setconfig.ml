@@ -7,9 +7,7 @@ let stringconfigvars = [
 ("ctreedatadir",fun x -> Config.ctreedatadir := x);
 ("chaindatadir",fun x -> Config.chaindatadir := x);
 ("seed",fun x -> Config.seed := x);
-("lastcheckpoint",fun x -> Config.lastcheckpoint := x);
-("localframeabbrevpoint",fun x -> Config.localframeabbrevpoints := x::!Config.localframeabbrevpoints);
-("localframehashpoint",fun x -> Config.localframehashpoints := x::!Config.localframehashpoints)
+("lastcheckpoint",fun x -> Config.lastcheckpoint := x)
 ];;
 let boolconfigvars = [
 ("testnet",fun x -> Config.testnet := x);
@@ -19,8 +17,7 @@ let boolconfigvars = [
 let intconfigvars = [
 ("port",fun x -> Config.port := x);
 ("socksport",fun x -> Config.socksport := x);
-("maxconns",fun x -> Config.maxconns := x);
-("localframeabbrevlevel",fun x -> Config.localframeabbrevlevels := x::!Config.localframeabbrevlevels)
+("maxconns",fun x -> Config.maxconns := x)
 ];;
 let stringoptionconfigvars = [
 ("ip",fun x -> Config.ip := x)
@@ -44,7 +41,6 @@ let process_config_line l =
 	    begin
 	      setl := v::!setl;
 	      r (String.sub l (vl+1) (ll-(vl+1)));
-	      Printf.printf "v=%s\n" v; flush stdout;
 	      raise Done
 	    end
 	  )
