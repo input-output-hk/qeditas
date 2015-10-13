@@ -54,6 +54,10 @@ let main () =
 	  !stkassets;
 	strtrmassets := List.filter (fun (th,m,a,h,betak) -> not (dh = h)) !strtrmassets;
 	strdocassets := List.filter (fun (gamma,nonce,th,d,h,betak) -> not (dh = h)) !strdocassets;
+    | Some(z) when z = 114 -> (*** remove all staking and storage assets ***)
+	stkassets := [];
+	strtrmassets := [];
+	strdocassets := [];
     | Some(z) when z = 67 -> (*** add a currency asset for staking ***)
 	let (alpha,_) = sei_hashval seic (stdin,None) in
 	let (h,_) = sei_hashval seic (stdin,None) in
@@ -93,6 +97,9 @@ let main () =
 	  with InappropriatePostor ->
 	    ()
 	end
+    | Some(z) when z = 116 -> (*** set the earliest timestamp permitted for the successor block ***)
+	let (tm,_) = sei_int64 seic (stdin,None) in
+	stktm := tm
     | Some(z) when z = 84 -> (*** add a term asset for storage ***)
 	let (h,_) = sei_hashval seic (stdin,None) in
 	let (m,_) = sei_tm seic (stdin,None) in
