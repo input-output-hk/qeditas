@@ -15,37 +15,8 @@ open Block;;
 open Net;;
 open Setconfig;;
 
-(*** recent (provisional) data ***)
-(*** recentledgerroots: associate ledger (ctree) roots with a block height and abbrev hashval ***)
-(*** recentblockheaders: associate block header hash with block height and block header ***)
-(*** recentblockdeltahs: associate block header hash with a blockdeltah (summarizing stxs by hashvals) ***)
-(*** recentblockdeltas: associate block header hash with a blockdelta (with all stxs explicit) ***)
-(*** recentstxs: associate hashes of txs/stxs with stxs (may or may not be in blocks) ***)
-let recentledgerroots : (hashval, int64 * hashval) Hashtbl.t = Hashtbl.create 1024;;
-let recentblockheaders : (hashval * (big_int * int64 * blockheader)) list ref = ref [];; (*** ordered by cumulative stake ***)
-let recentcommitments : (int64 * hashval) list ref = ref [];;
-let recentblockdeltahs : (hashval, blockdeltah) Hashtbl.t = Hashtbl.create 1024;;
-let recentblockdeltas : (hashval, blockdelta) Hashtbl.t = Hashtbl.create 1024;;
-let recentstxs : (hashval, stx) Hashtbl.t = Hashtbl.create 65536;;
 let lastcheckpoint : (big_int * int64 * hashval) option ref = ref None;; (*** cumulative stake, block height, blockheaderdata hash ***)
 let currstaking : (int64 * big_int * hashval * blockheaderdata option * (stakemod * stakemod * big_int)) option ref = ref None;;
-let waitingblock : (int64 * int64 * hashval * blockheader * blockdelta * big_int) option ref = ref None;;
-
-let rec insertnewblockheader_real bhh cs mine blkh bh l =
-  match l with
-  | (bhh1,(cs1,blkh1,bh1))::r when lt_big_int cs1 cs || (mine && eq_big_int cs1 cs) -> (bhh,(cs,blkh,bh))::l (*** consider the ones this process has created preferable to others with the same cumulative stake ***)
-  | x::r -> x::insertnewblockheader_real bhh cs mine blkh bh r
-  | [] -> [(bhh,(cs,blkh,bh))]
-
-let insertnewblockheader bhh cs mine blkh bh =
-  recentblockheaders := insertnewblockheader_real bhh cs mine blkh bh !recentblockheaders;
-  Printf.printf "After insertnewblockheader\n";
-  List.iter
-    (fun (bhh1,(cs1,blkh1,bh1)) ->
-      Printf.printf "%Ld %s cs: %s\n" blkh1 (hashval_hexstring bhh1) (string_of_big_int cs1)
-      )
-    !recentblockheaders;
-  flush stdout
 
 let compute_recid (r,s) k =
   match smulp k _g with
@@ -143,7 +114,7 @@ let beststakingoption () =
     let (csm1,fsm1,tar1) = bhd.tinfo in
     let csm2 = stakemod_pushbit (stakemod_lastbit fsm1) csm1 in
     let tar2 = retarget tar1 bhd.deltatime in
-    (Int64.add blkh 1L,cs,bhd.newledgerroot,Some(bhd),(csm2,fsm1,tar2))
+    (Int64.add blkh 1L,cs,bhd.newledgerroot,bhd.timestamp,Some(bhd),(csm2,fsm1,tar2))
   with Not_found ->
     (*** next fall back on the last checkpoint, if there is one ***)
     match !lastcheckpoint with
@@ -152,10 +123,10 @@ let beststakingoption () =
 	let (csm1,fsm1,tar1) = bhd.tinfo in
 	let csm2 = stakemod_pushbit (stakemod_lastbit fsm1) csm1 in
 	let tar2 = retarget tar1 bhd.deltatime in
-	(Int64.add blkh 1L,cs,bhd.newledgerroot,Some(bhd),(csm2,fsm1,tar2))
+	(Int64.add blkh 1L,cs,bhd.newledgerroot,bhd.timestamp,Some(bhd),(csm2,fsm1,tar2))
     | None ->
 	(*** finally assume we are starting from the genesis ledger ***)
-	(1L,zero_big_int,hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",None,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget));;
+	(1L,zero_big_int,hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",!genesistimestamp,None,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget));;
 
 let stakingproccomm : (in_channel * out_channel * in_channel) option ref = ref None;;
 
@@ -166,8 +137,6 @@ let fallbacknodes = [
 let testnetfallbacknodes = [
 "108.61.219.125:20804"
 ];;
-
-let conns = ref [];;
 
 let rand_bit_byte = ref (0,0);;
 
@@ -396,6 +365,35 @@ let rec hlist_insertstakingassets tostkr alpha hl =
   | HCons(_,hr) -> hlist_insertstakingassets tostkr alpha hr
   | _ -> ();;
 
+let send_assets_to_staker tostkr c =
+  let reasontostake = ref false in
+  List.iter
+    (fun (k,b,(x,y),w,h,alpha) ->
+      match ctree_addr (hashval_p2pkh_addr h) c with
+      | (Some(CLeaf(_,hl)),_) ->
+	  reasontostake := true;
+	  hlist_insertstakingassets tostkr h (nehlist_hlist hl)
+      | _ ->
+	  ()
+    )
+    !Commands.walletkeys;
+  List.iter
+    (fun (alpha,beta,_,_,_) ->
+      let (p,x4,x3,x2,x1,x0) = alpha in
+      let (q,_,_,_,_,_) = beta in
+      if not p && not q then (*** only p2pkh can stake ***)
+	begin
+	  match ctree_addr (payaddr_addr alpha) c with
+	  | (Some(CLeaf(_,hl)),_) ->
+	      reasontostake := true;
+	      hlist_insertstakingassets tostkr (x4,x3,x2,x1,x0) (nehlist_hlist hl)
+	  | _ ->
+	      ()		
+	end)
+    !Commands.walletendorsements;
+  flush tostkr;
+  !reasontostake;;
+
 let main () =
   begin
     process_config_args();
@@ -418,7 +416,8 @@ let main () =
 	max_target := shift_left_big_int unit_big_int 255; (*** make the max_target much higher (so difficulty can be easier for testing) ***)
 	genesistarget := shift_left_big_int unit_big_int 245; (*** make the genesistarget much higher (so difficulty can be easier for testing) ***)
       end;
-    Ctre.localframe := Commands.load_currentframe();
+    localframe := Commands.load_currentframe();
+    localframehash := hashframe !localframe;
     let l = 
       match !Config.ip with
       | Some(ip) ->
@@ -437,45 +436,28 @@ let main () =
 	Printf.printf "about to start staker\n"; flush stdout;
 	let (fromstkr,tostkr,stkerr) = Unix.open_process_full stkexec [||] in
 	Printf.printf "started staker\n"; flush stdout;
-	let reasontostake = ref false in
 	stakingproccomm := Some(fromstkr,tostkr,stkerr);
 	Commands.load_wallet();
-	List.iter
-	  (fun (k,b,(x,y),w,h,alpha) ->
-	    let ctr = Ctre.CAbbrev(hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",hexstring_hashval "df418292e7c54837ebdd3962cbfee9d4bc8ca981") in (*** too specific, rethink ***)
-	    match Ctre.ctree_addr (hashval_p2pkh_addr h) ctr with
-	    | (Some(Ctre.CLeaf(_,hl)),_) ->
-		reasontostake := true;
-		hlist_insertstakingassets tostkr h (Ctre.nehlist_hlist hl)
-	    | _ ->
-		()
-	  )
-	  !Commands.walletkeys;
-	List.iter
-	  (fun (alpha,beta,_,_,_) ->
-	    let (p,x4,x3,x2,x1,x0) = alpha in
-	    let (q,_,_,_,_,_) = beta in
-	    if not p && not q then (*** only p2pkh can stake ***)
-	      begin
-		let ctr = Ctre.CAbbrev(hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",hexstring_hashval "df418292e7c54837ebdd3962cbfee9d4bc8ca981") in (*** too specific, rethink ***)
-		match Ctre.ctree_addr (payaddr_addr alpha) ctr with
-		| (Some(Ctre.CLeaf(_,hl)),_) ->
-		    reasontostake := true;
-		    hlist_insertstakingassets tostkr (x4,x3,x2,x1,x0) (Ctre.nehlist_hlist hl)
-		| _ ->
-		    ()		
-	      end)
-	  !Commands.walletendorsements;
-	flush tostkr;
 	try
-	  let (blkh,cs,currledgerroot,bho,(csm,fsmprev,tar)) = beststakingoption () in
-	  output_byte tostkr 66; (*** send the staking process the block height, the target and the stake modifier ***)
-	  seocf (seo_int64 seoc blkh (tostkr,None));
-	  seocf (seo_big_int_256 seoc tar (tostkr,None));
-	  seocf (seo_stakemod seoc csm (tostkr,None));
-	  output_byte tostkr 83; (*** start staking ***)
-	  flush tostkr;
-	  currstaking := Some(blkh,cs,currledgerroot,bho,(csm,fsmprev,tar))
+	  let (blkh,cs,currledgerroot,tm,bho,(csm,fsmprev,tar)) = beststakingoption () in
+	  let ca = lookup_frame_ctree_root_abbrev !localframehash currledgerroot in
+	  if send_assets_to_staker tostkr (CAbbrev(currledgerroot,ca)) then
+	    begin
+	      output_byte tostkr 66; (*** send the staking process the block height, the target, the stake modifier and the next allowed timestamp ***)
+	      seocf (seo_int64 seoc blkh (tostkr,None));
+	      seocf (seo_big_int_256 seoc tar (tostkr,None));
+	      seocf (seo_stakemod seoc csm (tostkr,None));
+	      output_byte tostkr 116;
+	      seocf (seo_int64 seoc (Int64.add 1L tm) (tostkr,None));
+	      output_byte tostkr 83; (*** start staking ***)
+	      flush tostkr;
+	      currstaking := Some(blkh,cs,currledgerroot,bho,(csm,fsmprev,tar))
+	    end
+	  else
+	    begin
+	      Printf.printf "No wallet assets to stake in the current ctree. Not staking at the moment.\n";
+	      flush stdout;
+	    end
 	with Not_found ->
 	  Printf.printf "Could not determine a starting point for staking. Not staking.\n";
 	  flush stdout;
@@ -504,9 +486,11 @@ let main () =
 		    flush stdout;
 		    begin
 		      try
+			Printf.printf "creating block 1\n"; flush stdout;
 			let (_,_,bday,obl,v) = List.find (fun (_,h,_,_,_) -> h = aid) !Commands.stakingassets in
 			  match !currstaking with
 			  | Some(blkh,cs,prevledgerroot,pbh,(csm,fsmprev,tar)) ->
+			      Printf.printf "creating block 2\n"; flush stdout;
 			      if check_hit_b blkh bday obl v csm tar stktm aid alpha None then (*** confirm the staking process is correct ***)
 
 				let (pbhtm,pbhh) =
@@ -514,6 +498,7 @@ let main () =
 				  | Some(pbh) -> (pbh.timestamp,Some(hash_blockheaderdata pbh))
 				  | None -> (!genesistimestamp,None)
 				in
+				Printf.printf "creating block 3\n"; flush stdout;
 				let newrandbit = rand_bit() in
 				let fsm = stakemod_pushbit newrandbit fsmprev in
 				let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh reward_locktime,true),Currency(rewfn blkh)))] in
@@ -528,7 +513,9 @@ let main () =
 				  | Some(c) -> c
 				  | None -> raise (Failure "ctree should not have become empty")
 				in
+				Printf.printf "creating block 4\n"; flush stdout;
 				let (prevcforheader,cgr) = factor_inputs_ctree_cgraft [(alpha2,aid)] prevcforblock in
+				Printf.printf "creating block 5\n"; flush stdout;
 				let (newcr,newca) =
 				  match tx_octree_trans blkh coinstk (Some(CAbbrev(prevledgerroot,lookup_ctree_root_abbrev prevledgerroot))) with
 				  | None -> raise (Failure "ctree should not have become empty")
@@ -537,6 +524,7 @@ let main () =
 				      | CAbbrev(cr,ca) -> (cr,ca)
 				      | _ -> raise (Failure "frame_filter_ctree was given a wrapped frame but did not return an abbrev")
 				in
+				Printf.printf "creating block 6\n"; flush stdout;
 				Hashtbl.add recentledgerroots newcr (blkh,newca); (*** remember the association so the relevant parts of the new ctree can be reloaded when needed ***)
 				let bhdnew : blockheaderdata
 				    = { prevblockhash = pbhh;
@@ -552,6 +540,7 @@ let main () =
 					prevledger = prevcforheader
 				      }
 				in
+				Printf.printf "creating block 7\n"; flush stdout;
 				let bhdnewh = hash_blockheaderdata bhdnew in
 				let bhsnew =
 				  try
@@ -589,6 +578,7 @@ let main () =
 				    with Not_found ->
 				      raise (Failure("Was staking for " ^ Cryptocurr.addr_qedaddrstr (hashval_p2pkh_addr alpha) ^ " but have neither the private key nor an appropriate endorsement for it."))
 				in
+				Printf.printf "creating block 8\n"; flush stdout;
 				let bhnew = (bhdnew,bhsnew) in
 				let bdnew : blockdelta =
 				  { stakeoutput = stkoutl;
@@ -603,8 +593,10 @@ let main () =
 				  (Printf.printf "New block is not valid\n"; flush stdout);
 				(*** also should check if it's a valid successor block ***)
 				let csnew = cumul_stake cs tar bhdnew.deltatime in
+				Printf.printf "creating block 9\n"; flush stdout;
 				waitingblock := Some(stktm,blkh,bhdnewh,bhnew,bdnew,csnew);
 			  | None -> (*** error, but ignore for now ***)
+			      Printf.printf "creating block error\n"; flush stdout;
 			      ()
 		      with Not_found -> ()
 		    end;
@@ -638,9 +630,8 @@ let main () =
 	  match !waitingblock with
 	  | Some(stktm,blkh,bhh,bh,bd,cs) when Int64.of_float (Unix.time()) >= stktm ->
 	      waitingblock := None;
-	      Printf.printf "Publishing block %s at height %Ld\n" (hashval_hexstring bhh) blkh; flush stdout;
 	      insertnewblockheader bhh cs true blkh bh;
-	      (*** now should share it via Inv and then replying to GetData ***)
+	      broadcast_msg (Inv([(1,blkh,bhh)])); (*** broadcast it with Inv ***)
 	      begin
 		match !stakingproccomm with
 		| Some(fromstkr,tostkr,stkerr) ->
@@ -652,20 +643,90 @@ let main () =
 			  flush tostkr;
 		      | None -> ()
 		    end;
-		    let (blkh,cs,currledgerroot,bho,(csm,fsmprev,tar)) = beststakingoption () in
+		    let (blkh,cs,currledgerroot,tm,bho,(csm,fsmprev,tar)) = beststakingoption () in
 		    Printf.printf "Starting staking for block at height %Ld, currledgerroot %s, target %s\n" blkh (hashval_hexstring currledgerroot) (string_of_big_int tar); flush stdout;
-		    output_byte tostkr 66; (*** send the staking process the block height, the target and the stake modifier ***)
-		    seocf (seo_int64 seoc blkh (tostkr,None));
-		    seocf (seo_big_int_256 seoc tar (tostkr,None));
-		    seocf (seo_stakemod seoc csm (tostkr,None));
-		    output_byte tostkr 83; (*** start staking ***)
-		    flush tostkr;
-		    currstaking := Some(blkh,cs,currledgerroot,bho,(csm,fsmprev,tar))
+		    let ca = lookup_frame_ctree_root_abbrev !localframehash currledgerroot in
+		    output_byte tostkr 114; (*** remove all staking and storage assets **)
+		    if send_assets_to_staker tostkr (CAbbrev(currledgerroot,ca)) then
+		      begin
+			output_byte tostkr 66; (*** send the staking process the block height, the target, the stake modifier and the next allowed timestamp ***)
+			seocf (seo_int64 seoc blkh (tostkr,None));
+			seocf (seo_big_int_256 seoc tar (tostkr,None));
+			seocf (seo_stakemod seoc csm (tostkr,None));
+			output_byte tostkr 116;
+			seocf (seo_int64 seoc (Int64.add 1L tm) (tostkr,None));
+			output_byte tostkr 83; (*** start staking ***)
+			flush tostkr;
+			currstaking := Some(blkh,cs,currledgerroot,bho,(csm,fsmprev,tar))
+		      end
+		    else
+		      begin
+			Printf.printf "No wallet assets to stake in the current ctree. Not staking at the moment.\n";
+			flush stdout;
+		      end
 		| None -> ()
-	      end;
+	      end
+	  | None -> (*** if there is no waiting block and we aren't staking, then restart staking ***)
+	      begin
+		match !stakingproccomm with
+		| Some(fromstkr,tostkr,stkerr) ->
+		    begin
+		      match !currstaking with
+		      | None ->
+			  let (blkh,cs,currledgerroot,tm,bho,(csm,fsmprev,tar)) = beststakingoption () in
+			  Printf.printf "Starting staking for block at height %Ld, currledgerroot %s, target %s\n" blkh (hashval_hexstring currledgerroot) (string_of_big_int tar); flush stdout;
+			  let ca = lookup_frame_ctree_root_abbrev !localframehash currledgerroot in
+			  output_byte tostkr 114; (*** remove all staking and storage assets **)
+			  if send_assets_to_staker tostkr (CAbbrev(currledgerroot,ca)) then
+			    begin
+			      output_byte tostkr 66; (*** send the staking process the block height, the target, the stake modifier and the next allowed timestamp ***)
+			      seocf (seo_int64 seoc blkh (tostkr,None));
+			      seocf (seo_big_int_256 seoc tar (tostkr,None));
+			      seocf (seo_stakemod seoc csm (tostkr,None));
+			      output_byte tostkr 116;
+			      seocf (seo_int64 seoc (Int64.add 1L tm) (tostkr,None));
+			      output_byte tostkr 83; (*** start staking ***)
+			      flush tostkr;
+			      currstaking := Some(blkh,cs,currledgerroot,bho,(csm,fsmprev,tar))
+			    end
+			  else
+			    begin
+			      Printf.printf "No wallet assets to stake in the current ctree. Not staking at the moment.\n";
+			      flush stdout;
+			    end		    
+		      | Some(_,currcs,_,_,_) -> (*** if we are staking, make sure it's still on top of the best block ***)
+			  let (blkh,cs,currledgerroot,tm,bho,(csm,fsmprev,tar)) = beststakingoption () in
+			  if lt_big_int currcs cs then
+			    begin
+			      output_byte tostkr 80;
+			      flush tostkr;
+			      Printf.printf "Starting staking for block at height %Ld, currledgerroot %s, target %s\n" blkh (hashval_hexstring currledgerroot) (string_of_big_int tar); flush stdout;
+			      let ca = lookup_frame_ctree_root_abbrev !localframehash currledgerroot in
+			      output_byte tostkr 114; (*** remove all staking and storage assets **)
+			      if send_assets_to_staker tostkr (CAbbrev(currledgerroot,ca)) then
+				begin
+				  output_byte tostkr 66; (*** send the staking process the block height, the target, the stake modifier and the next allowed timestamp ***)
+				  seocf (seo_int64 seoc blkh (tostkr,None));
+				  seocf (seo_big_int_256 seoc tar (tostkr,None));
+				  seocf (seo_stakemod seoc csm (tostkr,None));
+				  output_byte tostkr 116;
+				  seocf (seo_int64 seoc (Int64.add 1L tm) (tostkr,None));
+				  output_byte tostkr 83; (*** start staking ***)
+				  flush tostkr;
+				  currstaking := Some(blkh,cs,currledgerroot,bho,(csm,fsmprev,tar))
+				end
+			      else
+				begin
+				  Printf.printf "No wallet assets to stake in the current ctree. Not staking at the moment.\n";
+				  flush stdout;
+				end
+			    end
+		      | _ -> ()
+		    end
+	      end
 	  | _ -> ()
 	end;
-	begin (*** possibly check for a new incomming connection ***)
+	begin (*** possibly check for a new incoming connection ***)
 	  match l with
 	  | Some(l) ->
 	      begin
