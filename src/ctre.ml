@@ -17,7 +17,8 @@ let sqr512 x = let y = big_int_of_int64 (Int64.shift_right x 9) in mult_big_int 
 
 let maximum_age = 16384L
 let maximum_age_sqr = sqr512 maximum_age
-let reward_maturation = 512L
+let reward_maturation = 512L (*** rewards become stakable after 512 blocks ***)
+let reward_locktime = 16384L (*** but rewards but must be locked for at least 16384 blocks (about 4 months) ***)
 let unlocked_maturation = 512L
 let locked_maturation = 8L
 let close_to_unlocked = 32L
@@ -2097,39 +2098,141 @@ let rec get_txl_supporting_octree txl oc =
       | Some(c) -> Some(CHash(ctree_hashroot c))
       | None -> None
 
-let localframe = ref FAll
-
-let rec make_specified_frame l fabls fabps fhps =
-  if fabls = [] && fabps = [] && fhps = [] then
-    FAll
-  else if List.mem [] fhps then
-    FHash
-  else
-    if List.mem [] fabps then
-      FAbbrev(make_specified_frame l (List.filter (fun n -> n > l) fabls) (List.filter (fun p -> not (p = [])) fabps) fhps)
-    else if List.mem l fabls then
-      FAbbrev(make_specified_frame l (List.filter (fun n -> n > l) fabls) fabps fhps)
-    else
-      FBin(make_specified_frame (l+1) (List.filter (fun n -> n > l) fabls) (strip_bitseq_false0 fabps) (strip_bitseq_false0 fhps),make_specified_frame (l+1) (List.filter (fun n -> n > l) fabls) (strip_bitseq_true0 fabps) (strip_bitseq_true0 fhps))
-
-let bitseq_of_str x =
-  let bl = ref [] in
-  for i = (String.length x) - 1 downto 0 do
-    if x.[i] = '0' then
-      bl := false::!bl
-    else
-      bl := true::!bl
-  done;
-  !bl
-
-let set_localframe () =
-  localframe := make_specified_frame 0
-      !Config.localframeabbrevlevels
-      (List.map bitseq_of_str !Config.localframeabbrevpoints)
-      (List.map bitseq_of_str !Config.localframehashpoints)
+let localframe = ref FHash
 
 let wrap_frame fr =
   match fr with
   | FAbbrev(_) -> fr
   | _ -> FAbbrev(fr)
 
+let rec hashframe fr =
+  match fr with
+  | FHash -> hashint32 196l
+  | FAbbrev(fr1) -> hashtag (hashframe fr1) 197l
+  | FAll -> hashint32 198l
+  | FLeaf(bl,None) -> hashtag (hashbitseq bl) 199l
+  | FLeaf(bl,Some(i)) -> hashtag (hashpair (hashbitseq bl) (hashint32 (Int32.of_int i))) 200l
+  | FBin(frl,frr) -> hashtag (hashpair (hashframe frl) (hashframe frr)) 201l
+
+let rec frame_add_leaf_r fr bl io =
+  match fr with
+  | FHash -> FLeaf(bl,io)
+  | FAbbrev(fr) -> FAbbrev(frame_add_leaf_r fr bl io)
+  | FAll -> FAll (*** leaf is already fully exposed ***)
+  | FLeaf(cl,jo) ->
+      begin
+	match (bl,cl) with
+	| (false::br,false::cr) -> FBin(frame_add_leaf_r (FLeaf(cr,jo)) br io,FHash)
+	| (false::br,true::cr) -> FBin(FLeaf(br,io),FLeaf(cr,jo))
+	| (true::br,false::cr) -> FBin(FLeaf(cr,jo),FLeaf(br,io))
+	| (true::br,true::cr) -> FBin(FHash,frame_add_leaf_r (FLeaf(cr,jo)) br io)
+	| ([],_) -> raise (Failure "bitseq for frame_add_leaf_r was too short")
+	| (_,[]) -> raise (Failure "ill formed leaf node in frame")
+      end
+  | FBin(frl,frr) ->
+      match bl with
+      | (false::br) -> FBin(frame_add_leaf_r frl br io,frr)
+      | (true::br) -> FBin(frl,frame_add_leaf_r frr br io)
+      | [] -> raise (Failure "bitseq for frame_add_leaf_r was too short")
+
+let frame_add_leaf fr alpha io = frame_add_leaf_r fr (addr_bitseq alpha) io
+
+let rec bitseq_prefix bl cl =
+  match bl with
+  | [] -> true
+  | (b::br) ->
+      match cl with
+      | [] -> false
+      | (c::cr) ->
+	  if b = c then
+	    bitseq_prefix br cr
+	  else
+	    false
+
+let rec frame_set_hash_pos fr bl =
+  match fr with
+  | FAbbrev(fr) -> FAbbrev(frame_set_hash_pos fr bl)
+  | FLeaf(cl,jo) ->
+      if bitseq_prefix bl cl then
+	FHash
+      else
+	FLeaf(cl,jo)
+  | FHash -> 
+      begin
+	match bl with
+	| (false::br) -> FBin(frame_set_hash_pos FHash br,FHash)
+	| (true::br) -> FBin(FHash,frame_set_hash_pos FHash br)
+	| [] -> FHash
+      end
+  | FAll -> 
+      begin
+	match bl with
+	| (false::br) -> FBin(frame_set_hash_pos FAll br,FAll)
+	| (true::br) -> FBin(FAll,frame_set_hash_pos FAll br)
+	| [] -> FHash
+      end
+  | FBin(frl,frr) ->
+      match bl with
+      | (false::br) -> FBin(frame_set_hash_pos frl br,frr)
+      | (true::br) -> FBin(frl,frame_set_hash_pos frr br)
+      | [] -> FHash
+
+let frame_set_abbrev_pos fr bl =
+  match bl with
+  | [] -> wrap_frame fr
+  | (b::br) ->
+      match fr with
+      | FAbbrev(fr) -> FAbbrev(frame_set_hash_pos fr bl)
+      | FLeaf(_,_) -> fr (*** do not split a leaf in order to include an abbrev ***)
+      | FHash -> fr (*** do not expose the contents abstracted by a hash to include an abbrev ***)
+      | FAll ->
+	  if b then
+	    FBin(FAll,frame_set_hash_pos FAll br)
+	  else
+	    FBin(frame_set_hash_pos FAll br,FAll)
+      | FBin(frl,frr) ->
+	  if b then
+	    FBin(frl,frame_set_hash_pos frr br)
+	  else
+	    FBin(frame_set_hash_pos frl br,frr)
+
+let rec frame_set_abbrev_level fr n =
+  if n > 0 then
+    match fr with
+    | FAbbrev(fr) -> FAbbrev(frame_set_abbrev_level fr n)
+    | FLeaf(_,_) -> fr (*** do not split a leaf in order to include an abbrev ***)
+    | FHash -> fr (*** do not expose the contents abstracted by a hash to include an abbrev ***)
+    | FAll ->
+	let fr1 = frame_set_abbrev_level FAll (n-1) in
+	FBin(fr1,fr1)
+    | FBin(frl,frr) ->
+	FBin(frame_set_abbrev_level frl (n-1),frame_set_abbrev_level frr (n-1))
+  else
+    wrap_frame fr
+
+let rec frame_set_all_pos fr bl =
+  match fr with
+  | FAll -> FAll
+  | FAbbrev(fr) -> FAbbrev(frame_set_all_pos fr bl)
+  | FHash -> 
+      begin
+	match bl with
+	| (false::br) -> FBin(frame_set_all_pos FHash br,FHash)
+	| (true::br) -> FBin(FHash,frame_set_all_pos FHash br)
+	| [] -> FAll
+      end
+  | FLeaf(cl,jo) ->
+      begin
+	match (bl,cl) with
+	| (false::br,false::cr) -> FBin(frame_set_all_pos (FLeaf(cr,jo)) br,FHash)
+	| (false::br,true::cr) -> FBin(FAll,FLeaf(cr,jo))
+	| (true::br,false::cr) -> FBin(FLeaf(cr,jo),FAll)
+	| (true::br,true::cr) -> FBin(FHash,frame_set_all_pos (FLeaf(cr,jo)) br)
+	| ([],_) -> raise (Failure "bitseq for frame_set_all_pos was too short")
+	| (_,[]) -> raise (Failure "ill formed leaf node in frame")
+      end
+  | FBin(frl,frr) ->
+      match bl with
+      | (false::br) -> FBin(frame_set_all_pos frl br,frr)
+      | (true::br) -> FBin(frl,frame_set_all_pos frr br)
+      | [] -> FAll

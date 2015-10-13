@@ -9,6 +9,8 @@ open Assets
 open Tx
 
 val reward_maturation : int64
+val reward_locktime : int64
+
 val coinage : int64 -> int64 -> obligation -> int64 -> big_int
 
 type hlist = HHash of hashval | HNil | HCons of asset * hlist
@@ -27,10 +29,6 @@ type frame =
   | FAll
   | FLeaf of bool list * int option
   | FBin of frame * frame
-
-val localframe : frame ref
-val set_localframe : unit -> unit
-val wrap_frame : frame -> frame
 
 type rframe =
   | RFHash
@@ -105,3 +103,13 @@ val print_hlist : hlist -> unit
 val print_hlist_to_buffer : Buffer.t -> int64 -> hlist -> unit
 val print_ctree : ctree -> unit
 val print_ctree_all : ctree -> unit
+
+val localframe : frame ref
+val wrap_frame : frame -> frame
+val hashframe : frame -> hashval
+val frame_add_leaf : frame -> addr -> int option -> frame
+val frame_set_hash_pos : frame -> bool list -> frame
+val frame_set_abbrev_pos : frame -> bool list -> frame
+val frame_set_abbrev_level : frame -> int -> frame
+val frame_set_all_pos : frame -> bool list -> frame
+
