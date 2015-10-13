@@ -231,6 +231,15 @@ let rec rframe_lub fr1 fr2 =
     | ((Some(fr1l),None),(Some(fr2l),None)) ->
       RFBin(rframe_lub fr1l fr2l,RFHash)
 
+let rec hashframe fr =
+  match fr with
+  | FHash -> hashint32 196l
+  | FAbbrev(fr1) -> hashtag (hashframe fr1) 197l
+  | FAll -> hashint32 198l
+  | FLeaf(bl,None) -> hashtag (hashbitseq bl) 199l
+  | FLeaf(bl,Some(i)) -> hashtag (hashpair (hashbitseq bl) (hashint32 (Int32.of_int i))) 200l
+  | FBin(frl,frr) -> hashtag (hashpair (hashframe frl) (hashframe frr)) 201l
+
 type ctree =
   | CLeaf of bool list * nehlist
   | CHash of hashval
@@ -855,10 +864,68 @@ let ensure_dir_exists d =
   | Unix.Unix_error(Unix.ENOENT,_,_) -> raise (Failure(d ^ " directory does not exist"))
   | _ -> raise (Failure("Problem with " ^ d))
 
-let save_hashed_ctree r (tr:ctree) =
+exception FoundHashval of hashval
+
+let lookup_all_ctree_root_abbrevs r =
   ensure_dir_exists !ctreedatadir;
   let fn = Filename.concat !ctreedatadir (hashval_hexstring r) in
-(*  Printf.printf "save_hashed_ctree %s %d\n" fn (ctree_numnodes tr); print_ctree tr; flush stdout; *)
+  if Sys.file_exists fn then
+    begin
+      let ch = open_in_bin fn in
+      let rl = ref [] in
+      let cr = ref (ch,None) in
+      try
+	while true do
+	  let ((fh,a),c) = sei_prod sei_hashval sei_hashval seic !cr in
+	  rl := (fh,a)::!rl;
+	  cr := c
+	done;
+	raise Not_found (*** unreachable ***)
+      with
+      | End_of_file -> !rl
+    end
+  else
+    []
+
+let lookup_frame_ctree_root_abbrev fh r =
+  ensure_dir_exists !ctreedatadir;
+  let fn = Filename.concat !ctreedatadir (hashval_hexstring r) in
+  if Sys.file_exists fn then
+    begin
+      let ch = open_in_bin fn in
+      let cr = ref (ch,None) in
+      try
+	while true do
+	  let ((fh2,a),c) = sei_prod sei_hashval sei_hashval seic !cr in
+	  if fh = fh2 then raise (FoundHashval(a));
+	  cr := c
+	done;
+	raise Not_found (*** unreachable ***)
+      with
+      | FoundHashval(a) -> a
+      | End_of_file -> raise Not_found
+    end
+  else
+    raise Not_found
+
+let save_hashed_ctree r fh a (tr:ctree) =
+  ensure_dir_exists !ctreedatadir;
+  let fn = Filename.concat !ctreedatadir (hashval_hexstring r) in
+  if Sys.file_exists fn then
+    begin
+      let ch = open_out_gen [Open_wronly;Open_binary;Open_append] 0o644 fn in
+      let c = seo_prod seo_hashval seo_hashval seoc (fh,a) (ch,None) in
+      seocf c;
+      close_out ch      
+    end
+  else
+    begin
+      let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
+      let c = seo_prod seo_hashval seo_hashval seoc (fh,a) (ch,None) in
+      seocf c;
+      close_out ch;
+    end;
+  let fn = Filename.concat !ctreedatadir (hashval_hexstring a) in
   if not (Sys.file_exists fn) then
     begin
       let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
@@ -964,17 +1031,18 @@ let rec ctree_pre bl c d =
       | CBin(c0,c1) -> if b then ctree_pre br c1 (d+1) else ctree_pre br c0 (d+1)
       | CAbbrev(hr,ha) -> ctree_pre bl (get_ctree_abbrev ha) d
       | _ ->
-	  Printf.printf "ctree_pre Not_found\n"; flush stdout;
 	  raise Not_found
 
 let ctree_addr alpha c =
   ctree_pre (addr_bitseq alpha) c 0
 
+exception InsufficientInformation
+
 let rec frame_filter_hlist i hl =
   if i > 0 then
     begin
       match hl with
-      | HHash(h) -> HHash(h)
+      | HHash(h) -> raise InsufficientInformation
       | HNil -> HNil
       | HCons(a,hr) -> HCons(a,frame_filter_hlist (i-1) hr)
     end
@@ -987,7 +1055,7 @@ let frame_filter_nehlist i hl =
   if i > 0 then
     begin
       match hl with
-      | NehHash(h) -> NehHash(h)
+      | NehHash(h) -> raise InsufficientInformation
       | NehCons(a,hr) -> NehCons(a,frame_filter_hlist (i-1) hr)
     end
   else
@@ -995,6 +1063,8 @@ let frame_filter_nehlist i hl =
 
 let rec frame_filter_leaf bl i c =
   match c with
+  | CHash(_) -> raise InsufficientInformation
+  | CAbbrev(hr,ha) -> frame_filter_leaf bl i (get_ctree_abbrev ha)
   | CLeaf(bl2,hl) ->
       if bl = bl2 then
 	begin
@@ -1035,7 +1105,6 @@ let rec frame_filter_leaf bl i c =
 	| (true::br) -> CBin(CHash(ctree_hashroot c0),frame_filter_leaf br i c1)
 	| [] -> raise (Failure "frame level problem")
       end
-  | _ -> c
 
 let rec frame_hlist_bitseq f bl =
   match f with
@@ -1049,25 +1118,37 @@ let rec frame_hlist_bitseq f bl =
       | (true::br) -> frame_hlist_bitseq f1 br
       | [] -> raise (Failure "frame vs. leaf level problem")
 
+let rec ctree_expand_all_abbrevs c =
+  match c with
+  | CHash(_) -> raise InsufficientInformation
+  | CAbbrev(hr,ha) -> ctree_expand_all_abbrevs (get_ctree_abbrev ha)
+  | CLeft(cl) -> CLeft(ctree_expand_all_abbrevs cl)
+  | CRight(cr) -> CRight(ctree_expand_all_abbrevs cr)
+  | CBin(cl,cr) -> CBin(ctree_expand_all_abbrevs cl,ctree_expand_all_abbrevs cr)
+  | _ -> c
+
 let rec frame_filter_ctree f c =
   match f with
   | FHash -> CHash(ctree_hashroot c)
   | FAbbrev(fc) ->
       begin
-	match c with
-	| CAbbrev(hr,ha) -> CAbbrev(hr,ha)
-	| _ ->
-	    let c2 = frame_filter_ctree fc c in
-	    let r2 = ctree_hashroot c2 in
-	    let a2 = hashctree c2 in
-	    save_hashed_ctree a2 c2;
-	    CAbbrev(r2,a2)
+	let hr = ctree_hashroot c in
+	let fch = hashframe fc in
+	try
+	  let ha2 = lookup_frame_ctree_root_abbrev fch hr in
+	  CAbbrev(hr,ha2)
+	with Not_found ->
+	  let c2 = frame_filter_ctree fc c in
+	  let a2 = hashctree c2 in
+	  save_hashed_ctree hr fch a2 c2;
+	  CAbbrev(hr,a2)
       end
-  | FAll -> c
+  | FAll -> ctree_expand_all_abbrevs c
   | FLeaf(bl,i) ->
       frame_filter_leaf bl i c
   | FBin(f0,f1) ->
       match c with
+      | CHash(h) -> raise InsufficientInformation
       | CLeft(c0) -> CLeft(frame_filter_ctree f0 c0)
       | CRight(c1) -> CRight(frame_filter_ctree f1 c1)
       | CBin(c0,c1) -> CBin(frame_filter_ctree f0 c0,frame_filter_ctree f1 c1)
@@ -1085,9 +1166,6 @@ let rec frame_filter_ctree f c =
 	  end
       | CLeaf([],hl) -> raise (Failure "frame vs. ctree level problem")
       | CAbbrev(cr,ca) -> frame_filter_ctree f (get_ctree_abbrev ca)
-      | _ ->
-	  Printf.printf "FBin matched *strange ctree\n"; print_ctree c; flush stdout;
-	  c
 
 let frame_filter_octree fr oc =
   match oc with
@@ -2099,20 +2177,12 @@ let rec get_txl_supporting_octree txl oc =
       | None -> None
 
 let localframe = ref FHash
+let localframehash = ref (hashframe FHash)
 
 let wrap_frame fr =
   match fr with
   | FAbbrev(_) -> fr
   | _ -> FAbbrev(fr)
-
-let rec hashframe fr =
-  match fr with
-  | FHash -> hashint32 196l
-  | FAbbrev(fr1) -> hashtag (hashframe fr1) 197l
-  | FAll -> hashint32 198l
-  | FLeaf(bl,None) -> hashtag (hashbitseq bl) 199l
-  | FLeaf(bl,Some(i)) -> hashtag (hashpair (hashbitseq bl) (hashint32 (Int32.of_int i))) 200l
-  | FBin(frl,frr) -> hashtag (hashpair (hashframe frl) (hashframe frr)) 201l
 
 let rec frame_add_leaf_r fr bl io =
   match fr with
@@ -2236,3 +2306,48 @@ let rec frame_set_all_pos fr bl =
       | (false::br) -> FBin(frame_set_all_pos frl br,frr)
       | (true::br) -> FBin(frl,frame_set_all_pos frr br)
       | [] -> FAll
+
+let rec build_rframe_to_req f c =
+  match (f,c) with
+  | (FHash,_) -> raise Not_found
+  | (FAbbrev(fc),_) -> build_rframe_to_req fc c
+  | (_,CHash(_)) -> normalize_frame f
+  | (_,CAbbrev(_,ha)) -> build_rframe_to_req f (get_ctree_abbrev ha)
+  | (FAll,CLeaf(_,hl)) -> if nehlist_full_approx hl then raise Not_found else RFAll
+  | (FAll,CLeft(cl)) -> RFBin(build_rframe_to_req FAll cl,RFHash)
+  | (FAll,CRight(cr)) -> RFBin(RFHash,build_rframe_to_req FAll cr)
+  | (FAll,CBin(cl,cr)) ->  RFBin(build_rframe_to_req FAll cl,build_rframe_to_req FAll cr)
+  | (FLeaf(bl,io),CLeaf(cl,hl)) when bl = cl -> if nehlist_full_approx hl then raise Not_found else RFLeaf(bl,io)
+  | (FLeaf(bl,io),CLeaf(cl,hl)) -> raise Not_found (*** in this case we know enough to know there is no leaf at bl (i.e., the 'leaf' is empty) ***)
+  | (FLeaf(false::bl,io),CLeft(cl)) -> RFBin(build_rframe_to_req (FLeaf(bl,io)) cl,RFHash)
+  | (FLeaf(_,io),CLeft(cl)) -> raise Not_found
+  | (FLeaf(true::bl,io),CRight(cr)) -> RFBin(RFHash,build_rframe_to_req (FLeaf(bl,io)) cr)
+  | (FLeaf(_,io),CRight(cr)) -> raise Not_found
+  | (FLeaf(false::bl,io),CBin(cl,cr)) -> RFBin(build_rframe_to_req (FLeaf(bl,io)) cl,RFHash)
+  | (FLeaf(true::bl,io),CBin(cl,cr)) -> RFBin(RFHash,build_rframe_to_req (FLeaf(bl,io)) cr)
+  | (FLeaf(_,_),CBin(_,_)) -> raise Not_found
+  | (FBin(fl,fr),CLeaf(false::bl,hl)) -> RFBin(build_rframe_to_req fl (CLeaf(bl,hl)),RFHash)
+  | (FBin(fl,fr),CLeaf(true::bl,hl)) -> RFBin(RFHash,build_rframe_to_req fr (CLeaf(bl,hl)))
+  | (FBin(fl,fr),CLeaf([],hl)) -> raise Not_found (*** shouldn't happen ***)
+  | (FBin(fl,fr),CLeft(cl)) -> RFBin(build_rframe_to_req fl cl,RFHash)
+  | (FBin(fl,fr),CRight(cr)) -> RFBin(RFHash,build_rframe_to_req fr cr)
+  | (FBin(fl,fr),CBin(cl,cr)) ->
+      try
+	RFBin(build_rframe_to_req fl cl,RFHash)
+      with Not_found ->
+	RFBin(RFHash,build_rframe_to_req fr cr)
+
+let rec split_rframe_for_reqs n f =
+  if n > 0 then
+    match f with
+    | RFHash -> [f]
+    | RFLeaf(_,_) -> [f]
+    | RFAll ->
+	let rfl = split_rframe_for_reqs (n-1) RFAll in
+	(List.map (fun f -> RFBin(f,RFHash)) rfl) @ (List.map (fun f -> RFBin(RFHash,f)) rfl)
+    | RFBin(fl,fr) ->
+	(List.map (fun f -> RFBin(f,RFHash)) (split_rframe_for_reqs (n-1) fl))
+	@ (List.map (fun f -> RFBin(RFHash,f)) (split_rframe_for_reqs (n-1) fr))
+  else
+    [f]
+

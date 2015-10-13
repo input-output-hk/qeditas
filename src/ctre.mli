@@ -64,6 +64,8 @@ val frame_filter_ctree : frame -> ctree -> ctree
 val frame_filter_octree : frame -> ctree option -> ctree option
 val rframe_filter_ctree : rframe -> ctree -> ctree
 val rframe_filter_octree : rframe -> ctree option -> ctree option
+val lookup_all_ctree_root_abbrevs : hashval -> (hashval * hashval) list
+val lookup_frame_ctree_root_abbrev : hashval -> hashval -> hashval
 val get_ctree_abbrev : hashval -> ctree
 
 val strip_bitseq_true : (bool list * 'a) list -> (bool list * 'a) list
@@ -105,6 +107,7 @@ val print_ctree : ctree -> unit
 val print_ctree_all : ctree -> unit
 
 val localframe : frame ref
+val localframehash : hashval ref
 val wrap_frame : frame -> frame
 val hashframe : frame -> hashval
 val frame_add_leaf : frame -> addr -> int option -> frame
@@ -113,3 +116,5 @@ val frame_set_abbrev_pos : frame -> bool list -> frame
 val frame_set_abbrev_level : frame -> int -> frame
 val frame_set_all_pos : frame -> bool list -> frame
 
+val build_rframe_to_req : frame -> ctree -> rframe
+val split_rframe_for_reqs : int -> rframe -> rframe list
