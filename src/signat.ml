@@ -86,6 +86,13 @@ let decode_signature sg =
       else
 	raise (Failure("Signature Too Long"))
   | [] -> raise (Failure("Empty Signature"))
+
+let decode_signature_a sg =
+  let (by0,(r,s)) = decode_signature sg in
+  let by27 = by0-27 in
+  let recid = by27 land 3 in
+  let fcomp = by27 land 4 > 0 in
+  (recid,fcomp,(r,s))
   
 (** * Digital Signatures for Qeditas ***)
 exception ZeroValue
@@ -150,20 +157,24 @@ let verify_p2pkhaddr_signat e alpha (r,s) recid fcomp =
   | Some(q) -> pubkey_hashval q fcomp = alpha
   | None -> false
 
-let verifymessage alpha by0 (r,s) m =
+let verifymessage_a alpha recid fcomp (r,s) m =
   let e = md256_big_int (sha256dstr m) in
-  let by27 = by0-27 in
-  let recid = by27 land 3 in
-  let fcomp = by27 land 4 > 0 in
   match recover_key e (r,s) recid with
   | Some(q) -> pubkey_hashval q fcomp = alpha
   | None -> false
+
+let verifymessage alpha by0 (r,s) m =
+  let by27 = by0-27 in
+  let recid = by27 land 3 in
+  let fcomp = by27 land 4 > 0 in
+  verifymessage_a alpha recid fcomp (r,s) m
 
 let verifymessage_base64 alpha sg m =
   let (by0,(r,s)) = decode_signature sg in
   verifymessage alpha by0 (r,s) m
 
 let md256_of_bitcoin_message m =
+  let m = if !Config.testnet then "testnet:" ^ m else m in
   let ml = String.length m in
   let ms = Buffer.create (26 + ml) in
   Buffer.add_string ms "\024Bitcoin Signed Message:\n";
@@ -172,7 +183,18 @@ let md256_of_bitcoin_message m =
   Buffer.add_string ms m;
   sha256dstr (Buffer.contents ms)
 
+let verifybitcoinmessage_a alpha recid fcomp (r,s) m =
+  let m = if !Config.testnet then "testnet:" ^ m else m in
+  let ml = String.length m in
+  let ms = Buffer.create (26 + ml) in
+  Buffer.add_string ms "\024Bitcoin Signed Message:\n";
+  let c = seo_varint seosb (Int64.of_int ml) (ms,None) in (*** output the length as a varint ***)
+  seosbf c;
+  Buffer.add_string ms m;
+  verifymessage_a alpha recid fcomp (r,s) (Buffer.contents ms)
+
 let verifybitcoinmessage alpha by0 (r,s) m =
+  let m = if !Config.testnet then "testnet:" ^ m else m in
   let ml = String.length m in
   let ms = Buffer.create (26 + ml) in
   Buffer.add_string ms "\024Bitcoin Signed Message:\n";
