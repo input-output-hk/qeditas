@@ -595,7 +595,7 @@ let handle_msg sin sout cs replyto mh m =
       let tm = Int64.of_float (Unix.time()) in
       List.iter
 	(fun (blkh,(bhd,bhs)) ->
-	  if bhd.timestamp <= tm then (*** do not accept blockheaders from the future ***)
+	  if bhd.timestamp <= Int64.add tm 60L then (*** do not accept blockheaders from too far the future ***)
 	    match 
 	      match bhd.prevblockhash with
 	      | None ->

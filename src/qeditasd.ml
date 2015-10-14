@@ -106,9 +106,10 @@ let prohibited blkh bhh =
 let beststakingoption () =
   (*** first try to find a recent blockheader with the most cumulative stake ***)
   try
+    let tm = Int64.of_float (Unix.time()) in
     let (bhh,(cs,blkh,(bhd,bhs))) =
       List.find
-	(fun (bhh,(cs,blkh,(bhd,bhs))) -> not (prohibited blkh bhh))
+	(fun (bhh,(cs,blkh,(bhd,bhs))) -> not (prohibited blkh bhh) && bhd.timestamp <= tm)
 	!recentblockheaders
     in
     let (csm1,fsm1,tar1) = bhd.tinfo in
