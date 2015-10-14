@@ -56,7 +56,7 @@ let process_config_line l =
 	      if v = "testnet" && !Config.testnet then (*** if testnet, then change some default values ***)
 		begin
 		  if not (List.mem "port" !setl) then Config.port := 20804;
-		  if not (List.mem "seed" !setl) then Config.seed := "a43c7df9197410217ccb824c6934697c7c0dcb56"; (*** last 20 bytes of hash of bitcoin block 3782000 ***)
+		  if not (List.mem "seed" !setl) then Config.seed := "68324ba252550a4cb02b7279cf398b9994c0c39f"; (*** last 20 bytes of hash of bitcoin block 378800 ***)
 		end;
 	      raise Done
 	    end
