@@ -73,7 +73,7 @@ let genesistimestamp = ref 1444792499L;; (*** Too early, but OK for testing. For
 (*** max target/min difficulty: 2^220 (for mainnet) ***)
 let max_target = ref (shift_left_big_int unit_big_int 220)
 let genesistarget = ref !max_target (*** initialize to minimum difficulty for testing ***)
-let genesisledgerroot : hashval ref = ref (0l,0l,0l,0l,0l)
+let genesisledgerroot : hashval ref = ref (hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e");; (*** snapshot ledger root ***)
 
 (*** base reward of 50 fraenks (50 trillion cants) like bitcoin, but assume the first 350000 blocks have passed. ***)
 let basereward = 50000000000000L
@@ -141,6 +141,9 @@ let hitval tm h sm =
 
 (*** current stake modifier, future stake modifier, target (big_int, but assumed to be at most 256 bits ***)
 type targetinfo = stakemod * stakemod * big_int
+
+let eq_tinfo (x,y,z) (u,v,w) =
+  x = u && y = v && eq_big_int z w
 
 let hashtargetinfo ti =
   let (csm,fsm,tar) = ti in
@@ -528,7 +531,6 @@ let hash_blockheaderdata bh =
 		   (ctree_hashroot bh.prevledger))))))
 
 let valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v) =
-  Printf.printf "vbha 0\n"; flush stdout;
   begin
     match bhs.blocksignatendorsement with
     | None -> verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) bhd.stakeaddr bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
@@ -538,16 +540,12 @@ let valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v) =
 	verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) beta bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
   end
     &&
-(  Printf.printf "vbha 1\n"; flush stdout;
   bhd.stakeassetid = aid
     &&
-(  Printf.printf "vbha 2\n"; flush stdout;
   check_hit blkh bhd bday obl v
     &&
-(  Printf.printf "vbha 3\n"; flush stdout;
   bhd.deltatime > 0l
     &&
-(  Printf.printf "vbha 4\n"; flush stdout;
   begin
     match bhd.stored with
     | None -> true
@@ -567,7 +565,6 @@ let valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v) =
 	  | _ -> false
 	end
   end  
-))))
 
 let valid_blockheader blkh (bhd,bhs) =
   match ctree_lookup_asset bhd.stakeassetid bhd.prevledger (addr_bitseq (p2pkhaddr_addr bhd.stakeaddr)) with
@@ -643,16 +640,13 @@ let check_poforfeit blkh ((bhd1,bhs1),(bhd2,bhs2),bhl1,bhl2,v,fal) tr =
       false
 
 let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
-(  Printf.printf "vba 1\n"; flush stdout;
   let ((bhd,bhs),bd) = b in
   (*** The header is valid. ***)
   valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v)
     &&
-(  Printf.printf "vba 2\n"; flush stdout;
   tx_outputs_valid bd.stakeoutput
     &&
    (*** ensure that if the stake has an explicit obligation (e.g., it is borrowed for staking), then the obligation isn't changed; otherwise the staker could steal the borrowed stake; unchanged copy should be first output ***)
-(  Printf.printf "vba 3\n"; flush stdout;
    begin
      match ctree_lookup_asset bhd.stakeassetid bhd.prevledger stkaddrbs with
      | Some(_,_,Some(beta,n,_),Currency(v)) -> (*** stake may be on loan for staking ***)
@@ -698,7 +692,6 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
 	 end
    end
     &&
-(  Printf.printf "vba 4\n"; flush stdout;
   let tr = ctree_of_block b in (*** let tr be the ctree of the block, used often below ***)
   begin
     try
@@ -708,14 +701,11 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
   end
     &&
   (*** There are no duplicate transactions. (Comparing the signatures would be an error since they contain abstract values.) ***)
-(  Printf.printf "vba 5\n"; flush stdout;
   no_dups (List.map (fun (tau,_) -> tau) bd.blockdelta_stxl)
     &&
   (*** The cgraft is valid. ***)
-(  Printf.printf "vba 6\n"; flush stdout;
   cgraft_valid bd.prevledgergraft
     &&
-(  Printf.printf "vba 7\n"; flush stdout;
   let stakein = (stkaddr,bhd.stakeassetid) in
   (*** Each transaction in the delta has supported elaborated assets and is appropriately signed. ***)
   (*** Also, each transaction in the delta is valid and supported without a reward. ***)
@@ -754,7 +744,6 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
     with NotSupported -> false
   end
     &&
-(  Printf.printf "vba 8\n"; flush stdout;
   (*** No distinct transactions try to spend the same asset. ***)
   (*** Also, ownership is not created for the same address alpha by two txs in the block. ***)
   begin
@@ -800,7 +789,6 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
   end
     &&
   (*** Ownership is not created for the same address alpha by the coinstake and a tx in the block. ***)
-(  Printf.printf "vba 9\n"; flush stdout;
   begin
     try
       List.iter
@@ -835,7 +823,6 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
     with NotSupported -> false
   end
     &&
-(  Printf.printf "vba 10\n"; flush stdout;
    let (forfeitval,forfok) =
      begin
      match bd.forfeiture with
@@ -848,7 +835,6 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
    forfok
      &&
   (*** The total inputs and outputs match up with the declared fee. ***)
-(  Printf.printf "vba 11\n"; flush stdout;
   let tau = tx_of_block b in (*** let tau be the combined tx of the block ***)
   let (inpl,outpl) = tau in
   let aal = ctree_lookup_input_assets inpl tr in
@@ -860,7 +846,6 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
       The root of the transformed ctree is the newledgerroot in the header.
       Likewise for the transformed tht and sigt.
    ***)
-(  Printf.printf "vba 12\n"; flush stdout;
   match txl_octree_trans blkh (coinstake b::List.map (fun (tx,_) -> tx) bd.blockdelta_stxl) (Some(tr)) with
   | Some(tr2) ->
       bhd.newledgerroot = ctree_hashroot tr2
@@ -869,10 +854,8 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
 	&&
       bhd.newsignaroot = ostree_hashroot (txout_update_ostree outpl sigt)
   | None -> false
-))))))))))))
 
 let valid_block tht sigt blkh (b:block) =
-  Printf.printf "in valid_block\n";
   let ((bhd,_),_) = b in
   let stkaddr = p2pkhaddr_addr bhd.stakeaddr in
   let stkaddrbs = addr_bitseq stkaddr in
@@ -939,7 +922,7 @@ let rec valid_blockchain_aux blkh bl =
       if blkh = 1L && valid_block None None blkh (bh,bd)
 	  && bhd.prevblockhash = None
 	  && ctree_hashroot bhd.prevledger = !genesisledgerroot
-	  && bhd.tinfo = (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
+	  && eq_tinfo bhd.tinfo (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
       then
 	(txout_update_ottree (tx_outputs (tx_of_block (bh,bd))) None,
 	 txout_update_ostree (tx_outputs (tx_of_block (bh,bd))) None)
@@ -963,10 +946,16 @@ let rec valid_blockheaderchain_aux blkh bhl =
 	  && valid_blockheader blkh bh
       else
 	false
-  | [(bhd,bhs)] -> blkh = 1L && valid_blockheader blkh (bhd,bhs)
-	&& bhd.prevblockhash = None
-	&& ctree_hashroot bhd.prevledger = !genesisledgerroot
-	&& bhd.tinfo = (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
+  | [(bhd,bhs)] ->
+      blkh = 1L
+	&&
+      valid_blockheader blkh (bhd,bhs)
+	&&
+      bhd.prevblockhash = None
+	&&
+      ctree_hashroot bhd.prevledger = !genesisledgerroot
+	&&
+      eq_tinfo bhd.tinfo (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
   | [] -> false
 
 let valid_blockheaderchain blkh bhc =
