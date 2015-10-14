@@ -138,44 +138,57 @@ let testnetfallbacknodes = [
 "108.61.219.125:20804"
 ];;
 
-let rand_bit_byte = ref (0,0);;
+let random_int32_array : int32 array = [| 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l |];;
+let random_initialized : bool ref = ref false;;
 
-let rand_bit () =
-  let (x,j) = !rand_bit_byte in
-  if j > 0 then
-    begin
-      rand_bit_byte := (x asr 1,j-1);
-      x mod 2 = 1
-    end
-  else
-    let r = open_in_bin "/dev/random" in
-    let x = input_byte r in
-    rand_bit_byte := (x asr 1,7);
-    close_in r;
-    x mod 2 = 1;;
-
-let rand_int64 () =
+(*** generate 512 random bits and then use sha256 on them each time we need a new random number ***)
+let initialize_random_seed () =
   let r = open_in_bin "/dev/random" in
-  let get_byte r = Int64.of_int (input_byte r) in
-  let v = Int64.shift_right_logical (get_byte r) 56 in
-  let v = Int64.logor v (Int64.shift_right_logical (get_byte r) 48) in
-  let v = Int64.logor v (Int64.shift_right_logical (get_byte r) 40) in
-  let v = Int64.logor v (Int64.shift_right_logical (get_byte r) 32) in
-  let v = Int64.logor v (Int64.shift_right_logical (get_byte r) 24) in
-  let v = Int64.logor v (Int64.shift_right_logical (get_byte r) 16) in
-  let v = Int64.logor v (Int64.shift_right_logical (get_byte r) 8) in
-  let v = Int64.logor v (get_byte r) in
-  close_in r;
-  v;;
+  let v = ref 0l in
+  for i = 0 to 15 do
+    v := 0l;
+    for j = 0 to 3 do
+      v := Int32.logor (Int32.shift_left !v 8) (Int32.of_int (input_byte r))
+    done;
+    random_int32_array.(i) <- !v;
+  done;
+  random_initialized := true;;
+
+let sha256_random_int32_array () =
+  Sha256.sha256init();
+  for i = 0 to 15 do
+    Sha256.currblock.(i) <- random_int32_array.(i)
+  done;
+  Sha256.sha256round();
+  let (x7,x6,x5,x4,x3,x2,x1,x0) = Sha256.getcurrmd256() in
+  for i = 0 to 7 do
+    random_int32_array.(i+8) <- random_int32_array.(i)
+  done;
+  random_int32_array.(0) <- x0;
+  random_int32_array.(1) <- x1;
+  random_int32_array.(2) <- x2;
+  random_int32_array.(3) <- x3;
+  random_int32_array.(4) <- x4;
+  random_int32_array.(5) <- x5;
+  random_int32_array.(6) <- x6;
+  random_int32_array.(7) <- x7;;
 
 let rand_256 () =
-  let v = ref zero_big_int in
-  let r = open_in_bin "/dev/random" in
-  for i = 0 to 31 do
-    v := or_big_int (shift_left_big_int !v 8) (big_int_of_int (input_byte r))
-  done;
-  close_in r;
-  !v;;
+  if not !random_initialized then initialize_random_seed();
+  sha256_random_int32_array();
+  Sha256.md256_big_int (Sha256.getcurrmd256())
+
+let rand_bit () =
+  if not !random_initialized then initialize_random_seed();
+  sha256_random_int32_array();
+  random_int32_array.(0) < 0l
+
+let rand_int64 () =
+  if not !random_initialized then initialize_random_seed();
+  sha256_random_int32_array();
+  Int64.logor
+    (Int64.of_int32 random_int32_array.(0))
+    (Int64.shift_right_logical (Int64.of_int32 random_int32_array.(1)) 32);;
 
 let myaddr () =
   match !Config.ip with
@@ -418,6 +431,8 @@ let main () =
       end;
     localframe := Commands.load_currentframe();
     localframehash := hashframe !localframe;
+    Printf.printf "Initializing random seed\n"; flush stdout;
+    if not !random_initialized then initialize_random_seed();
     let l = 
       match !Config.ip with
       | Some(ip) ->
@@ -486,11 +501,9 @@ let main () =
 		    flush stdout;
 		    begin
 		      try
-			Printf.printf "creating block 1\n"; flush stdout;
 			let (_,_,bday,obl,v) = List.find (fun (_,h,_,_,_) -> h = aid) !Commands.stakingassets in
 			  match !currstaking with
 			  | Some(blkh,cs,prevledgerroot,pbh,(csm,fsmprev,tar)) ->
-			      Printf.printf "creating block 2\n"; flush stdout;
 			      if check_hit_b blkh bday obl v csm tar stktm aid alpha None then (*** confirm the staking process is correct ***)
 
 				let (pbhtm,pbhh) =
@@ -498,11 +511,15 @@ let main () =
 				  | Some(pbh) -> (pbh.timestamp,Some(hash_blockheaderdata pbh))
 				  | None -> (!genesistimestamp,None)
 				in
-				Printf.printf "creating block 3\n"; flush stdout;
 				let newrandbit = rand_bit() in
 				let fsm = stakemod_pushbit newrandbit fsmprev in
+				let (csm,fsm,tar) =
+				  if blkh = 1L then
+				    (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
+				  else
+				    (csm,fsm,tar)
+				in
 				let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh reward_locktime,true),Currency(rewfn blkh)))] in
-
 				let coinstk : tx = ([(alpha2,aid)],stkoutl) in
 				let prevcforblock =
 				  match
@@ -513,9 +530,7 @@ let main () =
 				  | Some(c) -> c
 				  | None -> raise (Failure "ctree should not have become empty")
 				in
-				Printf.printf "creating block 4\n"; flush stdout;
 				let (prevcforheader,cgr) = factor_inputs_ctree_cgraft [(alpha2,aid)] prevcforblock in
-				Printf.printf "creating block 5\n"; flush stdout;
 				let (newcr,newca) =
 				  match tx_octree_trans blkh coinstk (Some(CAbbrev(prevledgerroot,lookup_ctree_root_abbrev prevledgerroot))) with
 				  | None -> raise (Failure "ctree should not have become empty")
@@ -524,7 +539,6 @@ let main () =
 				      | CAbbrev(cr,ca) -> (cr,ca)
 				      | _ -> raise (Failure "frame_filter_ctree was given a wrapped frame but did not return an abbrev")
 				in
-				Printf.printf "creating block 6\n"; flush stdout;
 				Hashtbl.add recentledgerroots newcr (blkh,newca); (*** remember the association so the relevant parts of the new ctree can be reloaded when needed ***)
 				let bhdnew : blockheaderdata
 				    = { prevblockhash = pbhh;
@@ -540,7 +554,6 @@ let main () =
 					prevledger = prevcforheader
 				      }
 				in
-				Printf.printf "creating block 7\n"; flush stdout;
 				let bhdnewh = hash_blockheaderdata bhdnew in
 				let bhsnew =
 				  try
@@ -578,7 +591,6 @@ let main () =
 				    with Not_found ->
 				      raise (Failure("Was staking for " ^ Cryptocurr.addr_qedaddrstr (hashval_p2pkh_addr alpha) ^ " but have neither the private key nor an appropriate endorsement for it."))
 				in
-				Printf.printf "creating block 8\n"; flush stdout;
 				let bhnew = (bhdnew,bhsnew) in
 				let bdnew : blockdelta =
 				  { stakeoutput = stkoutl;
@@ -587,13 +599,37 @@ let main () =
 				    blockdelta_stxl = []
 				  }
 				in
-				if valid_block None None blkh (bhnew,bdnew) then
-				  (Printf.printf "New block is valid\n"; flush stdout)
+				if blkh = 1L then
+				  if valid_blockheaderchain blkh (bhnew,[]) then (*** first block, special conditions ***)
+				    (Printf.printf "Valid first block.\n"; flush stdout)
+				  else
+				    (Printf.printf "Not a valid first block.\n"; flush stdout)
 				else
-				  (Printf.printf "New block is not valid\n"; flush stdout);
-				(*** also should check if it's a valid successor block ***)
+				  begin
+				    if valid_block None None blkh (bhnew,bdnew) then
+				      (Printf.printf "New block is valid\n"; flush stdout)
+				    else
+				      (Printf.printf "New block is not valid\n"; flush stdout);
+				    match pbh with
+				    | None -> Printf.printf "No previous block but block height not 1\n"; flush stdout
+				    | Some(pbhd) ->
+					let tmpsucctest bhd1 bhd2 =
+					  bhd2.timestamp = Int64.add bhd1.timestamp (Int64.of_int32 bhd2.deltatime)
+					    &&
+					  let (csm1,fsm1,tar1) = bhd1.tinfo in
+					  let (csm2,fsm2,tar2) = bhd2.tinfo in
+					  stakemod_pushbit (stakemod_lastbit fsm1) csm1 = csm2 (*** new stake modifier is old one shifted with one new bit from the future stake modifier ***)
+					    &&
+					  stakemod_pushbit (stakemod_firstbit fsm2) fsm1 = fsm2 (*** the new bit of the new future stake modifier fsm2 is freely chosen by the staker ***)
+					    &&
+					  eq_big_int tar2 (retarget tar1 bhd1.deltatime)
+					in
+					if tmpsucctest pbhd bhdnew then
+					  (Printf.printf "Valid successor block\n"; flush stdout)
+					else
+					  (Printf.printf "Not a valid successor block\n"; flush stdout)
+				  end;
 				let csnew = cumul_stake cs tar bhdnew.deltatime in
-				Printf.printf "creating block 9\n"; flush stdout;
 				waitingblock := Some(stktm,blkh,bhdnewh,bhnew,bdnew,csnew);
 			  | None -> (*** error, but ignore for now ***)
 			      Printf.printf "creating block error\n"; flush stdout;
