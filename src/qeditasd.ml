@@ -427,7 +427,7 @@ let main () =
     if !Config.testnet then
       begin
 	max_target := shift_left_big_int unit_big_int 255; (*** make the max_target much higher (so difficulty can be easier for testing) ***)
-	genesistarget := shift_left_big_int unit_big_int 245; (*** make the genesistarget much higher (so difficulty can be easier for testing) ***)
+	genesistarget := shift_left_big_int unit_big_int 248; (*** make the genesistarget much higher (so difficulty can be easier for testing) ***)
       end;
     localframe := Commands.load_currentframe();
     localframehash := hashframe !localframe;
