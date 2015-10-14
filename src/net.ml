@@ -592,12 +592,14 @@ let handle_msg sin sout cs replyto mh m =
 	  )
 	invl
   | (None,Headers(bhl)) ->
+      let tm = Int64.of_float (Unix.time()) in
       List.iter
 	(fun (blkh,(bhd,bhs)) ->
-	  if valid_blockheader blkh (bhd,bhs) then
+	  if bhd.timestamp <= tm then (*** do not accept blockheaders from the future ***)
 	    match 
 	      match bhd.prevblockhash with
 	      | None ->
+		  Printf.printf "genesis\n";
 		  if valid_blockheaderchain blkh ((bhd,bhs),[]) (*** first block, special conditions ***)
 		  then Some(zero_big_int)
 		  else None
@@ -613,16 +615,18 @@ let handle_msg sin sout cs replyto mh m =
 		  end
 	    with
 	    | Some(cs) -> (*** header is accepted, put it on the list with the new cumulative stake ***)
+		Printf.printf "Got header with cumul stake: %s\n" (string_of_big_int cs); flush stdout;
 		let (_,_,tar) = bhd.tinfo in
 		insertnewblockheader (hash_blockheaderdata bhd) (cumul_stake cs tar bhd.deltatime) false blkh (bhd,bhs);
 		begin (*** If there is some block we are waiting to publish, see if it has more cumulative stake that this one. If not, forget it. ***)
 		  match !waitingblock with
 		  | Some(_,_,_,_,_,mycs) when lt_big_int mycs cs ->
-		      Printf.printf "A better block was found. Not publishing mine.\n";
+		      Printf.printf "A better block was found. Not publishing mine.\n"; flush stdout;
 		      waitingblock := None
 		  | _ -> ()
 		end
 	    | None -> (*** header is rejected, ignore it for now, maybe should ignore it forever? ***)
+		Printf.printf "header rejected\n";
 		())
 	bhl
   | (None,GetFramedCTree(vers,blkho,cr,fr)) ->
