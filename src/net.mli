@@ -66,6 +66,8 @@ type connstate = {
     mutable alive : bool;
     mutable lastmsgtm : float;
     mutable pending : (hashval * bool * float * float * pendingcallback option) list;
+    mutable rinv : (int * hashval) list;
+    mutable invreq : (int * hashval) list;
     mutable rframe0 : rframe; (*** which parts of the ctree the node is keeping ***)
     mutable rframe1 : rframe; (*** what parts of the ctree are stored by a node one hop away ***)
     mutable rframe2 : rframe; (*** what parts of the ctree are stored by a node two hops away ***)
@@ -84,3 +86,4 @@ val rec_msg_nohang : in_channel -> float -> float -> (hashval option * hashval *
 
 val handle_msg : in_channel -> out_channel -> connstate -> hashval option -> hashval -> msg -> unit
 
+val try_requests : (int * int64 * hashval) list -> unit

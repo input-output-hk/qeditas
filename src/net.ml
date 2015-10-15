@@ -37,7 +37,7 @@ let insertnewblockheader bhh cs mine blkh bh =
   Printf.printf "After insertnewblockheader\n";
   List.iter
     (fun (bhh1,(cs1,blkh1,bh1)) ->
-      Printf.printf "%Ld %s cs: %s\n" blkh1 (hashval_hexstring bhh1) (string_of_big_int cs1)
+      Printf.printf "%Ld %s cs: %s timestamp %Ld\n" blkh1 (hashval_hexstring bhh1) (string_of_big_int cs1) (let (bhd1,_) = bh1 in bhd1.timestamp)
       )
     !recentblockheaders;
   flush stdout
@@ -194,6 +194,8 @@ type connstate = {
     mutable alive : bool;
     mutable lastmsgtm : float;
     mutable pending : (hashval * bool * float * float * pendingcallback option) list;
+    mutable rinv : (int * hashval) list;
+    mutable invreq : (int * hashval) list;
     mutable rframe0 : rframe; (*** which parts of the ctree the node is keeping ***)
     mutable rframe1 : rframe; (*** what parts of the ctree are stored by a node one hop away ***)
     mutable rframe2 : rframe; (*** what parts of the ctree are stored by a node two hops away ***)
@@ -536,6 +538,18 @@ let rec_msg_nohang c tm tm2 =
 	    raise IllformedMsg
       end
 
+let known_blockheader_p blkh h =
+  not (List.mem_assoc h !recentblockheaders) (*** should also check if it's in a file ***)
+
+let known_blockdeltah_p blkh h =
+  not (Hashtbl.mem recentblockdeltahs h) (*** should also check if it's in a file ***)
+
+let known_blockdelta_p blkh h =
+  not (Hashtbl.mem recentblockdeltas h) (*** should also check if it's in a file ***)
+
+let known_stx_p h =
+  not (Hashtbl.mem recentstxs h) (*** should also check if it's in a file ***)
+
 let rec update_pending pendl k m =
   match pendl with
   | [] -> []
@@ -565,29 +579,58 @@ let handle_msg sin sout cs replyto mh m =
       let toget = ref [] in
       List.iter
 	(fun (k,blkh,h) ->
+	  cs.rinv <- (k,h)::cs.rinv;
 	  match k with
 	  | 1 -> (*** block header ***)
-	      if not (List.mem_assoc h !recentblockheaders) then toget := (k,h)::!toget
+	      if not (known_blockheader_p blkh h) then toget := (k,h)::!toget
+	  | 2 -> (*** blockdeltah ***)
+	      if not (known_blockdeltah_p blkh h) then toget := (k,h)::!toget
+	  | 3 -> (*** blockdelta ***)
+	      if not (known_blockdelta_p blkh h) then toget := (k,h)::!toget
+	  | 4 -> (*** stx ***)
+	      if not (known_stx_p h) then toget := (k,h)::!toget
 	  | _ -> () (*** ignore everything else for now ***)
 	)
 	invl;
       if not (!toget = []) then
 	let mh = send_msg sout (GetData(!toget)) in
-	()
+	cs.invreq <- !toget @ cs.invreq
   | (None,GetData(invl)) ->
-      let headerhl =
-	List.filter (fun (k,h) -> k = 1) invl
-      in
-      let headerl =
-	List.map
-	  (fun (k,h) -> let (_,blkh,bh) = List.assoc h !recentblockheaders in (blkh,bh))
-	  headerhl
-      in
-      ignore (send_msg sout (Headers(List.rev headerl)));
+      let headerl = ref [] in
+      List.iter
+	(fun (k,h) ->
+	  if k = 1 then
+	    try
+	      let (_,blkh,bh) = List.assoc h !recentblockheaders in headerl := (blkh,bh)::!headerl
+	    with Not_found -> (*** should look for it in a file in this case ***)
+	      ())
+	invl;
+      ignore (send_msg sout (Headers(List.rev !headerl)));
       List.iter
 	(fun (k,h) ->
 	  match k with
 	  | 1 -> () (*** block headers sent above ***)
+	  | 2 -> (*** blockdeltah ***)
+	      begin
+		try
+		  let bdh = Hashtbl.find recentblockdeltahs h in
+		  ignore (send_msg sout (MBlockdeltah(1l,h,bdh)))
+		with Not_found -> () (*** should look for it in a file in this case ***)
+	      end
+	  | 3 -> (*** blockdelta ***)
+	      begin
+		try
+		  let bd = Hashtbl.find recentblockdeltas h in
+		  ignore (send_msg sout (MBlockdelta(1l,h,bd)))
+		with Not_found -> () (*** should look for it in a file in this case ***)
+	      end
+	  | 4 -> (*** stx ***)
+	      begin
+		try
+		  let stx = Hashtbl.find recentstxs h in
+		  ignore (send_msg sout (MTx(1l,stx)))
+		with Not_found -> () (*** should look for it in a file in this case ***)
+	      end
 	  | _ -> () (*** ignore everything else for now ***)
 	  )
 	invl
@@ -595,40 +638,74 @@ let handle_msg sin sout cs replyto mh m =
       let tm = Int64.of_float (Unix.time()) in
       List.iter
 	(fun (blkh,(bhd,bhs)) ->
-	  if bhd.timestamp <= Int64.add tm 60L then (*** do not accept blockheaders from too far the future ***)
-	    match 
-	      match bhd.prevblockhash with
-	      | None ->
-		  Printf.printf "genesis\n";
-		  if valid_blockheaderchain blkh ((bhd,bhs),[]) (*** first block, special conditions ***)
-		  then Some(zero_big_int)
-		  else None
-	      | Some(pbhh) ->
-		  begin
-		    try
-		      let (cs,_,pbh) = List.assoc pbhh !recentblockheaders in
-		      if blockheader_succ pbh (bhd,bhs) then
-			Some(cs)
-		      else
-			None
-		    with Not_found -> None (*** reject orphan headers ***)
-		  end
-	    with
-	    | Some(cs) -> (*** header is accepted, put it on the list with the new cumulative stake ***)
-		Printf.printf "Got header with cumul stake: %s\n" (string_of_big_int cs); flush stdout;
-		let (_,_,tar) = bhd.tinfo in
-		insertnewblockheader (hash_blockheaderdata bhd) (cumul_stake cs tar bhd.deltatime) false blkh (bhd,bhs);
-		begin (*** If there is some block we are waiting to publish, see if it has more cumulative stake that this one. If not, forget it. ***)
-		  match !waitingblock with
-		  | Some(_,_,_,_,_,mycs) when lt_big_int mycs cs ->
-		      Printf.printf "A better block was found. Not publishing mine.\n"; flush stdout;
-		      waitingblock := None
-		  | _ -> ()
-		end
-	    | None -> (*** header is rejected, ignore it for now, maybe should ignore it forever? ***)
-		Printf.printf "header rejected\n";
-		())
+	  let bhdh = hash_blockheaderdata bhd in
+	  if List.mem (1,bhdh) cs.invreq then (*** only accept if it seems to have been requested ***)
+	    begin
+	      cs.invreq <- List.filter (fun (k,h) -> not (k = 1 && h = bhdh)) cs.invreq;
+	      if bhd.timestamp <= Int64.add tm 60L then (*** do not accept blockheaders from too far the future ***)
+		match 
+		  match bhd.prevblockhash with
+		  | None ->
+		      Printf.printf "genesis\n";
+		      if valid_blockheaderchain blkh ((bhd,bhs),[]) (*** first block, special conditions ***)
+		      then Some(zero_big_int)
+		      else None
+		  | Some(pbhh) ->
+		      begin
+			try
+			  let (cs,_,pbh) = List.assoc pbhh !recentblockheaders in
+			  if blockheader_succ pbh (bhd,bhs) then
+			    Some(cs)
+			  else
+			    None
+			with Not_found -> None (*** reject orphan headers ***)
+		      end
+		with
+		| Some(cumulstk) -> (*** header is accepted, put it on the list with the new cumulative stake ***)
+		    Printf.printf "Got header with cumul stake: %s\n" (string_of_big_int cumulstk); flush stdout;
+		    let (_,_,tar) = bhd.tinfo in
+		    let bhdh = hash_blockheaderdata bhd in
+		    if not (known_blockheader_p blkh bhdh) then (*** make sure it's new ***)
+		      begin
+			insertnewblockheader (hash_blockheaderdata bhd) (cumul_stake cumulstk tar bhd.deltatime) false blkh (bhd,bhs);
+			begin (*** If there is some block we are waiting to publish, see if it has more cumulative stake that this one. If not, forget it. ***)
+			  match !waitingblock with
+			  | Some(_,_,_,_,_,mycumulstk) when lt_big_int mycumulstk cumulstk ->
+			      Printf.printf "A better block was found. Not publishing mine.\n"; flush stdout;
+			      waitingblock := None
+			  | _ -> ()
+			end;
+			if List.mem (2,bhdh) cs.rinv then (*** request the corresponding blockdeltah if possible ***)
+			  ignore (send_msg sout (GetData([(2,bhdh)])))
+			else if List.mem (3,bhdh) cs.rinv then (*** otherwise request the corresponding blockdelta if possible ***)
+			  ignore (send_msg sout (GetData([(3,bhdh)])))
+		      end
+		| None -> (*** header is rejected, ignore it for now, maybe should ignore it forever? ***)
+		    Printf.printf "header rejected\n";
+		    ()
+	    end)
 	bhl
+  | (None,MBlockdeltah(vers,h,bdh)) ->
+      Printf.printf "Handling MBlockdeltah.\n"; flush stdout;
+      if List.mem (2,h) cs.invreq then (*** only accept if it seems to have been requested ***)
+	begin
+	  cs.invreq <- List.filter (fun (k,h2) -> not (k = 2 && h2 = h)) cs.invreq;
+	  Hashtbl.add recentblockdeltahs h bdh
+	end
+  | (None,MBlockdelta(vers,h,bd)) ->
+      Printf.printf "Handling MBlockdeltah.\n"; flush stdout;
+      if List.mem (3,h) cs.invreq then (*** only accept if it seems to have been requested ***)
+	begin
+	  cs.invreq <- List.filter (fun (k,h2) -> not (k = 3 && h2 = h)) cs.invreq;
+	  Hashtbl.add recentblockdeltas h bd
+	end
+  | (None,MTx(vers,(tx,txsig))) ->
+      let h = hashtx tx in
+      if List.mem (4,h) cs.invreq then (*** only accept if it seems to have been requested ***)
+	begin
+	  cs.invreq <- List.filter (fun (k,h2) -> not (k = 4 && h2 = h)) cs.invreq;
+	  Hashtbl.add recentstxs h (tx,txsig)
+	end
   | (None,GetFramedCTree(vers,blkho,cr,fr)) ->
       Printf.printf "Handling GetFramedCTree.\n"; flush stdout;
       List.iter
@@ -646,3 +723,12 @@ let handle_msg sin sout cs replyto mh m =
       cs.pending <- update_pending cs.pending qh m
   | _ ->
       Printf.printf "Ignoring msg, probably because the code to handle the msg is unwritten.\n"; flush stdout
+
+let try_requests rql =
+  List.iter
+    (fun (s,sin,sout,addrfrom,cs) ->
+      let rql1 = List.filter (fun (k,_,h) -> List.mem (k,h) cs.rinv && not (List.mem (k,h) cs.invreq)) rql in
+      if not (rql1 = []) then
+	ignore (send_msg sout (Inv(rql1)))
+    )
+    !conns
