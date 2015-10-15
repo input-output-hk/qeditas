@@ -66,6 +66,7 @@ type connstate = {
     mutable alive : bool;
     mutable lastmsgtm : float;
     mutable pending : (hashval * bool * float * float * pendingcallback option) list;
+    mutable sentinv : (int * hashval) list;
     mutable rinv : (int * hashval) list;
     mutable invreq : (int * hashval) list;
     mutable rframe0 : rframe; (*** which parts of the ctree the node is keeping ***)
@@ -78,12 +79,14 @@ type connstate = {
 
 val conns : (Unix.file_descr * in_channel * out_channel * string * connstate) list ref
 
-val broadcast_msg : msg -> unit
+val broadcast_inv : (int * int64 * hashval) list -> unit
 val send_msg : out_channel -> msg -> hashval
 val send_reply : out_channel -> hashval -> msg -> hashval
+
+val send_initial_inv : out_channel -> connstate -> unit
 
 val rec_msg_nohang : in_channel -> float -> float -> (hashval option * hashval * msg) option
 
 val handle_msg : in_channel -> out_channel -> connstate -> hashval option -> hashval -> msg -> unit
 
-val try_requests : (int * int64 * hashval) list -> unit
+val try_requests : (int * hashval) list -> unit

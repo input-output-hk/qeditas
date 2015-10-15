@@ -143,9 +143,9 @@ let possibly_request_full_block blkh bho =
 		  Printf.printf "Constructed a invalid block"; flush stdout;
 		end
 	    else
-	      try_requests (List.map (fun h -> (4,blkh,h)) stxsneeded) (*** try to request stxs ***)
+	      try_requests (List.map (fun h -> (4,h)) stxsneeded) (*** try to request stxs ***)
 	  with Not_found ->
-	    try_requests [(2,blkh,bhh)]
+	    try_requests [(2,bhh)]
 	end
   | None -> ();;
 
@@ -282,6 +282,7 @@ let initialize_conn_accept s =
 		    { alive = true;
 		      lastmsgtm = Unix.time();
 		      pending = [];
+		      sentinv = [];
 		      rinv = [];
 		      invreq = [];
 		      rframe0 = fr20;
@@ -293,6 +294,7 @@ let initialize_conn_accept s =
 		    }
 		  in
 		  conns := (s,sin,sout,addr_from2,cs)::!conns;
+		  send_initial_inv sout cs;
 		  true
 	      | _ ->
 		  Printf.printf "Handshake failed. (No Verack)\n"; flush stdout;
@@ -346,6 +348,7 @@ let initialize_conn_2 n s sin sout =
 		{ alive = true;
 		  lastmsgtm = Unix.time();
 		  pending = [];
+		  sentinv = [];
 		  rinv = [];
 		  invreq = [];
 		  rframe0 = fr20;
@@ -357,6 +360,7 @@ let initialize_conn_2 n s sin sout =
 		}
 	      in
 	      conns := (s,sin,sout,addr_from2,cs)::!conns;
+	      send_initial_inv sout cs;
 	      true
 	  | _ ->
 	      Printf.printf "Handshake failed. (No Version)\n"; flush stdout;
@@ -737,7 +741,7 @@ let main () =
 	      waitingblock := None;
 	      insertnewblockheader bhh cs true blkh bh;
 	      Hashtbl.add recentblockdeltas bhh bd;
-	      broadcast_msg (Inv([(1,blkh,bhh)])); (*** broadcast it with Inv ***)
+	      broadcast_inv [(1,blkh,bhh)]; (*** broadcast it with Inv ***)
 	      start_staking(); (*** start staking again ***)
 	  | None -> (*** if there is no waiting block and we aren't staking, then restart staking ***)
 	      begin

@@ -194,6 +194,7 @@ type connstate = {
     mutable alive : bool;
     mutable lastmsgtm : float;
     mutable pending : (hashval * bool * float * float * pendingcallback option) list;
+    mutable sentinv : (int * hashval) list;
     mutable rinv : (int * hashval) list;
     mutable invreq : (int * hashval) list;
     mutable rframe0 : rframe; (*** which parts of the ctree the node is keeping ***)
@@ -476,13 +477,34 @@ let send_msg_real c replyto m =
 let send_msg c m = send_msg_real c None m
 let send_reply c h m = send_msg_real c (Some(h)) m
 
-let broadcast_msg m =
+let broadcast_inv invl =
+  let invl2 = List.map (fun (k,_,h) -> (k,h)) invl in
   List.iter
     (fun (s,sin,sout,peeraddr,cs) ->
       try
-	if cs.alive then ignore (send_msg sout m)
+	if cs.alive then
+	  begin
+	    ignore (send_msg sout (Inv(invl)));
+	    cs.sentinv <- invl2 @ cs.sentinv
+	  end
       with _ -> ())
     !conns
+
+let send_initial_inv sout cs =
+  let tosend = ref [] in
+  let cnt = ref 0 in
+  List.iter (fun (bhh,(cumulstk,blkh,bh)) ->
+    incr cnt;
+    if !cnt < 50000 then
+      begin
+	tosend := (1,blkh,bhh)::!tosend;
+	if Hashtbl.mem recentblockdeltahs bhh then (incr cnt; if !cnt < 50000 then tosend := (2,blkh,bhh)::!tosend);
+	if Hashtbl.mem recentblockdeltas bhh then (incr cnt; if !cnt < 50000 then tosend := (3,blkh,bhh)::!tosend);
+      end)
+    !recentblockheaders;
+  Hashtbl.iter (fun txh _ -> incr cnt; if !cnt < 50000 then tosend := (4,0L,txh)::!tosend) recentstxs;
+  send_msg sout (Inv(!tosend));
+  cs.sentinv <- List.map (fun (k,_,h) -> (k,h)) !tosend
 
 (***
  Throw IllformedMsg if something's wrong with the format or if it reads the first byte but times out before reading the full message.
@@ -676,9 +698,15 @@ let handle_msg sin sout cs replyto mh m =
 			  | _ -> ()
 			end;
 			if List.mem (2,bhdh) cs.rinv then (*** request the corresponding blockdeltah if possible ***)
-			  ignore (send_msg sout (GetData([(2,bhdh)])))
+			  begin
+			    ignore (send_msg sout (GetData([(2,bhdh)])));
+			    cs.invreq <- (2,bhdh)::cs.invreq
+			  end
 			else if List.mem (3,bhdh) cs.rinv then (*** otherwise request the corresponding blockdelta if possible ***)
-			  ignore (send_msg sout (GetData([(3,bhdh)])))
+			  begin
+			    ignore (send_msg sout (GetData([(3,bhdh)])));
+			    cs.invreq <- (3,bhdh)::cs.invreq
+			  end
 		      end
 		| None -> (*** header is rejected, ignore it for now, maybe should ignore it forever? ***)
 		    Printf.printf "header rejected\n";
@@ -727,8 +755,11 @@ let handle_msg sin sout cs replyto mh m =
 let try_requests rql =
   List.iter
     (fun (s,sin,sout,addrfrom,cs) ->
-      let rql1 = List.filter (fun (k,_,h) -> List.mem (k,h) cs.rinv && not (List.mem (k,h) cs.invreq)) rql in
+      let rql1 = List.filter (fun (k,h) -> List.mem (k,h) cs.rinv && not (List.mem (k,h) cs.invreq)) rql in
       if not (rql1 = []) then
-	ignore (send_msg sout (Inv(rql1)))
+	begin
+	  ignore (send_msg sout (GetData(rql1)));
+	  cs.invreq <- rql1 @ cs.invreq
+	end
     )
     !conns
