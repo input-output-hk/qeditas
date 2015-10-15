@@ -24,6 +24,8 @@ let blkh = ref 0L;;
 let sm = ref (0L,0L,0L,0L);;
 let tar = ref zero_big_int;;
 
+exception Stop;;
+
 let main () =
   sethungsignalhandler();
   let stktm = ref (Int64.of_float (Unix.time ())) in
@@ -41,8 +43,9 @@ let main () =
     | Some(z) when z = 83 -> (*** start staking ***)
 	staking := true;
 	stktm := Int64.of_float (Unix.time())
-    | Some(z) when z = 80 -> (*** pause staking ***)
-	staking := false
+    | Some(z) when z = 80 -> (*** stop staking ***)
+	staking := false;
+	raise Stop
     | Some(z) when z = 82 -> (*** remove a staking or storage asset ***)
 	let (dh,_) = sei_hashval seic (stdin,None) in
 	stkassets := List.filter (fun (alpha,h,bday,obl,v,csta,csda) -> not (dh = h)) !stkassets;
@@ -187,4 +190,7 @@ let main () =
 	  done
   done;;
 
-main();;
+try
+  main()
+with Stop -> ();;
+
