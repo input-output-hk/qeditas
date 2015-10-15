@@ -561,16 +561,16 @@ let rec_msg_nohang c tm tm2 =
       end
 
 let known_blockheader_p blkh h =
-  not (List.mem_assoc h !recentblockheaders) (*** should also check if it's in a file ***)
+  List.mem_assoc h !recentblockheaders (*** should also check if it's in a file ***)
 
 let known_blockdeltah_p blkh h =
-  not (Hashtbl.mem recentblockdeltahs h) (*** should also check if it's in a file ***)
+  Hashtbl.mem recentblockdeltahs h (*** should also check if it's in a file ***)
 
 let known_blockdelta_p blkh h =
-  not (Hashtbl.mem recentblockdeltas h) (*** should also check if it's in a file ***)
+  Hashtbl.mem recentblockdeltas h (*** should also check if it's in a file ***)
 
 let known_stx_p h =
-  not (Hashtbl.mem recentstxs h) (*** should also check if it's in a file ***)
+  Hashtbl.mem recentstxs h (*** should also check if it's in a file ***)
 
 let rec update_pending pendl k m =
   match pendl with
