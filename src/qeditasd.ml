@@ -124,6 +124,18 @@ let possibly_request_full_block blkh bho =
 	      if valid_block None None blkh ((bhd,bhs),bd) then
 		begin
 		  Printf.printf "Constructed a valid block\n"; flush stdout;
+		  begin
+		    let tr1a = ctree_of_block ((bhd,bhs),bd) in
+		    let tr1h = ctree_hashroot tr1a in
+		    let tr1b = CAbbrev(tr1h,lookup_ctree_root_abbrev tr1h) in
+		    let tr1 = octree_lub (Some(tr1a)) (Some(tr1b)) in (*** the tree of the block combined with the tree this node is keeping up with ***)
+		    match txl_octree_trans blkh (coinstake ((bhd,bhs),bd)::List.map (fun (tx,_) -> tx) bd.blockdelta_stxl) tr1 with
+		    | Some(tr2) ->
+			frame_filter_ctree (wrap_frame !localframe) tr2 (*** save the new filtered ledger ctree ***)
+		    | None ->
+			Printf.printf "Ctree became empty, which should not have happened after a valid block\n"; flush stdout;
+			raise (Failure("Ctree became empty, which should not have happened after a valid block\n"))
+		  end;
 		  Hashtbl.add recentblockdeltas bhh bd
 		end
 	      else
