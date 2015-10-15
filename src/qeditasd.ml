@@ -182,7 +182,8 @@ let fallbacknodes = [
 ];;
 
 let testnetfallbacknodes = [
-"108.61.219.125:20804"
+"108.61.219.125:20804";
+"45.63.70.252:20804"
 ];;
 
 let random_int32_array : int32 array = [| 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l |];;
