@@ -111,7 +111,7 @@ let save_wallet () =
 
 let append_wallet f =
   let wallfn = Filename.concat !Config.datadir "wallet" in
-  let s = open_out_gen [Open_append;Open_wronly] 0x660 wallfn in
+  let s = open_out_gen [Open_append;Open_wronly;Open_binary] 0x660 wallfn in
   f s;
   close_out s
 
