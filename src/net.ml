@@ -205,7 +205,132 @@ type connstate = {
     mutable last_height : int64; (*** how up to date the node is ***)
   }
 
-let conns = ref [];;
+let conns = ref []
+let preconns = ref []
+let this_nodes_nonce = ref 0L
+
+exception EnoughConnections
+
+let initialize_conn_accept s =
+  if List.length !conns + List.length !preconns < !Config.maxconns then
+    begin
+      let sin = Unix.in_channel_of_descr s in
+      let sout = Unix.out_channel_of_descr s in
+      set_binary_mode_in sin true;
+      set_binary_mode_out sout true;
+      preconns := (s,sin,sout,Unix.time(),ref 1,None,ref None,ref None)::!preconns
+    end
+  else
+    begin
+      Printf.printf "Rejecting connection because of maxconns.\n"; flush stdout;
+      Unix.close s;
+      raise EnoughConnections
+    end
+
+let initialize_conn_2 n s sin sout =
+  preconns := (s,sin,sout,Unix.time(),ref 0,Some(n),ref None,ref None)::!preconns
+
+let initialize_conn n s =
+  let sin = Unix.in_channel_of_descr s in
+  let sout = Unix.out_channel_of_descr s in
+  set_binary_mode_in sin true;
+  set_binary_mode_out sout true;
+  initialize_conn_2 n s sin sout
+
+let knownpeers : (string,int64) Hashtbl.t = Hashtbl.create 1000
+
+let tryconnectpeer n =
+  if List.length !conns + List.length !preconns >= !Config.maxconns then raise EnoughConnections;
+  let (ip,port,v6) = extract_ip_and_port n in
+  if not (!Config.ip = Some(ip) && !Config.ipv6 = v6) then (*** if this is a fallback node, do not connect to itself ***)
+    begin
+      try
+	match !Config.socks with
+	| None ->
+	    let s = connectpeer ip port in
+	    ignore (initialize_conn n s)
+	| Some(4) ->
+	    let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
+	    ignore (initialize_conn_2 n s sin sout)
+	| Some(5) ->
+	    raise (Failure "socks5 is not yet supported")
+	| Some(z) ->
+	    raise (Failure ("socks" ^ (string_of_int z) ^ " is not yet supported"))
+      with
+      | RequestRejected ->
+	  Printf.printf "RequestRejected\n"; flush stdout;
+      | _ ->
+	  ()
+    end
+
+let fallbacknodes = [
+"108.61.219.125:20805"
+]
+
+let testnetfallbacknodes = [
+"108.61.219.125:20804";
+"45.63.70.252:20804"
+]
+
+let getfallbacknodes () =
+  if !Config.testnet then
+    testnetfallbacknodes
+  else
+    fallbacknodes
+
+let addknownpeer lasttm n =
+  if not (List.mem n (getfallbacknodes())) then
+    try
+      let oldtm = Hashtbl.find knownpeers n in
+      Hashtbl.replace knownpeers n lasttm
+    with Not_found ->
+      let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
+      if Sys.file_exists peerfn then
+	let s = open_out_gen [Open_append;Open_wronly] 0x660 peerfn in
+	output_string s n;
+	output_char s '\n';
+	output_string s (Int64.to_string lasttm);
+	output_char s '\n';
+	close_out s
+      else
+	let s = open_out peerfn in
+	output_string s n;
+	output_char s '\n';
+	output_string s (Int64.to_string lasttm);
+	output_char s '\n';
+	close_out s
+
+let getknownpeers () =
+  let cnt = ref 0 in
+  let peers = ref [] in
+  let currtm = Int64.of_float (Unix.time()) in
+  Hashtbl.iter (fun n lasttm -> if !cnt < 1000 && Int64.sub currtm lasttm < 604800L then (incr cnt; peers := n::!peers)) knownpeers;
+  !peers
+
+let loadknownpeers () =
+  let currtm = Int64.of_float (Unix.time()) in
+  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
+  let s = open_in peerfn in
+  try
+    while true do
+      let n = input_line s in
+      let lasttm = Int64.of_string (input_line s) in
+      if Int64.sub currtm lasttm < 604800L then
+	Hashtbl.add knownpeers n lasttm
+    done
+  with End_of_file -> ()
+
+let saveknownpeers () =
+  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
+  let s = open_out_gen [Open_append;Open_wronly;Open_trunc] 0x660 peerfn in
+  Hashtbl.iter
+    (fun n lasttm ->
+      output_string s n;
+      output_char s '\n';
+      output_string s (Int64.to_string lasttm);
+      output_char s '\n')
+    knownpeers;
+  close_out s
 
 let seo_msg o m c =
   match m with
@@ -749,6 +874,20 @@ let handle_msg sin sout cs replyto mh m =
       ignore (send_reply sout mh (Reject("GetFramedCTree",1,"could not build framed ctree","")))
   | (Some(qh),MCTree(vers,ctr)) ->
       cs.pending <- update_pending cs.pending qh m
+  | (None,Addr(addrl)) ->
+      let currtm = Int64.of_float (Unix.time()) in
+      List.iter (fun (lasttm,n) -> if Int64.sub currtm lasttm < 604800L then addknownpeer lasttm n) addrl (*** add peers that were active at some point in the last week ***)
+  | (None,GetAddr) ->
+      let cnt = ref 0 in
+      let addrl = ref [] in
+      begin
+	List.iter
+	  (fun (_,_,_,peeraddr,cs) ->
+	    if !cnt < 1000 then (incr cnt; addrl := (Int64.of_float cs.lastmsgtm,peeraddr) :: !addrl)
+	  )
+	  !conns;
+	ignore (send_msg sout (Addr(!addrl)))
+      end
   | _ ->
       Printf.printf "Ignoring msg, probably because the code to handle the msg is unwritten.\n"; flush stdout
 

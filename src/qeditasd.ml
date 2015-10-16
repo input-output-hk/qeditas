@@ -177,15 +177,6 @@ let beststakingoption () =
 
 let stakingproccomm : (in_channel * out_channel * in_channel) option ref = ref None;;
 
-let fallbacknodes = [
-"108.61.219.125:20805"
-];;
-
-let testnetfallbacknodes = [
-"108.61.219.125:20804";
-"45.63.70.252:20804"
-];;
-
 let random_int32_array : int32 array = [| 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l |];;
 let random_initialized : bool ref = ref false;;
 
@@ -248,177 +239,14 @@ let myaddr () =
   | None ->
       "";;
 
-let initialize_conn_accept s =
-  if List.length !conns < !Config.maxconns then
-    begin
-      let sin = Unix.in_channel_of_descr s in
-      let sout = Unix.out_channel_of_descr s in
-      set_binary_mode_in sin true;
-      set_binary_mode_out sout true;
-      try
-	let m2 = rec_msg_nohang sin 5.0 5.0 in
-	match m2 with
-	| Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_header_height2,first_full_height2,last_height2,relay2,lastchkpt2)) ->
-	    send_msg sout Verack;
-	    let vers = 1l in
-	    let srvs = 1L in
-	    let tm = Int64.of_float(Unix.time()) in
-	    let nonce = rand_int64() in
-	    let user_agent = "Qeditas-Testing-Phase" in
-	    let fr0 = RFAll in
-	    let fr1 = RFAll in
-	    let fr2 = RFAll in
-	    let first_header_height = 0L in
-	    let first_full_height = 0L in
-	    let last_height = 0L in
-	    let relay = true in
-	    let lastchkpt = None in
-	    send_msg sout (Version(vers,srvs,tm,addr_from2,myaddr(),nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt));
-	    let m1 = rec_msg_nohang sin 5.0 5.0 in
-	    begin
-	      match m1 with
-	      | Some(_,_,Verack) ->
-		  Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
-		  let cs =
-		    { alive = true;
-		      lastmsgtm = Unix.time();
-		      pending = [];
-		      sentinv = [];
-		      rinv = [];
-		      invreq = [];
-		      rframe0 = fr20;
-		      rframe1 = fr21;
-		      rframe2 = fr22;
-		      first_header_height = first_header_height2;
-		      first_full_height = first_full_height2;
-		      last_height = last_height2;
-		    }
-		  in
-		  conns := (s,sin,sout,addr_from2,cs)::!conns;
-		  send_initial_inv sout cs;
-		  true
-	      | _ ->
-		  Printf.printf "Handshake failed. (No Verack)\n"; flush stdout;
-		  Unix.close s;
-		  false
-	    end
-	| _ ->
-	    Printf.printf "Handshake failed. (No Version)\n"; flush stdout;
-	    Unix.close s; (*** handshake failed ***)
-	    false
-      with
-      | IllformedMsg ->
-	  Printf.printf "Handshake failed. (IllformedMsg)\n"; flush stdout;
-	  Unix.close s; (*** handshake failed ***)
-	  false
-    end
-  else
-    begin
-      Printf.printf "Rejecting connection because of maxconns.\n"; flush stdout;
-      Unix.close s;
-      false
-    end;;
-
-let initialize_conn_2 n s sin sout =
-  (*** handshake ***)
-  let vers = 1l in
-  let srvs = 1L in
-  let tm = Int64.of_float(Unix.time()) in
-  let nonce = rand_int64() in
-  let user_agent = "Qeditas-Testing-Phase" in
-  let fr0 = RFAll in
-  let fr1 = RFAll in
-  let fr2 = RFAll in
-  let first_header_height = 0L in
-  let first_full_height = 0L in
-  let last_height = 0L in
-  let relay = true in
-  let lastchkpt = None in
-  send_msg sout (Version(vers,srvs,tm,myaddr(),n,nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt));
-  try
-    let m1 = rec_msg_nohang sin 5.0 5.0 in
-    match m1 with
-    | Some(_,_,Verack) ->
-	begin
-	  let m2 = rec_msg_nohang sin 5.0 5.0 in
-	  match m2 with
-	  | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_header_height2,first_full_height2,last_height2,relay2,lastchkpt2)) ->
-	      send_msg sout Verack;
-	      Printf.printf "Added connection; post handshake\nmy time = %Ld\ntheir time = %Ld\naddr_recv2 = %s\naddr_from2 = %s\n" tm tm2 addr_recv2 addr_from2; flush stdout;
-	      let cs =
-		{ alive = true;
-		  lastmsgtm = Unix.time();
-		  pending = [];
-		  sentinv = [];
-		  rinv = [];
-		  invreq = [];
-		  rframe0 = fr20;
-		  rframe1 = fr21;
-		  rframe2 = fr22;
-		  first_header_height = first_header_height2;
-		  first_full_height = first_full_height2;
-		  last_height = last_height2;
-		}
-	      in
-	      conns := (s,sin,sout,addr_from2,cs)::!conns;
-	      send_initial_inv sout cs;
-	      true
-	  | _ ->
-	      Printf.printf "Handshake failed. (No Version)\n"; flush stdout;
-	      Unix.close s; (*** handshake failed ***)
-	      false
-	end
-    | _ ->
-	begin (*** handshake failed ***)
-	  Printf.printf "Handshake failed. (No Verack)\n"; flush stdout;
-	  Unix.close s;
-	  false
-	end
-  with
-  | IllformedMsg ->
-      Printf.printf "Handshake failed. (IllformedMsg)\n"; flush stdout;
-      Unix.close s; (*** handshake failed ***)
-      false;;
-
-let initialize_conn n s =
-  let sin = Unix.in_channel_of_descr s in
-  let sout = Unix.out_channel_of_descr s in
-  set_binary_mode_in sin true;
-  set_binary_mode_out sout true;
-  initialize_conn_2 n s sin sout;;
-
-exception Connected;;
-
 let search_for_conns () =
-  if !conns = [] then
-    begin
-      try
-	List.iter
-	  (fun n ->
-	    let (ip,port,v6) = extract_ip_and_port n in
-	    if not (!Config.ip = Some(ip) && !Config.ipv6 = v6) then (*** if this is a fallback node, do not connect to itself ***)
-	      begin
-		try
-		  match !Config.socks with
-		  | None ->
-		      let s = connectpeer ip port in
-		      ignore (initialize_conn n s)
-		  | Some(4) ->
-		      let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
-		      ignore (initialize_conn_2 n s sin sout)
-		  | Some(5) ->
-		      raise (Failure "socks5 is not yet supported")
-		  | Some(z) ->
-		      raise (Failure ("socks" ^ (string_of_int z) ^ " is not yet supported"))
-		with
-		| RequestRejected -> Printf.printf "RequestRejected\n"; flush stdout;
-		| Connected -> raise Connected
-		| _ -> ()
-	      end
-	  )
-	(if !Config.testnet then testnetfallbacknodes else fallbacknodes)
-      with Connected -> ()
-    end;;
+  try
+    List.iter tryconnectpeer (getknownpeers());
+    if !conns = [] then
+      begin
+	List.iter tryconnectpeer (getfallbacknodes())
+      end
+  with EnoughConnections -> ();;
 
 let rec hlist_insertstakingassets tostkr alpha hl =
   match hl with
@@ -539,6 +367,7 @@ let main () =
     localframehash := hashframe !localframe;
     Printf.printf "Initializing random seed\n"; flush stdout;
     if not !random_initialized then initialize_random_seed();
+    this_nodes_nonce := rand_int64();
     let l = 
       match !Config.ip with
       | Some(ip) ->
@@ -557,6 +386,7 @@ let main () =
 	start_staking(); (*** start a staking process ***)
       end;
     sethungsignalhandler();
+    loadknownpeers();
     search_for_conns ();
     while true do (*** main process loop ***)
       try
@@ -774,15 +604,113 @@ let main () =
 			  Printf.printf "got remote connection %s %d\n" (Unix.string_of_inet_addr x) y;
 		    end;
 		    flush stdout;
-		    if initialize_conn_accept s then
-		      Printf.printf "accepted remote connection\n"
-		    else
-		      Printf.printf "rejected remote connection\n";
-		    flush stdout;
+		    initialize_conn_accept s
 		| None -> ()
 	      end
 	  | None -> ()
 	end;
+	(*** check each preconnection for handshake progress ***)
+	List.iter
+	  (fun (s,sin,sout,stm,ph,toaddr,oaf,ocs) ->
+	    try
+	      match rec_msg_nohang sin 0.1 1.0 with
+	      | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_header_height2,first_full_height2,last_height2,relay2,lastchkpt2)) ->
+		  if n2 = !this_nodes_nonce || !ph > 1 then
+		    begin (*** prevent connection to self, or incorrect handshake ***)
+		      Unix.close s;
+		      ph := -1;
+		      Printf.printf "Handshake failed. (Version sent twice)\n"; flush stdout;
+		      Unix.close s; (*** handshake failed ***)
+		    end
+		  else
+		    begin
+		      oaf := Some(addr_from2);
+		      ocs :=
+			Some
+			  { alive = true;
+			    lastmsgtm = Unix.time();
+			    pending = [];
+			    sentinv = [];
+			    rinv = [];
+			    invreq = [];
+			    rframe0 = fr20;
+			    rframe1 = fr21;
+			    rframe2 = fr22;
+			    first_header_height = first_header_height2;
+			    first_full_height = first_full_height2;
+			    last_height = last_height2;
+			  };
+		      if !ph = 0 then
+			begin
+			  match toaddr with
+			  | Some(n) ->
+			      ph := 2;
+			      let vers = 1l in
+			      let srvs = 1L in
+			      let tm = Int64.of_float(Unix.time()) in
+			      let user_agent = "Qeditas-Testing-Phase" in
+			      let fr0 = RFAll in
+			      let fr1 = RFAll in
+			      let fr2 = RFAll in
+			      let first_header_height = 0L in
+			      let first_full_height = 0L in
+			      let last_height = 0L in
+			      let relay = true in
+			      let lastchkpt = None in
+			      ignore (send_msg sout (Version(vers,srvs,tm,myaddr(),n,!this_nodes_nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt)))
+			  | None ->
+			      ph := -1;
+			      Printf.printf "Handshake failed. (do not know listening address to send with Version message)\n"; flush stdout;
+			      Unix.close s; (*** handshake failed ***)
+			end
+		      else
+			begin
+			  ph := 3;
+			  ignore (send_msg sout Verack)
+			end
+		    end
+	      | Some(_,_,Verack) ->
+		  if !ph < 2 then (*** incorrect handshake ***)
+		    begin
+		      ph := -1;
+		      Printf.printf "Handshake failed. (Verack before Version)\n"; flush stdout;
+		      Unix.close s; (*** handshake failed ***)
+		    end
+		  else
+		    begin
+		      ph := 4;
+		      if !ph = 2 then ignore (send_msg sout Verack);
+		      match (!oaf,!ocs) with
+		      | (Some(addr_from),Some(cs)) ->
+			  conns := (s,sin,sout,addr_from,cs)::!conns; (*** handshake succeeded, real conn now ***)
+			  send_initial_inv sout cs;
+			  ignore (send_msg sout GetAddr)
+		      | _ ->
+			  ()
+		    end
+	      | None ->
+		  if Unix.time() -. stm > 120.0 then
+		    begin
+		      Printf.printf "Handshake failed. (timeout)\n"; flush stdout;
+		      Unix.close s; (*** handshake failed ***)
+		      ph := -1
+		    end
+	      | _ ->
+		Printf.printf "Handshake failed. (inappropriate handshake message)\n"; flush stdout;
+		Unix.close s; (*** handshake failed ***)
+		ph := -1
+	    with
+	    | IllformedMsg ->
+		Printf.printf "Handshake failed. (IllformedMsg)\n"; flush stdout;
+		Unix.close s; (*** handshake failed ***)
+		ph := -1
+	    | _ ->
+		Printf.printf "Handshake failed.\n"; flush stdout;
+		Unix.close s; (*** handshake failed ***)
+		ph := -1
+	  )
+	  !preconns;
+	preconns := List.filter (fun (s,sin,sout,stm,ph,toaddr,oaf,ocs) -> !ph >= 0 && !ph < 4) !preconns;
 	(*** check each connection for possible messages ***)
 	List.iter
 	  (fun (s,sin,sout,peeraddr,cs) ->

@@ -78,6 +78,19 @@ type connstate = {
   }
 
 val conns : (Unix.file_descr * in_channel * out_channel * string * connstate) list ref
+val preconns : (Unix.file_descr * in_channel * out_channel * float * int ref * string option * string option ref * connstate option ref) list ref
+val this_nodes_nonce : int64 ref
+
+exception EnoughConnections
+
+val getfallbacknodes : unit -> string list
+
+val initialize_conn_accept : Unix.file_descr -> unit
+val tryconnectpeer : string -> unit
+val addknownpeer : int64 -> string -> unit
+val getknownpeers : unit -> string list
+val loadknownpeers : unit -> unit
+val saveknownpeers : unit -> unit
 
 val broadcast_inv : (int * int64 * hashval) list -> unit
 val send_msg : out_channel -> msg -> hashval
