@@ -7,6 +7,37 @@ open Net;;
 open Setconfig;;
 open Commands;;
 
+let commhelp = [
+("importprivkey",1,Some 1,"importprivkey <Qeditas WIF>","Import the private key for a Qeditas p2pkh address into the local wallet.");
+("importbtcprivkey",1,Some 1,"importbtcprivkey <Bitcoin WIF>","Import a private key (in Bitcoin WIF format) for a Qeditas p2pkh address into the local wallet.");
+("importendorsement",3,Some 3,"importendorsement <address 1> <address 2> <Bitcoin message signature>","Import an endorsement of Qeditas pay address 1 to Qeditas pay address 2 (so that address 2 can sign for address 1).");
+("importwatchaddr",1,Some 1,"importwatchaddr <address>","Import an address into the wallet in order to watch the address.");
+("importbtcwatchaddr",1,Some 1,"importbtcwatchaddr <Bitcoin address>","Import a Qeditas pay address by giving the corresponding Bitcoin address.
+The address is only watched, not controlled.");
+("btctoqedaddr",1,Some 1,"btctoqedaddr <Bitcoin address>","Give the Qeditas pay address corresponding to the given Bitcoin address. The wallet is not affected.");
+("printassets",0,Some 0,"printassets","Print the assets held at the addresses in the wallet.
+This may include addresses that are only watched, not controlled.");
+("frameallpos",1,None,"frameallpos [position ... position]","Give positions at which the local frame should keep up with all of the ledger tree beneath the position.
+Positions are specified with strings consisting of 0s and 1s.");
+("framehashpos",1,None,"framehashpos [position ... position]","Give positions at which the local frame should not keep up with the ledger tree beneath the position,
+but should summarize the tree beneath the position with a hash root.
+Positions are specified with strings consisting of 0s and 1s.");
+("frameabbrevpos",1,None,"frameabbrevpos [position ... position]","Give positions at which the local frame should save the ledger tree in a file as an abbreviations.
+Positions are specified with strings consisting of 0s and 1s.");
+("frameabbrevlevel",1,None,"frameabbrevlevel [level ... level]","Give levels at which the local frame should save the ledger tree in a file as an abbreviations.
+Levels are integers between 0 and 160.
+
+Example:
+frameabbrevlevel 8 16
+indicates that all ctree nodes 8 levels deep and 16 levels deep should be
+saved as abbreviations in files and represented in memory as an abbreviation
+referring to the file.");
+("frameaddrs",1,None,"frameaddrs [<address> ... <address>] [n]","Change the local frame (if necessary) to ensure that the leaves of the ledger tree corresponding
+to the addresses are kept up with. If the last argument is an integer n, then only the first n
+assets of those leaves are kept up with, with the remaining assets summarized by a hash root.");
+("help",0,Some 1,"help [command]","Give a list of commands or help for a specific command.")
+];;
+
 process_config_args();;
 process_config_file();;
 
@@ -109,9 +140,34 @@ let process_command r =
 	 else
 	   Printf.printf "Script for %s imported.\n" s)
 ***)
+  | [c] when c = "help" ->
+      List.iter
+	(fun (x,_,_,sh,_) -> Printf.printf "%s: %s\n" x sh)
+	commhelp
+  | [c;x] when c = "help" ->
+      begin
+	try
+	  match List.find (fun (x1,_,_,_,_) -> x1 = x) commhelp with
+	  | (_,_,_,sh,lh) ->
+	      Printf.printf "%s\n%s\n" sh lh;
+	with Not_found ->
+	  Printf.printf "Unknown command %s.\n" x;
+	  raise (Failure "Unknown command")
+      end
   | (c::_) -> 
-      Printf.printf "Unknown command %s.\n" c;
-      raise (Failure "Unknown command")
+      begin
+	try
+	  match List.find (fun (x,_,_,_,_) -> x = c) commhelp with
+	  | (_,a,_,sh,_) when List.length r < a+1 ->
+	      Printf.printf "%s expects at least %d arguments.\n%s\n" c a sh;
+	  | (_,_,Some(b),sh,_) when List.length r > b+1 ->
+	      Printf.printf "%s expects at most %d arguments.\n%s\n" c b sh;
+	  | _ ->
+	      Printf.printf "Error handling %s\nIt's possible some code has not yet been written.\n" c;
+	with Not_found ->
+	  Printf.printf "Unknown command %s.\n" c;
+	  raise (Failure "Unknown command")
+      end
   | [] ->
       Printf.printf "No command was given.\n";
       raise (Failure "Missing command");;
