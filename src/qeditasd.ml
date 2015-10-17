@@ -652,7 +652,7 @@ let main () =
 		      Printf.printf "Handshake failed. (Verack when expecting Version)\n"; flush stdout;
 		      Unix.close s; (*** handshake failed ***)
 		    end
-		  else if !ph = 2 then
+		  else
 		    ph := 1 + !ph
 	      | None ->
 		  if Unix.time() -. stm > 120.0 then
