@@ -11,6 +11,16 @@ open Tx
 open Ctre
 open Block
 
+let myaddr () =
+  match !Config.ip with
+  | Some(ip) -> 
+      if !Config.ipv6 then
+	"[" ^ ip ^ "]:" ^ (string_of_int !Config.port)
+      else
+	ip ^ ":" ^ (string_of_int !Config.port)
+  | None ->
+      ""
+
 (*** recent (provisional) data ***)
 (*** recentledgerroots: associate ledger (ctree) roots with a block height and abbrev hashval ***)
 (*** recentblockheaders: associate block header hash with block height and block header ***)
@@ -204,150 +214,6 @@ type connstate = {
     mutable first_full_height : int64; (*** how much block/ctree history is stored at the node ***)
     mutable last_height : int64; (*** how up to date the node is ***)
   }
-
-let conns = ref []
-let preconns = ref []
-let this_nodes_nonce = ref 0L
-
-exception EnoughConnections
-
-let initialize_conn_accept s =
-  if List.length !conns + List.length !preconns < !Config.maxconns then
-    begin
-      let sin = Unix.in_channel_of_descr s in
-      let sout = Unix.out_channel_of_descr s in
-      set_binary_mode_in sin true;
-      set_binary_mode_out sout true;
-      preconns := (s,sin,sout,Unix.time(),ref 1,None,ref None,ref None)::!preconns
-    end
-  else
-    begin
-      Printf.printf "Rejecting connection because of maxconns.\n"; flush stdout;
-      Unix.close s;
-      raise EnoughConnections
-    end
-
-let initialize_conn_2 n s sin sout =
-  Printf.printf "calling 2\n"; flush stdout;
-  (*** initiate handshake ***)
-  let vers = 1l in
-  let srvs = 1L in
-  let tm = Int64.of_float(Unix.time()) in
-  let nonce = rand_int64() in
-  let user_agent = "Qeditas-Testing-Phase" in
-  let fr0 = RFAll in
-  let fr1 = RFAll in
-  let fr2 = RFAll in
-  let first_header_height = 0L in
-  let first_full_height = 0L in
-  let last_height = 0L in
-  let relay = true in
-  let lastchkpt = None in
-  send_msg sout (Version(vers,srvs,tm,myaddr(),n,nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt));
-  preconns := (s,sin,sout,Unix.time(),ref 0,Some(n),ref None,ref None)::!preconns
-
-let initialize_conn n s =
-  let sin = Unix.in_channel_of_descr s in
-  let sout = Unix.out_channel_of_descr s in
-  set_binary_mode_in sin true;
-  set_binary_mode_out sout true;
-  initialize_conn_2 n s sin sout
-
-let knownpeers : (string,int64) Hashtbl.t = Hashtbl.create 1000
-
-let tryconnectpeer n =
-  if List.length !conns + List.length !preconns >= !Config.maxconns then raise EnoughConnections;
-  let (ip,port,v6) = extract_ip_and_port n in
-  if not (!Config.ip = Some(ip) && !Config.ipv6 = v6) then (*** if this is a fallback node, do not connect to itself ***)
-    begin
-      try
-	match !Config.socks with
-	| None ->
-	    let s = connectpeer ip port in
-	    ignore (initialize_conn n s)
-	| Some(4) ->
-	    let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
-	    ignore (initialize_conn_2 n s sin sout);
-	| Some(5) ->
-	    raise (Failure "socks5 is not yet supported")
-	| Some(z) ->
-	    raise (Failure ("socks" ^ (string_of_int z) ^ " is not yet supported"))
-      with
-      | RequestRejected ->
-	  Printf.printf "RequestRejected\n"; flush stdout;
-      | _ ->
-	  ()
-    end
-
-let fallbacknodes = [
-"108.61.219.125:20805"
-]
-
-let testnetfallbacknodes = [
-"108.61.219.125:20804";
-"45.63.70.252:20804"
-]
-
-let getfallbacknodes () =
-  if !Config.testnet then
-    testnetfallbacknodes
-  else
-    fallbacknodes
-
-let addknownpeer lasttm n =
-  if not (n = "") && not (List.mem n (getfallbacknodes())) then
-    try
-      let oldtm = Hashtbl.find knownpeers n in
-      Hashtbl.replace knownpeers n lasttm
-    with Not_found ->
-      let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
-      if Sys.file_exists peerfn then
-	let s = open_out_gen [Open_append;Open_wronly] 0x660 peerfn in
-	output_string s n;
-	output_char s '\n';
-	output_string s (Int64.to_string lasttm);
-	output_char s '\n';
-	close_out s
-      else
-	let s = open_out peerfn in
-	output_string s n;
-	output_char s '\n';
-	output_string s (Int64.to_string lasttm);
-	output_char s '\n';
-	close_out s
-
-let getknownpeers () =
-  let cnt = ref 0 in
-  let peers = ref [] in
-  let currtm = Int64.of_float (Unix.time()) in
-  Hashtbl.iter (fun n lasttm -> if !cnt < 1000 && Int64.sub currtm lasttm < 604800L then (incr cnt; peers := n::!peers)) knownpeers;
-  !peers
-
-let loadknownpeers () =
-  let currtm = Int64.of_float (Unix.time()) in
-  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
-  if Sys.file_exists peerfn then
-    let s = open_in peerfn in
-    try
-      while true do
-	let n = input_line s in
-	let lasttm = Int64.of_string (input_line s) in
-	if Int64.sub currtm lasttm < 604800L then
-	  Hashtbl.add knownpeers n lasttm
-      done
-    with End_of_file -> ()
-
-let saveknownpeers () =
-  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
-  let s = open_out_gen [Open_append;Open_wronly;Open_trunc] 0x660 peerfn in
-  Hashtbl.iter
-    (fun n lasttm ->
-      output_string s n;
-      output_char s '\n';
-      output_string s (Int64.to_string lasttm);
-      output_char s '\n')
-    knownpeers;
-  close_out s
 
 let seo_msg o m c =
   match m with
@@ -619,35 +485,6 @@ let send_msg_real c replyto m =
 let send_msg c m = send_msg_real c None m
 let send_reply c h m = send_msg_real c (Some(h)) m
 
-let broadcast_inv invl =
-  let invl2 = List.map (fun (k,_,h) -> (k,h)) invl in
-  List.iter
-    (fun (s,sin,sout,peeraddr,cs) ->
-      try
-	if cs.alive then
-	  begin
-	    ignore (send_msg sout (Inv(invl)));
-	    cs.sentinv <- invl2 @ cs.sentinv
-	  end
-      with _ -> ())
-    !conns
-
-let send_initial_inv sout cs =
-  let tosend = ref [] in
-  let cnt = ref 0 in
-  List.iter (fun (bhh,(cumulstk,blkh,bh)) ->
-    incr cnt;
-    if !cnt < 50000 then
-      begin
-	tosend := (1,blkh,bhh)::!tosend;
-	if Hashtbl.mem recentblockdeltahs bhh then (incr cnt; if !cnt < 50000 then tosend := (2,blkh,bhh)::!tosend);
-	if Hashtbl.mem recentblockdeltas bhh then (incr cnt; if !cnt < 50000 then tosend := (3,blkh,bhh)::!tosend);
-      end)
-    !recentblockheaders;
-  Hashtbl.iter (fun txh _ -> incr cnt; if !cnt < 50000 then tosend := (4,0L,txh)::!tosend) recentstxs;
-  send_msg sout (Inv(!tosend));
-  cs.sentinv <- List.map (fun (k,_,h) -> (k,h)) !tosend
-
 (***
  Throw IllformedMsg if something's wrong with the format or if it reads the first byte but times out before reading the full message.
  If IllformedMsg is thrown, the connection should be severed.
@@ -701,6 +538,178 @@ let rec_msg_nohang c tm tm2 =
 	    ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
 	    raise IllformedMsg
       end
+
+let conns = ref []
+let preconns = ref []
+let this_nodes_nonce = ref 0L
+
+let broadcast_inv invl =
+  let invl2 = List.map (fun (k,_,h) -> (k,h)) invl in
+  List.iter
+    (fun (s,sin,sout,peeraddr,cs) ->
+      try
+	if cs.alive then
+	  begin
+	    ignore (send_msg sout (Inv(invl)));
+	    cs.sentinv <- invl2 @ cs.sentinv
+	  end
+      with _ -> ())
+    !conns
+
+let send_initial_inv sout cs =
+  let tosend = ref [] in
+  let cnt = ref 0 in
+  List.iter (fun (bhh,(cumulstk,blkh,bh)) ->
+    incr cnt;
+    if !cnt < 50000 then
+      begin
+	tosend := (1,blkh,bhh)::!tosend;
+	if Hashtbl.mem recentblockdeltahs bhh then (incr cnt; if !cnt < 50000 then tosend := (2,blkh,bhh)::!tosend);
+	if Hashtbl.mem recentblockdeltas bhh then (incr cnt; if !cnt < 50000 then tosend := (3,blkh,bhh)::!tosend);
+      end)
+    !recentblockheaders;
+  Hashtbl.iter (fun txh _ -> incr cnt; if !cnt < 50000 then tosend := (4,0L,txh)::!tosend) recentstxs;
+  send_msg sout (Inv(!tosend));
+  cs.sentinv <- List.map (fun (k,_,h) -> (k,h)) !tosend
+
+exception EnoughConnections
+
+let initialize_conn_accept s =
+  if List.length !conns + List.length !preconns < !Config.maxconns then
+    begin
+      let sin = Unix.in_channel_of_descr s in
+      let sout = Unix.out_channel_of_descr s in
+      set_binary_mode_in sin true;
+      set_binary_mode_out sout true;
+      preconns := (s,sin,sout,Unix.time(),ref 1,None,ref None,ref None)::!preconns
+    end
+  else
+    begin
+      Printf.printf "Rejecting connection because of maxconns.\n"; flush stdout;
+      Unix.close s;
+      raise EnoughConnections
+    end
+
+let initialize_conn_2 n s sin sout =
+  Printf.printf "calling 2\n"; flush stdout;
+  (*** initiate handshake ***)
+  let vers = 1l in
+  let srvs = 1L in
+  let tm = Int64.of_float(Unix.time()) in
+  let user_agent = "Qeditas-Testing-Phase" in
+  let fr0 = RFAll in
+  let fr1 = RFAll in
+  let fr2 = RFAll in
+  let first_header_height = 0L in
+  let first_full_height = 0L in
+  let last_height = 0L in
+  let relay = true in
+  let lastchkpt = None in
+  send_msg sout (Version(vers,srvs,tm,myaddr(),n,!this_nodes_nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt));
+  preconns := (s,sin,sout,Unix.time(),ref 0,Some(n),ref None,ref None)::!preconns
+
+let initialize_conn n s =
+  let sin = Unix.in_channel_of_descr s in
+  let sout = Unix.out_channel_of_descr s in
+  set_binary_mode_in sin true;
+  set_binary_mode_out sout true;
+  initialize_conn_2 n s sin sout
+
+let knownpeers : (string,int64) Hashtbl.t = Hashtbl.create 1000
+
+let tryconnectpeer n =
+  if List.length !conns + List.length !preconns >= !Config.maxconns then raise EnoughConnections;
+  let (ip,port,v6) = extract_ip_and_port n in
+  if not (!Config.ip = Some(ip) && !Config.ipv6 = v6) then (*** if this is a fallback node, do not connect to itself ***)
+    begin
+      try
+	match !Config.socks with
+	| None ->
+	    let s = connectpeer ip port in
+	    ignore (initialize_conn n s)
+	| Some(4) ->
+	    let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
+	    ignore (initialize_conn_2 n s sin sout);
+	| Some(5) ->
+	    raise (Failure "socks5 is not yet supported")
+	| Some(z) ->
+	    raise (Failure ("socks" ^ (string_of_int z) ^ " is not yet supported"))
+      with
+      | RequestRejected ->
+	  Printf.printf "RequestRejected\n"; flush stdout;
+      | _ ->
+	  ()
+    end
+
+let fallbacknodes = [
+"108.61.219.125:20805"
+]
+
+let testnetfallbacknodes = [
+"108.61.219.125:20804";
+"45.63.70.252:20804"
+]
+
+let getfallbacknodes () =
+  if !Config.testnet then
+    testnetfallbacknodes
+  else
+    fallbacknodes
+
+let addknownpeer lasttm n =
+  if not (n = "") && not (List.mem n (getfallbacknodes())) then
+    try
+      let oldtm = Hashtbl.find knownpeers n in
+      Hashtbl.replace knownpeers n lasttm
+    with Not_found ->
+      let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
+      if Sys.file_exists peerfn then
+	let s = open_out_gen [Open_append;Open_wronly] 0x660 peerfn in
+	output_string s n;
+	output_char s '\n';
+	output_string s (Int64.to_string lasttm);
+	output_char s '\n';
+	close_out s
+      else
+	let s = open_out peerfn in
+	output_string s n;
+	output_char s '\n';
+	output_string s (Int64.to_string lasttm);
+	output_char s '\n';
+	close_out s
+
+let getknownpeers () =
+  let cnt = ref 0 in
+  let peers = ref [] in
+  let currtm = Int64.of_float (Unix.time()) in
+  Hashtbl.iter (fun n lasttm -> if !cnt < 1000 && Int64.sub currtm lasttm < 604800L then (incr cnt; peers := n::!peers)) knownpeers;
+  !peers
+
+let loadknownpeers () =
+  let currtm = Int64.of_float (Unix.time()) in
+  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
+  if Sys.file_exists peerfn then
+    let s = open_in peerfn in
+    try
+      while true do
+	let n = input_line s in
+	let lasttm = Int64.of_string (input_line s) in
+	if Int64.sub currtm lasttm < 604800L then
+	  Hashtbl.add knownpeers n lasttm
+      done
+    with End_of_file -> ()
+
+let saveknownpeers () =
+  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
+  let s = open_out_gen [Open_append;Open_wronly;Open_trunc] 0x660 peerfn in
+  Hashtbl.iter
+    (fun n lasttm ->
+      output_string s n;
+      output_char s '\n';
+      output_string s (Int64.to_string lasttm);
+      output_char s '\n')
+    knownpeers;
+  close_out s
 
 let known_blockheader_p blkh h =
   List.mem_assoc h !recentblockheaders (*** should also check if it's in a file ***)

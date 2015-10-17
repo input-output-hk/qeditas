@@ -9,6 +9,8 @@ open Tx
 open Ctre
 open Block
 
+val myaddr : unit -> string
+
 val recentledgerroots : (hashval, int64 * hashval) Hashtbl.t
 val recentblockheaders : (hashval * (big_int * int64 * blockheader)) list ref
 val recentcommitments : (int64 * hashval) list ref

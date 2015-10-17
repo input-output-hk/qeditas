@@ -229,16 +229,6 @@ let rand_int64 () =
     (Int64.of_int32 random_int32_array.(0))
     (Int64.shift_right_logical (Int64.of_int32 random_int32_array.(1)) 32);;
 
-let myaddr () =
-  match !Config.ip with
-  | Some(ip) -> 
-      if !Config.ipv6 then
-	"[" ^ ip ^ "]:" ^ (string_of_int !Config.port)
-      else
-	ip ^ ":" ^ (string_of_int !Config.port)
-  | None ->
-      "";;
-
 let search_for_conns () =
   try
     List.iter tryconnectpeer (getknownpeers());
@@ -613,6 +603,7 @@ let main () =
 	List.iter
 	  (fun (s,sin,sout,stm,ph,toaddr,oaf,ocs) ->
 	    try
+	      Printf.printf "Checking preconn %d %s\n" !ph (match toaddr with Some(n) -> n | None -> "-"); flush stdout;
 	      match rec_msg_nohang sin 0.1 1.0 with
 	      | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_header_height2,first_full_height2,last_height2,relay2,lastchkpt2)) ->
 		  if n2 = !this_nodes_nonce || !ph > 1 then
