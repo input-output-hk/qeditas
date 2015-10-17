@@ -581,7 +581,7 @@ let initialize_conn_accept s =
       let sout = Unix.out_channel_of_descr s in
       set_binary_mode_in sin true;
       set_binary_mode_out sout true;
-      preconns := (s,sin,sout,Unix.time(),ref 1,None,ref None,ref None)::!preconns
+      preconns := (s,sin,sout,Unix.time(),ref 1,ref None,ref None)::!preconns
     end
   else
     begin
@@ -606,7 +606,7 @@ let initialize_conn_2 n s sin sout =
   let relay = true in
   let lastchkpt = None in
   send_msg sout (Version(vers,srvs,tm,myaddr(),n,!this_nodes_nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt));
-  preconns := (s,sin,sout,Unix.time(),ref 0,Some(n),ref None,ref None)::!preconns
+  preconns := (s,sin,sout,Unix.time(),ref 2,ref None,ref None)::!preconns
 
 let initialize_conn n s =
   let sin = Unix.in_channel_of_descr s in

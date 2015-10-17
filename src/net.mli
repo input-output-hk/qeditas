@@ -80,7 +80,7 @@ type connstate = {
   }
 
 val conns : (Unix.file_descr * in_channel * out_channel * string * connstate) list ref
-val preconns : (Unix.file_descr * in_channel * out_channel * float * int ref * string option * string option ref * connstate option ref) list ref
+val preconns : (Unix.file_descr * in_channel * out_channel * float * int ref * string option ref * connstate option ref) list ref
 val this_nodes_nonce : int64 ref
 
 exception EnoughConnections

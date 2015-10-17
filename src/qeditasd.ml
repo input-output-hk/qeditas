@@ -284,7 +284,6 @@ let send_assets_to_staker tostkr c =
 let stop_staking () =
   match !stakingproccomm with
   | Some(sti,sto,ste) ->
-      Printf.printf "Pausing staking since found hit\n"; flush stdout;
       begin
 	try
 	  output_byte sto 80;
@@ -566,17 +565,12 @@ let main () =
 	      start_staking(); (*** start staking again ***)
 	  | None -> (*** if there is no waiting block and we aren't staking, then restart staking ***)
 	      begin
-		match !stakingproccomm with
-		| Some(fromstkr,tostkr,stkerr) ->
-		    begin
-		      match !currstaking with
-		      | None -> start_staking()
-		      | Some(_,currcs,_,_,_) -> (*** if we are staking, make sure it's still on top of the best block ***)
-			  let (blkh,cs,currledgerroot,tm,bho,(csm,fsmprev,tar)) = beststakingoption () in
-			  possibly_request_full_block blkh bho;
-			  if lt_big_int currcs cs then start_staking();
-		      | _ -> ()
-		    end
+		match !currstaking with
+		| None -> start_staking()
+		| Some(_,currcs,_,_,_) -> (*** if we are staking, make sure it's still on top of the best block ***)
+		    let (blkh,cs,currledgerroot,tm,bho,(csm,fsmprev,tar)) = beststakingoption () in
+		    possibly_request_full_block blkh bho;
+		    if lt_big_int currcs cs then start_staking();
 	      end
 	  | _ -> ()
 	end;
@@ -601,9 +595,9 @@ let main () =
 	end;
 	(*** check each preconnection for handshake progress ***)
 	List.iter
-	  (fun (s,sin,sout,stm,ph,toaddr,oaf,ocs) ->
+	  (fun (s,sin,sout,stm,ph,oaf,ocs) ->
 	    try
-	      Printf.printf "Checking preconn %d %s\n" !ph (match toaddr with Some(n) -> n | None -> "-"); flush stdout;
+	      Printf.printf "Checking preconn %d\n" !ph; flush stdout;
 	      match rec_msg_nohang sin 0.1 1.0 with
 	      | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_header_height2,first_full_height2,last_height2,relay2,lastchkpt2)) ->
 		  if n2 = !this_nodes_nonce || !ph > 1 then
@@ -615,6 +609,7 @@ let main () =
 		    end
 		  else
 		    begin
+		      ignore (send_msg sout Verack);
 		      oaf := Some(addr_from2);
 		      ocs :=
 			Some
@@ -631,46 +626,34 @@ let main () =
 			    first_full_height = first_full_height2;
 			    last_height = last_height2;
 			  };
-		      if !ph = 0 then
+		      if !ph = 1 then
 			begin
-			  match toaddr with
-			  | Some(n) ->
-			      ph := 2;
-			      let vers = 1l in
-			      let srvs = 1L in
-			      let tm = Int64.of_float(Unix.time()) in
-			      let user_agent = "Qeditas-Testing-Phase" in
-			      let fr0 = RFAll in
-			      let fr1 = RFAll in
-			      let fr2 = RFAll in
-			      let first_header_height = 0L in
-			      let first_full_height = 0L in
-			      let last_height = 0L in
-			      let relay = true in
-			      let lastchkpt = None in
-			      ignore (send_msg sout (Version(vers,srvs,tm,myaddr(),n,!this_nodes_nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt)))
-			  | None ->
-			      ph := -1;
-			      Printf.printf "Handshake failed. (do not know listening address to send with Version message)\n"; flush stdout;
-			      Unix.close s; (*** handshake failed ***)
-			end
-		      else
-			begin
-			  ph := 3;
-			  ignore (send_msg sout Verack)
-			end
+			  let vers = 1l in
+			  let srvs = 1L in
+			  let tm = Int64.of_float(Unix.time()) in
+			  let user_agent = "Qeditas-Testing-Phase" in
+			  let fr0 = RFAll in
+			  let fr1 = RFAll in
+			  let fr2 = RFAll in
+			  let first_header_height = 0L in
+			  let first_full_height = 0L in
+			  let last_height = 0L in
+			  let relay = true in
+			  let lastchkpt = None in
+			  ignore (send_msg sout (Version(vers,srvs,tm,myaddr(),addr_from2,!this_nodes_nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt)))
+			end;
+		      ph := 2 + !ph
 		    end
 	      | Some(_,_,Verack) ->
 		  if !ph < 2 then (*** incorrect handshake ***)
 		    begin
 		      ph := -1;
-		      Printf.printf "Handshake failed. (Verack before Version)\n"; flush stdout;
+		      Printf.printf "Handshake failed. (Verack when expecting Version)\n"; flush stdout;
 		      Unix.close s; (*** handshake failed ***)
 		    end
 		  else
 		    begin
 		      ph := 4;
-		      if !ph = 2 then ignore (send_msg sout Verack);
 		      match (!oaf,!ocs) with
 		      | (Some(addr_from),Some(cs)) ->
 			  conns := (s,sin,sout,addr_from,cs)::!conns; (*** handshake succeeded, real conn now ***)
@@ -701,7 +684,7 @@ let main () =
 		ph := -1
 	  )
 	  !preconns;
-	preconns := List.filter (fun (s,sin,sout,stm,ph,toaddr,oaf,ocs) -> !ph >= 0 && !ph < 4) !preconns;
+	preconns := List.filter (fun (s,sin,sout,stm,ph,oaf,ocs) -> !ph > 0 && !ph < 4) !preconns;
 	(*** check each connection for possible messages ***)
 	List.iter
 	  (fun (s,sin,sout,peeraddr,cs) ->
