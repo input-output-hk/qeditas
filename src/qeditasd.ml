@@ -299,14 +299,14 @@ let stop_staking () =
 let start_staking () =
   stop_staking(); (*** stop staking first, if necessary ***)
   let stkexec = Filename.concat (Filename.dirname (Sys.argv.(0))) "qeditasstk" in
-  Printf.printf "about to start staker\n"; flush stdout;
-  let (fromstkr,tostkr,stkerr) = Unix.open_process_full stkexec [||] in
-  Printf.printf "started staker\n"; flush stdout;
-  stakingproccomm := Some(fromstkr,tostkr,stkerr);
   try
     let (blkh,cs,currledgerroot,tm,bho,(csm,fsmprev,tar)) = beststakingoption () in
     possibly_request_full_block blkh bho;
     let ca = lookup_frame_ctree_root_abbrev !localframehash currledgerroot in
+    Printf.printf "about to start staker\n"; flush stdout;
+    let (fromstkr,tostkr,stkerr) = Unix.open_process_full stkexec [||] in
+    stakingproccomm := Some(fromstkr,tostkr,stkerr);
+    Printf.printf "started staker\n"; flush stdout;
     if send_assets_to_staker tostkr (CAbbrev(currledgerroot,ca)) then
       begin
 	output_byte tostkr 66; (*** send the staking process the block height, the target, the stake modifier and the next allowed timestamp ***)
@@ -325,10 +325,7 @@ let start_staking () =
 	flush stdout;
 	stop_staking()
       end
-  with Not_found ->
-    Printf.printf "Could not determine a starting point for staking. Not staking.\n";
-    flush stdout;
-    stop_staking()
+  with Not_found -> ();;
 
 let main () =
   begin
@@ -378,7 +375,9 @@ let main () =
     loadknownpeers();
     search_for_conns ();
     while true do (*** main process loop ***)
+      Unix.sleep 1; (*** while debugging to prevent massive output ***)
       try
+	Printf.printf "main loop 1\n"; flush stdout;
 	begin (*** if staking check to see if staking has found a hit ***)
 	  match !stakingproccomm with
 	  | None -> ()
@@ -555,6 +554,7 @@ let main () =
 		  Printf.printf "Exception thrown while trying to read from the staking process.\nKilling staker\n";
 		  stop_staking();
 	end;
+	Printf.printf "main loop 2\n"; flush stdout;
 	begin (*** check to see if a new block can be published ***)
 	  match !waitingblock with
 	  | Some(stktm,blkh,bhh,bh,bd,cs) when Int64.of_float (Unix.time()) >= stktm ->
@@ -574,6 +574,7 @@ let main () =
 	      end
 	  | _ -> ()
 	end;
+	Printf.printf "main loop 3\n"; flush stdout;
 	begin (*** possibly check for a new incoming connection ***)
 	  match l with
 	  | Some(l) ->
@@ -594,6 +595,7 @@ let main () =
 	  | None -> ()
 	end;
 	(*** check each preconnection for handshake progress ***)
+	Printf.printf "main loop 4 %d\n" (List.length !preconns); flush stdout;
 	List.iter
 	  (fun (s,sin,sout,stm,ph,oaf,ocs) ->
 	    try
@@ -602,7 +604,6 @@ let main () =
 	      | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_header_height2,first_full_height2,last_height2,relay2,lastchkpt2)) ->
 		  if n2 = !this_nodes_nonce || !ph = 2 then
 		    begin (*** prevent connection to self, or incorrect handshake ***)
-		      Unix.close s;
 		      ph := -1;
 		      Printf.printf "Handshake failed. (either self conn or expecting Verack)\n"; flush stdout;
 		      Unix.close s; (*** handshake failed ***)
@@ -689,6 +690,7 @@ let main () =
 		end;
 	      !ph > 0 && !ph < 4)
 	    !preconns;
+	Printf.printf "main loop 5 %d %d\n" (List.length !preconns) (List.length !conns); flush stdout;
 	(*** check each connection for possible messages ***)
 	List.iter
 	  (fun (s,sin,sout,peeraddr,cs) ->
@@ -733,9 +735,9 @@ let main () =
 	  )
 	  !conns;
 	conns := List.filter (fun (s,sin,sout,peeraddr,cs) -> cs.alive) !conns
-      with
+      with (*** ensuring no exception escapes the main loop ***)
       | Failure(x) -> Printf.printf "Failure: %s\n...but continuing\n" x; flush stdout
-      | _ -> () (*** ensuring no exception escapes the main loop ***)
+      | exc -> Printf.printf "%s\n...but continuing\n" (Printexc.to_string exc); flush stdout
     done
   end;;
 
