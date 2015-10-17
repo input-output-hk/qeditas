@@ -228,6 +228,22 @@ let initialize_conn_accept s =
     end
 
 let initialize_conn_2 n s sin sout =
+  Printf.printf "calling 2\n"; flush stdout;
+  (*** initiate handshake ***)
+  let vers = 1l in
+  let srvs = 1L in
+  let tm = Int64.of_float(Unix.time()) in
+  let nonce = rand_int64() in
+  let user_agent = "Qeditas-Testing-Phase" in
+  let fr0 = RFAll in
+  let fr1 = RFAll in
+  let fr2 = RFAll in
+  let first_header_height = 0L in
+  let first_full_height = 0L in
+  let last_height = 0L in
+  let relay = true in
+  let lastchkpt = None in
+  send_msg sout (Version(vers,srvs,tm,myaddr(),n,nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt));
   preconns := (s,sin,sout,Unix.time(),ref 0,Some(n),ref None,ref None)::!preconns
 
 let initialize_conn n s =
@@ -251,7 +267,7 @@ let tryconnectpeer n =
 	    ignore (initialize_conn n s)
 	| Some(4) ->
 	    let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
-	    ignore (initialize_conn_2 n s sin sout)
+	    ignore (initialize_conn_2 n s sin sout);
 	| Some(5) ->
 	    raise (Failure "socks5 is not yet supported")
 	| Some(z) ->
@@ -279,7 +295,7 @@ let getfallbacknodes () =
     fallbacknodes
 
 let addknownpeer lasttm n =
-  if not (List.mem n (getfallbacknodes())) then
+  if not (n = "") && not (List.mem n (getfallbacknodes())) then
     try
       let oldtm = Hashtbl.find knownpeers n in
       Hashtbl.replace knownpeers n lasttm
@@ -884,7 +900,7 @@ let handle_msg sin sout cs replyto mh m =
       begin
 	List.iter
 	  (fun (_,_,_,peeraddr,cs) ->
-	    if !cnt < 1000 then (incr cnt; addrl := (Int64.of_float cs.lastmsgtm,peeraddr) :: !addrl)
+	    if !cnt < 1000 && not (peeraddr = "") then (incr cnt; addrl := (Int64.of_float cs.lastmsgtm,peeraddr) :: !addrl)
 	  )
 	  !conns;
 	ignore (send_msg sout (Addr(!addrl)))
