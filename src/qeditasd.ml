@@ -600,7 +600,7 @@ let main () =
 	      Printf.printf "Checking preconn %d\n" !ph; flush stdout;
 	      match rec_msg_nohang sin 0.1 1.0 with
 	      | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_header_height2,first_full_height2,last_height2,relay2,lastchkpt2)) ->
-		  if n2 = !this_nodes_nonce || !ph > 1 then
+		  if n2 = !this_nodes_nonce || !ph > 2 then
 		    begin (*** prevent connection to self, or incorrect handshake ***)
 		      Unix.close s;
 		      ph := -1;
@@ -645,23 +645,14 @@ let main () =
 		      ph := 2 + !ph
 		    end
 	      | Some(_,_,Verack) ->
-		  if !ph < 2 then (*** incorrect handshake ***)
+		  if !ph < 3 then (*** incorrect handshake ***)
 		    begin
 		      ph := -1;
 		      Printf.printf "Handshake failed. (Verack when expecting Version)\n"; flush stdout;
 		      Unix.close s; (*** handshake failed ***)
 		    end
 		  else
-		    begin
-		      ph := 4;
-		      match (!oaf,!ocs) with
-		      | (Some(addr_from),Some(cs)) ->
-			  conns := (s,sin,sout,addr_from,cs)::!conns; (*** handshake succeeded, real conn now ***)
-			  send_initial_inv sout cs;
-			  ignore (send_msg sout GetAddr)
-		      | _ ->
-			  ()
-		    end
+		    ph := 4;
 	      | None ->
 		  if Unix.time() -. stm > 120.0 then
 		    begin
@@ -678,13 +669,26 @@ let main () =
 		Printf.printf "Handshake failed. (IllformedMsg)\n"; flush stdout;
 		Unix.close s; (*** handshake failed ***)
 		ph := -1
-	    | _ ->
-		Printf.printf "Handshake failed.\n"; flush stdout;
+	    | exc ->
+		Printf.printf "Handshake failed. %s\n" (Printexc.to_string exc); flush stdout;
 		Unix.close s; (*** handshake failed ***)
 		ph := -1
 	  )
 	  !preconns;
-	preconns := List.filter (fun (s,sin,sout,stm,ph,oaf,ocs) -> !ph > 0 && !ph < 4) !preconns;
+	preconns :=
+	  List.filter
+	    (fun (s,sin,sout,stm,ph,oaf,ocs) ->
+	      if !ph = 4 then 
+		begin
+		  match (!oaf,!ocs) with
+		  | (Some(addr_from),Some(cs)) ->
+		      conns := (s,sin,sout,addr_from,cs)::!conns; (*** handshake succeeded, real conn now ***)
+		      send_initial_inv sout cs;
+		      ignore (send_msg sout GetAddr)
+		  | _ -> ()
+		end;
+	      !ph > 0 && !ph < 4)
+	    !preconns;
 	(*** check each connection for possible messages ***)
 	List.iter
 	  (fun (s,sin,sout,peeraddr,cs) ->
