@@ -310,15 +310,16 @@ let getknownpeers () =
 let loadknownpeers () =
   let currtm = Int64.of_float (Unix.time()) in
   let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
-  let s = open_in peerfn in
-  try
-    while true do
-      let n = input_line s in
-      let lasttm = Int64.of_string (input_line s) in
-      if Int64.sub currtm lasttm < 604800L then
-	Hashtbl.add knownpeers n lasttm
-    done
-  with End_of_file -> ()
+  if Sys.file_exists peerfn then
+    let s = open_in peerfn in
+    try
+      while true do
+	let n = input_line s in
+	let lasttm = Int64.of_string (input_line s) in
+	if Int64.sub currtm lasttm < 604800L then
+	  Hashtbl.add knownpeers n lasttm
+      done
+    with End_of_file -> ()
 
 let saveknownpeers () =
   let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
