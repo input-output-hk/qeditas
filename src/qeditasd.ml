@@ -652,8 +652,8 @@ let main () =
 		      Printf.printf "Handshake failed. (Verack when expecting Version)\n"; flush stdout;
 		      Unix.close s; (*** handshake failed ***)
 		    end
-		  else
-		    ph := 4;
+		  else if !ph = 2 then
+		    ph := 1 + !ph
 	      | None ->
 		  if Unix.time() -. stm > 120.0 then
 		    begin
@@ -679,10 +679,11 @@ let main () =
 	preconns :=
 	  List.filter
 	    (fun (s,sin,sout,stm,ph,oaf,ocs) ->
-	      if !ph = 4 then 
+	      if !ph >= 4 then 
 		begin
 		  match (!oaf,!ocs) with
 		  | (Some(addr_from),Some(cs)) ->
+		      Printf.printf "Handshake succeeded, connection added\n"; flush stdout;
 		      conns := (s,sin,sout,addr_from,cs)::!conns; (*** handshake succeeded, real conn now ***)
 		      send_initial_inv sout cs;
 		      ignore (send_msg sout GetAddr)
