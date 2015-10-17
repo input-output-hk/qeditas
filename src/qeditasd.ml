@@ -600,11 +600,11 @@ let main () =
 	      Printf.printf "Checking preconn %d\n" !ph; flush stdout;
 	      match rec_msg_nohang sin 0.1 1.0 with
 	      | Some(_,_,Version(vers2,srvs2,tm2,addr_recv2,addr_from2,n2,user_agent2,fr20,fr21,fr22,first_header_height2,first_full_height2,last_height2,relay2,lastchkpt2)) ->
-		  if n2 = !this_nodes_nonce || !ph > 2 then
+		  if n2 = !this_nodes_nonce || !ph = 2 then
 		    begin (*** prevent connection to self, or incorrect handshake ***)
 		      Unix.close s;
 		      ph := -1;
-		      Printf.printf "Handshake failed. (Version sent twice)\n"; flush stdout;
+		      Printf.printf "Handshake failed. (either self conn or expecting Verack)\n"; flush stdout;
 		      Unix.close s; (*** handshake failed ***)
 		    end
 		  else
@@ -645,7 +645,7 @@ let main () =
 		      ph := 2 + !ph
 		    end
 	      | Some(_,_,Verack) ->
-		  if !ph < 3 then (*** incorrect handshake ***)
+		  if !ph < 2 then (*** incorrect handshake ***)
 		    begin
 		      ph := -1;
 		      Printf.printf "Handshake failed. (Verack when expecting Version)\n"; flush stdout;
