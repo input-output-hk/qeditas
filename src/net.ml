@@ -843,13 +843,14 @@ let handle_msg sin sout cs replyto mh m =
 			with Not_found -> None (*** reject orphan headers ***)
 		      end
 		with
-		| Some(cumulstk) -> (*** header is accepted, put it on the list with the new cumulative stake ***)
-		    Printf.printf "Got header with cumul stake: %s\n" (string_of_big_int cumulstk); flush stdout;
+		| Some(prevcumulstk) -> (*** header is accepted, put it on the list with the new cumulative stake ***)
 		    let (_,_,tar) = bhd.tinfo in
+		    let cumulstk = cumul_stake prevcumulstk tar bhd.deltatime in
+		    Printf.printf "Got header with cumul stake: %s\n" (string_of_big_int cumulstk); flush stdout;
 		    let bhdh = hash_blockheaderdata bhd in
 		    if not (known_blockheader_p blkh bhdh) then (*** make sure it's new ***)
 		      begin
-			insertnewblockheader (hash_blockheaderdata bhd) (cumul_stake cumulstk tar bhd.deltatime) false blkh (bhd,bhs);
+			insertnewblockheader (hash_blockheaderdata bhd) cumulstk false blkh (bhd,bhs);
 			begin (*** If there is some block we are waiting to publish, see if it has more cumulative stake that this one. If not, forget it. ***)
 			  match !waitingblock with
 			  | Some(_,_,_,_,_,mycumulstk) when lt_big_int mycumulstk cumulstk ->
