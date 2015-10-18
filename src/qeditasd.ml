@@ -27,13 +27,6 @@ let compute_recid (r,s) k =
 	if evenp y then 2 else 3
   | None -> raise (Failure "bad0");;
 
-let lookup_ctree_root_abbrev cr =
-  if cr = hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e" then
-    hexstring_hashval "df418292e7c54837ebdd3962cbfee9d4bc8ca981" (*** this is only correct locally; rethink ***)
-  else
-    let (blkh,ca) = Hashtbl.find recentledgerroots cr in
-    ca
-
 let rec fetch_blockheader blkh bhh =
   try
     let (cs,blkh2,bh) = List.assoc bhh !recentblockheaders in
@@ -127,7 +120,8 @@ let possibly_request_full_block blkh bho =
 		  begin
 		    let tr1a = ctree_of_block ((bhd,bhs),bd) in
 		    let tr1h = ctree_hashroot tr1a in
-		    let tr1b = CAbbrev(tr1h,lookup_ctree_root_abbrev tr1h) in
+		    let ca = lookup_frame_ctree_root_abbrev !localframehash tr1h in
+		    let tr1b = CAbbrev(tr1h,lookup_frame_ctree_root_abbrev !localframehash tr1h) in
 		    let tr1 = octree_lub (Some(tr1a)) (Some(tr1b)) in (*** the tree of the block combined with the tree this node is keeping up with ***)
 		    match txl_octree_trans blkh (coinstake ((bhd,bhs),bd)::List.map (fun (tx,_) -> tx) bd.blockdelta_stxl) tr1 with
 		    | Some(tr2) ->
@@ -182,7 +176,7 @@ let random_initialized : bool ref = ref false;;
 
 (*** generate 512 random bits and then use sha256 on them each time we need a new random number ***)
 let initialize_random_seed () =
-  let r = open_in_bin "/dev/random" in
+  let r = open_in_bin (if !Config.testnet then "/dev/urandom" else "/dev/random") in
   let v = ref 0l in
   for i = 0 to 15 do
     v := 0l;
@@ -301,12 +295,11 @@ let start_staking () =
   let stkexec = Filename.concat (Filename.dirname (Sys.argv.(0))) "qeditasstk" in
   try
     let (blkh,cs,currledgerroot,tm,bho,(csm,fsmprev,tar)) = beststakingoption () in
+    Printf.printf "should stake on top of current best block, height %Ld, hash %s\n" blkh (match bho with Some(bhd,_) -> (hashval_hexstring (hash_blockheaderdata bhd)) | None -> "(genesis)"); flush stdout;
     possibly_request_full_block blkh bho;
     let ca = lookup_frame_ctree_root_abbrev !localframehash currledgerroot in
-    Printf.printf "about to start staker\n"; flush stdout;
     let (fromstkr,tostkr,stkerr) = Unix.open_process_full stkexec [||] in
     stakingproccomm := Some(fromstkr,tostkr,stkerr);
-    Printf.printf "started staker\n"; flush stdout;
     if send_assets_to_staker tostkr (CAbbrev(currledgerroot,ca)) then
       begin
 	output_byte tostkr 66; (*** send the staking process the block height, the target, the stake modifier and the next allowed timestamp ***)
@@ -317,6 +310,7 @@ let start_staking () =
 	seocf (seo_int64 seoc (Int64.add 1L tm) (tostkr,None));
 	output_byte tostkr 83; (*** start staking ***)
 	flush tostkr;
+	Printf.printf "staking on top of current best block, height %Ld, hash %s\n" blkh (match bho with Some(bhd,_) -> (hashval_hexstring (hash_blockheaderdata bhd)) | None -> "(genesis)"); flush stdout;
 	currstaking := Some(blkh,cs,currledgerroot,bho,(csm,fsmprev,tar))
       end
     else
@@ -325,12 +319,15 @@ let start_staking () =
 	flush stdout;
 	stop_staking()
       end
-  with Not_found -> ();;
+  with
+  | Not_found -> ()
+  | exc -> Printf.printf "raised: %s\n" (Printexc.to_string exc); flush stdout;;
 
 let main () =
   begin
-    process_config_args();
+    datadir_from_command_line(); (*** if -datadir=... is on the command line, then set Config.datadir so we can find the config file ***)
     process_config_file();
+    process_config_args(); (*** settings on the command line shadow those in the config file ***)
     if !Config.seed = "" && !Config.lastcheckpoint = "" then
       begin
 	raise (Failure "Need either a seed (to validate the genesis block) or a lastcheckpoint (to start later in the blockchain); have neither")
@@ -349,8 +346,11 @@ let main () =
 	max_target := shift_left_big_int unit_big_int 255; (*** make the max_target much higher (so difficulty can be easier for testing) ***)
 	genesistarget := shift_left_big_int unit_big_int 248; (*** make the genesistarget much higher (so difficulty can be easier for testing) ***)
       end;
+    Printf.printf "Loading current frame\n"; flush stdout;
     localframe := Commands.load_currentframe();
     localframehash := hashframe !localframe;
+    Printf.printf "Loading ctree index\n"; flush stdout;
+    load_root_abbrevs_index();
     Printf.printf "Initializing random seed\n"; flush stdout;
     if not !random_initialized then initialize_random_seed();
     this_nodes_nonce := rand_int64();
@@ -377,24 +377,24 @@ let main () =
     while true do (*** main process loop ***)
       Unix.sleep 1; (*** while debugging to prevent massive output ***)
       try
-	Printf.printf "main loop 1\n"; flush stdout;
-	begin (*** if staking check to see if staking has found a hit ***)
-	  match !stakingproccomm with
-	  | None -> ()
-	  | Some(fromstkr,tostkr,stkerr) ->
-	      try
-		match input_byte_nohang fromstkr 0.1 with
-		| Some(z) when z = 72 -> (*** hit with no storage ***)
-		    let c = (fromstkr,None) in
-		    let (stktm,c) = sei_int64 seic c in
-		    let (alpha,c) = sei_hashval seic c in
-		    let alpha2 = hashval_p2pkh_addr alpha in
-		    let (aid,_) = sei_hashval seic c in
-		    Printf.printf "Asset %s at address %s can stake at time %Ld (%Ld seconds from now)\n" (hashval_hexstring aid) (Cryptocurr.addr_qedaddrstr alpha2) stktm (Int64.sub stktm (Int64.of_float (Unix.time())));
-		    flush stdout;
-		    begin
-		      try
-			let (_,_,bday,obl,v) = List.find (fun (_,h,_,_,_) -> h = aid) !Commands.stakingassets in
+	if !Config.staking then
+	  begin (*** if staking check to see if staking has found a hit ***)
+	    match !stakingproccomm with
+	    | None -> ()
+	    | Some(fromstkr,tostkr,stkerr) ->
+		try
+		  match input_byte_nohang fromstkr 0.1 with
+		  | Some(z) when z = 72 -> (*** hit with no storage ***)
+		      let c = (fromstkr,None) in
+		      let (stktm,c) = sei_int64 seic c in
+		      let (alpha,c) = sei_hashval seic c in
+		      let alpha2 = hashval_p2pkh_addr alpha in
+		      let (aid,_) = sei_hashval seic c in
+		      Printf.printf "Asset %s at address %s can stake at time %Ld (%Ld seconds from now)\n" (hashval_hexstring aid) (Cryptocurr.addr_qedaddrstr alpha2) stktm (Int64.sub stktm (Int64.of_float (Unix.time())));
+		      flush stdout;
+		      begin
+			try
+			  let (_,_,bday,obl,v) = List.find (fun (_,h,_,_,_) -> h = aid) !Commands.stakingassets in
 			  match !currstaking with
 			  | Some(blkh,cs,prevledgerroot,pbh,(csm,fsmprev,tar)) ->
 			      stop_staking();
@@ -419,14 +419,14 @@ let main () =
 				  match
 				    get_tx_supporting_octree
 				      coinstk
-				      (Some(CAbbrev(prevledgerroot,lookup_ctree_root_abbrev prevledgerroot)))
+				      (Some(CAbbrev(prevledgerroot,lookup_frame_ctree_root_abbrev !localframehash prevledgerroot)))
 				  with
 				  | Some(c) -> c
 				  | None -> raise (Failure "ctree should not have become empty")
 				in
 				let (prevcforheader,cgr) = factor_inputs_ctree_cgraft [(alpha2,aid)] prevcforblock in
 				let (newcr,newca) =
-				  match tx_octree_trans blkh coinstk (Some(CAbbrev(prevledgerroot,lookup_ctree_root_abbrev prevledgerroot))) with
+				  match tx_octree_trans blkh coinstk (Some(CAbbrev(prevledgerroot,lookup_frame_ctree_root_abbrev !localframehash prevledgerroot))) with
 				  | None -> raise (Failure "ctree should not have become empty")
 				  | Some(c) ->
 				      match frame_filter_ctree (wrap_frame !localframe) c with
@@ -553,28 +553,29 @@ let main () =
 	      | _ ->
 		  Printf.printf "Exception thrown while trying to read from the staking process.\nKilling staker\n";
 		  stop_staking();
-	end;
-	Printf.printf "main loop 2\n"; flush stdout;
-	begin (*** check to see if a new block can be published ***)
-	  match !waitingblock with
-	  | Some(stktm,blkh,bhh,bh,bd,cs) when Int64.of_float (Unix.time()) >= stktm ->
-	      waitingblock := None;
-	      insertnewblockheader bhh cs true blkh bh;
-	      Hashtbl.add recentblockdeltas bhh bd;
-	      broadcast_inv [(1,blkh,bhh)]; (*** broadcast it with Inv ***)
-	      start_staking(); (*** start staking again ***)
-	  | None -> (*** if there is no waiting block and we aren't staking, then restart staking ***)
-	      begin
-		match !currstaking with
-		| None -> start_staking()
-		| Some(_,currcs,_,_,_) -> (*** if we are staking, make sure it's still on top of the best block ***)
-		    let (blkh,cs,currledgerroot,tm,bho,(csm,fsmprev,tar)) = beststakingoption () in
-		    possibly_request_full_block blkh bho;
-		    if lt_big_int currcs cs then start_staking();
-	      end
-	  | _ -> ()
-	end;
-	Printf.printf "main loop 3\n"; flush stdout;
+	  end;
+	if !Config.staking then
+	  begin (*** check to see if a new block can be published ***)
+	    match !waitingblock with
+	    | Some(stktm,blkh,bhh,bh,bd,cs) when Int64.of_float (Unix.time()) >= stktm ->
+		waitingblock := None;
+		insertnewblockheader bhh cs true blkh bh;
+		Hashtbl.add recentblockdeltas bhh bd;
+		broadcast_inv [(1,blkh,bhh)]; (*** broadcast it with Inv ***)
+		start_staking(); (*** start staking again ***)
+	    | None -> (*** if there is no waiting block and we aren't staking, then restart staking ***)
+		begin
+		  match !currstaking with
+		  | None ->
+		      start_staking()
+		  | Some(_,currcs,_,_,_) -> (*** if we are staking, make sure it's still on top of the best block ***)
+		      let (blkh,cs,currledgerroot,tm,bho,(csm,fsmprev,tar)) = beststakingoption () in
+		      possibly_request_full_block blkh bho;
+		      if lt_big_int currcs cs then start_staking();
+		end
+	    | _ ->
+		()
+	  end;
 	begin (*** possibly check for a new incoming connection ***)
 	  match l with
 	  | Some(l) ->
@@ -595,7 +596,6 @@ let main () =
 	  | None -> ()
 	end;
 	(*** check each preconnection for handshake progress ***)
-	Printf.printf "main loop 4 %d\n" (List.length !preconns); flush stdout;
 	List.iter
 	  (fun (s,sin,sout,stm,ph,oaf,ocs) ->
 	    try
@@ -605,7 +605,6 @@ let main () =
 		  if n2 = !this_nodes_nonce || !ph = 2 then
 		    begin (*** prevent connection to self, or incorrect handshake ***)
 		      ph := -1;
-		      Printf.printf "Handshake failed. (either self conn or expecting Verack)\n"; flush stdout;
 		      Unix.close s; (*** handshake failed ***)
 		    end
 		  else
@@ -641,7 +640,7 @@ let main () =
 			  let last_height = 0L in
 			  let relay = true in
 			  let lastchkpt = None in
-			  ignore (send_msg sout (Version(vers,srvs,tm,myaddr(),addr_from2,!this_nodes_nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt)))
+			  ignore (send_msg sout (Version(vers,srvs,tm,addr_from2,myaddr(),!this_nodes_nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt)))
 			end;
 		      ph := 2 + !ph
 		    end
@@ -649,7 +648,6 @@ let main () =
 		  if !ph < 2 then (*** incorrect handshake ***)
 		    begin
 		      ph := -1;
-		      Printf.printf "Handshake failed. (Verack when expecting Version)\n"; flush stdout;
 		      Unix.close s; (*** handshake failed ***)
 		    end
 		  else
@@ -657,17 +655,14 @@ let main () =
 	      | None ->
 		  if Unix.time() -. stm > 120.0 then
 		    begin
-		      Printf.printf "Handshake failed. (timeout)\n"; flush stdout;
 		      Unix.close s; (*** handshake failed ***)
 		      ph := -1
 		    end
 	      | _ ->
-		Printf.printf "Handshake failed. (inappropriate handshake message)\n"; flush stdout;
 		Unix.close s; (*** handshake failed ***)
 		ph := -1
 	    with
 	    | IllformedMsg ->
-		Printf.printf "Handshake failed. (IllformedMsg)\n"; flush stdout;
 		Unix.close s; (*** handshake failed ***)
 		ph := -1
 	    | exc ->
@@ -683,7 +678,7 @@ let main () =
 		begin
 		  match (!oaf,!ocs) with
 		  | (Some(addr_from),Some(cs)) ->
-		      Printf.printf "Handshake succeeded, connection added\n"; flush stdout;
+		      Printf.printf "Handshake succeeded, connection added %s\n" addr_from; flush stdout;
 		      conns := (s,sin,sout,addr_from,cs)::!conns; (*** handshake succeeded, real conn now ***)
 		      send_initial_inv sout cs;
 		      ignore (send_msg sout GetAddr)
@@ -691,7 +686,6 @@ let main () =
 		end;
 	      !ph > 0 && !ph < 4)
 	    !preconns;
-	Printf.printf "main loop 5 %d %d\n" (List.length !preconns) (List.length !conns); flush stdout;
 	(*** check each connection for possible messages ***)
 	List.iter
 	  (fun (s,sin,sout,peeraddr,cs) ->
@@ -711,16 +705,13 @@ let main () =
                     with Not_found ->
 		    if (tm -. cs.lastmsgtm) > 5400.0 then (*** If no messages in enough time (90 minutes), send a ping. ***)
 		      begin
-			Printf.printf "Sending Ping.\n"; flush stdout;
 			let mh = send_msg sout Ping in
-			Printf.printf "Sent Ping.\n"; flush stdout;
                         cs.pending <- (mh,true,tm,tm,None)::cs.pending;
                         cs.lastmsgtm <- tm
 		      end
 		  end
 	      | Some(replyto,mh,m) ->
 		begin
-		  Printf.printf "got a msg, new lastmsgtm %f\n" tm; flush stdout;
                   cs.lastmsgtm <- tm;
 		  handle_msg sin sout cs replyto mh m
 		end
@@ -731,11 +722,15 @@ let main () =
 	    | IllformedMsg ->
 		Printf.printf "IllformedMsg. Breaking connection.\n"; flush stdout;
 		cs.alive <- false
+	    | Sys_error(x) ->
+		Printf.printf "Sys_error %s. Breaking connection.\n" x; flush stdout;
+		cs.alive <- false
 	    | exn -> (*** unexpected ***)
 		Printf.printf "Other exception: %s\nNot dropping connection yet.\n" (Printexc.to_string exn);
 	  )
 	  !conns;
-	conns := List.filter (fun (s,sin,sout,peeraddr,cs) -> cs.alive) !conns
+	conns := List.filter (fun (s,sin,sout,peeraddr,cs) -> cs.alive) !conns;
+	Printf.printf "preconns %d, conns %d\n" (List.length !preconns) (List.length !conns); flush stdout;
       with (*** ensuring no exception escapes the main loop ***)
       | Failure(x) -> Printf.printf "Failure: %s\n...but continuing\n" x; flush stdout
       | exc -> Printf.printf "%s\n...but continuing\n" (Printexc.to_string exc); flush stdout
