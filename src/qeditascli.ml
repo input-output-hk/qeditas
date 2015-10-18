@@ -2,10 +2,52 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Ser;;
+open Hash;;
 open Ctre;;
 open Net;;
 open Setconfig;;
 open Commands;;
+
+let random_int32_array : int32 array = [| 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l |];;
+let random_initialized : bool ref = ref false;;
+
+(*** generate 512 random bits and then use sha256 on them each time we need a new random number ***)
+let initialize_random_seed () =
+  let r = open_in_bin (if !Config.testnet then "/dev/urandom" else "/dev/random") in
+  let v = ref 0l in
+  for i = 0 to 15 do
+    v := 0l;
+    for j = 0 to 3 do
+      v := Int32.logor (Int32.shift_left !v 8) (Int32.of_int (input_byte r))
+    done;
+    random_int32_array.(i) <- !v;
+  done;
+  random_initialized := true;;
+
+let sha256_random_int32_array () =
+  Sha256.sha256init();
+  for i = 0 to 15 do
+    Sha256.currblock.(i) <- random_int32_array.(i)
+  done;
+  Sha256.sha256round();
+  let (x7,x6,x5,x4,x3,x2,x1,x0) = Sha256.getcurrmd256() in
+  for i = 0 to 7 do
+    random_int32_array.(i+8) <- random_int32_array.(i)
+  done;
+  random_int32_array.(0) <- x0;
+  random_int32_array.(1) <- x1;
+  random_int32_array.(2) <- x2;
+  random_int32_array.(3) <- x3;
+  random_int32_array.(4) <- x4;
+  random_int32_array.(5) <- x5;
+  random_int32_array.(6) <- x6;
+  random_int32_array.(7) <- x7;;
+
+let rand_256 () =
+  if not !random_initialized then initialize_random_seed();
+  sha256_random_int32_array();
+  Sha256.md256_big_int (Sha256.getcurrmd256())
 
 let commhelp = [
 ("importprivkey",1,Some 1,"importprivkey <Qeditas WIF>","Import the private key for a Qeditas p2pkh address into the local wallet.");
@@ -35,11 +77,37 @@ referring to the file.");
 ("frameaddrs",1,None,"frameaddrs [<address> ... <address>] [n]","Change the local frame (if necessary) to ensure that the leaves of the ledger tree corresponding
 to the addresses are kept up with. If the last argument is an integer n, then only the first n
 assets of those leaves are kept up with, with the remaining assets summarized by a hash root.");
+("createrawtransaction",2,None,"createrawtransaction <input> ... <input> out <output> ... <output>","Create a transaction with the specified inputs and outputs.
+Each <input> is specified by giving <address>:<assetid>.
+An <assetid> is a 40 character hex string indicating the hash associated with the asset.
+Each output is specified by giving <address>:<preasset> or <address>:<obligation>:<preasset>.
+An <obligation> (if given) is of the form <address>,<int>.
+A <preasset> is one of the following forms:
+
+<num> (interpreted as the specified number of fraenks as currency units)
+bounty:<num> * (interpreted as the specified number of fraenks as a bounty on a conjecture)
+ownsobj:<address>:<rightsinfo> *
+ownsprop:<address>:<rightsinfo> *
+ownsnegprop *
+rightsobj:<address>:<int> *
+rightsprop:<address>:<int> *
+marker
+theory:<address>:<theoryname> *
+signa:<address>:<signaturename>[:<theoryname>] *
+doc:<address>:<documentname>[:<theoryname>] *
+
+* The options marked with * are not yet implemented.
+
+Created transactions are appended to the 'recenttxs' file.");
+("signrawtransaction",1,Some(1),"signrawtransaction <txid>","Sign a transaction (partially or completely) depending on what information is in the wallet.
+The (partially) signed transaction is added to the 'recenttxs' file.");
+("sendrawtransaction",1,Some(1),"sendrawtransaction <txid>","If the tx is completely signed, put it in the 'txqueue' file. qeditasd will then publish it.");
 ("help",0,Some 1,"help [command]","Give a list of commands or help for a specific command.")
 ];;
 
-process_config_args();;
+datadir_from_command_line();; (*** if -datadir=... is on the command line, then set Config.datadir so we can find the config file ***)
 process_config_file();;
+process_config_args();; (*** settings on the command line shadow those in the config file ***)
 
 let bitstr_bitseq s =
   let l = String.length s in
@@ -59,6 +127,82 @@ let bitseq_bitstr bl =
   List.iter (fun b -> Buffer.add_char sb (if b then '1' else '0')) bl;
   Buffer.contents sb
 
+let separate_by_char x c =
+  let b = Buffer.create 30 in
+  let rl = ref [] in
+  for i = 0 to (String.length x) - 1 do
+    let d = x.[i] in
+    if d = c then
+      begin
+	rl := Buffer.contents b::!rl;
+	Buffer.clear b
+      end
+    else
+      Buffer.add_char b d
+  done;
+  let y = Buffer.contents b in
+  if not (y = "") then rl := y::!rl;
+  List.rev !rl
+
+let parse_tx_input x =
+  match separate_by_char x ':' with
+  | [alphastr;aid] ->
+      (Cryptocurr.qedaddrstr_addr alphastr,hexstring_hashval aid)
+  | _ -> raise (Failure "An input should be of the form <address>:<assetid>")
+
+let parse_obligation x =
+  match separate_by_char x ',' with
+  | [betastr;y] ->
+      let beta = Cryptocurr.qedaddrstr_addr betastr in
+      let h = Int64.of_string y in
+      let (i,x4,x3,x2,x1,x0) = beta in
+      if i = 0 then
+	((false,x4,x3,x2,x1,x0),h,false)
+      else if i = 0 then
+	((true,x4,x3,x2,x1,x0),h,false)
+      else
+	raise (Failure "only pay addresses can be used in obligations")
+  | _ -> raise (Failure "incorrect format for obligation")
+
+let parse_fraenks x =
+  match separate_by_char x '.' with
+  | [w] -> Int64.mul (Int64.of_string w) 1000000000000L
+  | [w;d] ->
+      let dl = String.length d in
+      if dl > 12 then
+	raise (Failure "not a specification of an amount of fraenks")
+      else
+	let b = Buffer.create 12 in
+	for i = dl to 11 do
+	  Buffer.add_char b '0'
+	done;
+	Int64.add (Int64.mul (Int64.of_string w) 1000000000000L) (Int64.of_string (String.concat "" [d;Buffer.contents b]))
+  | _ -> raise (Failure "not a specification of an amount of fraenks")
+
+let parse_preasset xl =
+  match xl with
+  | [mrk] when mrk = "marker" -> Assets.Marker
+  | [fraenks] ->
+      let v = parse_fraenks fraenks in
+      Assets.Currency(v)
+  | _ -> raise (Failure "either not a preasset or unwritten case")
+
+let parse_tx_output x =
+  match separate_by_char x ':' with
+  | [] -> raise (Failure "An output should be of the form <address>[:<obligation>]:<preasset>")
+  | (alphastr::rst) ->
+      let alpha = Cryptocurr.qedaddrstr_addr alphastr in
+      match rst with
+      | [] -> raise (Failure "An output should be of the form <address>[:<obligation>]:<preasset>")
+      | (oblstr::rst2) ->
+	  try
+	    let obl = parse_obligation oblstr in
+	    let u = parse_preasset rst2 in
+	    (alpha,Some(obl),u)
+	  with Failure(_) ->
+	    let u = parse_preasset rst in
+	    (alpha,None,u)
+
 let process_command r =
   match r with
 (***
@@ -73,6 +217,94 @@ let process_command r =
       )
   | [c] when c = "getinfo" ->
 ***)
+  | (c::args) when c = "createrawtransaction" ->
+      let argl = ref args in
+      let inarg = ref true in
+      let inl = ref [] in
+      let outl = ref [] in
+      begin
+	while not (!argl = []) do
+	  match !argl with
+	  | [] -> () (*** impossible ***)
+	  | (x::argr) when x = "out" && !inarg -> inarg := false; argl := argr
+	  | (x::argr) ->
+	      argl := argr;
+	      if !inarg then
+		let (alpha,aid) = parse_tx_input x in
+		inl := (alpha,aid)::!inl
+	      else
+		let (alpha,obl,u) = parse_tx_output x in
+		outl := (alpha,(obl,u))::!outl
+	done;
+	let tau = (List.rev !inl,List.rev !outl) in
+	if not (Tx.tx_valid tau) then raise (Failure "invalid tx");
+	let txid = Tx.hashtx tau in
+	Printf.printf "Txid: %s\n" (hashval_hexstring txid); flush stdout;
+	let fn = Filename.concat !Config.datadir "recenttxs" in
+	if Sys.file_exists fn then
+	  begin
+	    let ch = open_out_gen [Open_wronly;Open_binary;Open_append] 0o644 fn in
+	    seocf (seo_prod seo_hashval Tx.seo_stx seoc (txid,(tau,([],[]))) (ch,None));
+	    close_out ch
+	  end
+	else
+	  begin
+	    let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
+	    seocf (seo_prod seo_hashval Tx.seo_stx seoc (txid,(tau,([],[]))) (ch,None));
+	    close_out ch
+	  end
+      end
+  | [c;txid] when c = "signrawtransaction" ->
+      let txid = hexstring_hashval txid in
+      begin
+	load_recenttxs();
+	try
+	  let ((txin,txout),(sin,sout)) = Hashtbl.find recenttxs txid in
+	  let sin2 = ref sin in
+	  let sout2 = ref sout in
+	  load_wallet();
+	  List.iter
+	    (fun (alpha,_) -> (*** for now, assume there's no obligation here (wrong in general, but need to look up the asset in the general case ***)
+	      let (i,x4,x3,x2,x1,x0) = alpha in
+	      if i = 0 then (*** only handle p2pkh for now ***)
+		try
+		  let (k,b,(x,y),w,h,beta) = List.find (fun (k,b,(x,y),w,h,beta) -> h = (x4,x3,x2,x1,x0)) !walletkeys in
+		  let ra = rand_256() in
+		  sin2 := (Script.P2pkhSignat(Some(x,y),b,Signat.signat_hashval txid k ra))::!sin2
+		with Not_found -> ()
+	    )
+	    txin;
+	  (*** don't worry about sout for now; it's needed for publications ***)
+	  if not (!sin2 = sin && !sout2 = sout) then
+	    let fn = Filename.concat !Config.datadir "recenttxs" in
+	    let ch = open_out_gen [Open_wronly;Open_binary;Open_append] 0o644 fn in
+	    seocf (seo_prod seo_hashval Tx.seo_stx seoc (txid,((txin,txout),(!sin2,!sout2))) (ch,None));
+	    close_out ch
+	with Not_found ->
+	  raise (Failure "Unknown tx")
+      end
+  | [c;txid] when c = "sendrawtransaction" ->
+      let txid = hexstring_hashval txid in
+      begin
+	load_recenttxs();
+	try
+	  let stau = Hashtbl.find recenttxs txid in
+	  let fn = Filename.concat !Config.datadir "txqueue" in
+	  if Sys.file_exists fn then
+	    begin
+	      let ch = open_out_gen [Open_wronly;Open_binary;Open_append] 0o644 fn in
+	      seocf (seo_prod seo_hashval Tx.seo_stx seoc (txid,stau) (ch,None));
+	      close_out ch
+	    end
+	  else
+	    begin
+	      let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
+	      seocf (seo_prod seo_hashval Tx.seo_stx seoc (txid,stau) (ch,None));
+	      close_out ch
+	    end
+	with Not_found ->
+	  raise (Failure "Unknown tx")
+      end
   | [c] when c = "printassets" ->
       load_wallet();
       printassets()
