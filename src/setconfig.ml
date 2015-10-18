@@ -3,7 +3,6 @@
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 let stringconfigvars = [
-("datadir",fun x -> Config.datadir := x);
 ("ctreedatadir",fun x -> Config.ctreedatadir := x);
 ("chaindatadir",fun x -> Config.chaindatadir := x);
 ("seed",fun x -> Config.seed := x);
@@ -108,7 +107,8 @@ let process_config_file () =
 	while true do
 	  let l = input_line ch in
 	  try
-	    process_config_line l
+	    if String.length l > 0 && not (l.[0] = '%') then
+	      process_config_line l
 	  with Not_found ->
 	    Printf.printf "Do not understand %s in qeditas.conf; skipping\n" l
 	done
@@ -116,6 +116,17 @@ let process_config_file () =
     end
   else
     Printf.printf "No qeditas.conf file found. Using default configuration.\n";;
+
+let datadir_from_command_line () =
+  let a = Array.length Sys.argv in
+  for i = 1 to a-1 do
+    let arg = Sys.argv.(i) in
+    if String.length arg > 9 && arg.[0] = '-' then
+      try
+	if String.sub arg 0 9 = "-datadir=" then
+	  Config.datadir := String.sub arg 9 (String.length arg - 9)
+      with Not_found -> ()
+  done;;
 
 let process_config_args () =
   let a = Array.length Sys.argv in
