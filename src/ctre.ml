@@ -914,7 +914,8 @@ let save_hashed_ctree r fh a (tr:ctree) =
 	  let c = seo_prod3 seo_hashval seo_hashval seo_hashval seoc (r,fh,a) (ch,None) in
 	  seocf c;
 	  close_out ch;
-	end
+	end;
+      Hashtbl.add rootabbrevs r (fh,a);
   end;
   let fn = Filename.concat !ctreedatadir (hashval_hexstring a) in
   if not (Sys.file_exists fn) then
