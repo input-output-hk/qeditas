@@ -22,6 +22,7 @@ val waitingblock : (int64 * int64 * hashval * blockheader * blockdelta * big_int
 
 val insertnewblockheader : hashval -> big_int -> bool -> int64 -> blockheader -> unit
 
+exception Hung
 exception RequestRejected
 exception IllformedMsg
 

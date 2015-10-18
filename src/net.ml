@@ -66,10 +66,14 @@ let accept_nohang s tm =
     try
       ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
       Some(s2,a2)
-    with Hung -> (** in case the alarm is signaled after the connection was accepted but before the function returned, catch Hung and continue **)
+    with
+    | Hung -> (** in case the alarm is signaled after the connection was accepted but before the function returned, catch Hung and continue **)
+	Some(s2,a2)
+  with
+  | Hung -> None
+  | exc -> (** if it's another exception make sure to disable the timer **)
       ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
-      Some(s2,a2)
-  with Hung -> None
+      raise exc
 
 let input_byte_nohang c tm =
   try
@@ -79,9 +83,12 @@ let input_byte_nohang c tm =
       ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
       Some(b)
     with Hung -> (** in case the alarm is signaled after the connection was accepted but before the function returned, catch Hung and continue **)
-      ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
       Some(b)
-  with Hung -> None
+  with
+  | Hung -> None
+  | exc -> (** if it's another exception make sure to disable the timer **)
+      ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
+      raise exc
 
 let openlistener ip port numconns =
   let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
@@ -605,7 +612,7 @@ let initialize_conn_2 n s sin sout =
   let last_height = 0L in
   let relay = true in
   let lastchkpt = None in
-  send_msg sout (Version(vers,srvs,tm,myaddr(),n,!this_nodes_nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt));
+  send_msg sout (Version(vers,srvs,tm,n,myaddr(),!this_nodes_nonce,user_agent,fr0,fr1,fr2,first_header_height,first_full_height,last_height,relay,lastchkpt));
   preconns := (s,sin,sout,Unix.time(),ref 2,ref None,ref None)::!preconns
 
 let initialize_conn n s =
@@ -620,34 +627,32 @@ let knownpeers : (string,int64) Hashtbl.t = Hashtbl.create 1000
 let tryconnectpeer n =
   if List.length !conns + List.length !preconns >= !Config.maxconns then raise EnoughConnections;
   let (ip,port,v6) = extract_ip_and_port n in
-  if not (!Config.ip = Some(ip) && !Config.ipv6 = v6) then (*** if this is a fallback node, do not connect to itself ***)
-    begin
-      try
-	match !Config.socks with
-	| None ->
-	    let s = connectpeer ip port in
-	    ignore (initialize_conn n s)
-	| Some(4) ->
-	    let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
-	    ignore (initialize_conn_2 n s sin sout);
-	| Some(5) ->
-	    raise (Failure "socks5 is not yet supported")
-	| Some(z) ->
-	    raise (Failure ("socks" ^ (string_of_int z) ^ " is not yet supported"))
-      with
-      | RequestRejected ->
-	  Printf.printf "RequestRejected\n"; flush stdout;
-      | _ ->
-	  ()
-    end
+  begin
+    try
+      match !Config.socks with
+      | None ->
+	  let s = connectpeer ip port in
+	  ignore (initialize_conn n s)
+      | Some(4) ->
+	  let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
+	  ignore (initialize_conn_2 n s sin sout);
+      | Some(5) ->
+	  raise (Failure "socks5 is not yet supported")
+      | Some(z) ->
+	  raise (Failure ("socks" ^ (string_of_int z) ^ " is not yet supported"))
+    with
+    | RequestRejected ->
+	Printf.printf "RequestRejected\n"; flush stdout;
+    | _ ->
+	()
+  end
 
 let fallbacknodes = [
 "108.61.219.125:20805"
 ]
 
 let testnetfallbacknodes = [
-"108.61.219.125:20804";
-"45.63.70.252:20804"
+"108.61.219.125:20804"
 ]
 
 let getfallbacknodes () =
@@ -657,7 +662,7 @@ let getfallbacknodes () =
     fallbacknodes
 
 let addknownpeer lasttm n =
-  if not (n = "") && not (List.mem n (getfallbacknodes())) then
+  if not (n = "") && not (n = myaddr()) && not (List.mem n (getfallbacknodes())) then
     try
       let oldtm = Hashtbl.find knownpeers n in
       Hashtbl.replace knownpeers n lasttm
@@ -750,8 +755,10 @@ let handle_msg sin sout cs replyto mh m =
       cs.pending <- update_pending cs.pending qh m
   | (None,Inv(invl)) ->
       let toget = ref [] in
+      Printf.printf "got Inv\n"; flush stdout;
       List.iter
 	(fun (k,blkh,h) ->
+	  Printf.printf "%d %Ld %s\n" k blkh (hashval_hexstring h); flush stdout;
 	  cs.rinv <- (k,h)::cs.rinv;
 	  match k with
 	  | 1 -> (*** block header ***)
@@ -770,8 +777,10 @@ let handle_msg sin sout cs replyto mh m =
 	cs.invreq <- !toget @ cs.invreq
   | (None,GetData(invl)) ->
       let headerl = ref [] in
+      Printf.printf "got GetData\n"; flush stdout;
       List.iter
 	(fun (k,h) ->
+	  Printf.printf "%d %s\n" k (hashval_hexstring h); flush stdout;
 	  if k = 1 then
 	    try
 	      let (_,blkh,bh) = List.assoc h !recentblockheaders in headerl := (blkh,bh)::!headerl
