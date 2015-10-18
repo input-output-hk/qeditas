@@ -866,9 +866,11 @@ let ensure_dir_exists d =
 
 exception FoundHashval of hashval
 
-let lookup_all_ctree_root_abbrevs r =
+let rootabbrevs : (hashval,(hashval * hashval)) Hashtbl.t = Hashtbl.create 65536
+
+let load_root_abbrevs_index () =
   ensure_dir_exists !ctreedatadir;
-  let fn = Filename.concat !ctreedatadir (hashval_hexstring r) in
+  let fn = Filename.concat !ctreedatadir "rootabbrevsindex" in
   if Sys.file_exists fn then
     begin
       let ch = open_in_bin fn in
@@ -876,55 +878,44 @@ let lookup_all_ctree_root_abbrevs r =
       let cr = ref (ch,None) in
       try
 	while true do
-	  let ((fh,a),c) = sei_prod sei_hashval sei_hashval seic !cr in
-	  rl := (fh,a)::!rl;
+	  let ((rh,fh,a),c) = sei_prod3 sei_hashval sei_hashval sei_hashval seic !cr in
+	  Hashtbl.add rootabbrevs rh (fh,a);
 	  cr := c
 	done;
 	raise Not_found (*** unreachable ***)
       with
-      | End_of_file -> !rl
+      | End_of_file -> ()
     end
-  else
-    []
+
+let lookup_all_ctree_root_abbrevs r =
+  Hashtbl.find_all rootabbrevs r
 
 let lookup_frame_ctree_root_abbrev fh r =
-  ensure_dir_exists !ctreedatadir;
-  let fn = Filename.concat !ctreedatadir (hashval_hexstring r) in
-  if Sys.file_exists fn then
-    begin
-      let ch = open_in_bin fn in
-      let cr = ref (ch,None) in
-      try
-	while true do
-	  let ((fh2,a),c) = sei_prod sei_hashval sei_hashval seic !cr in
-	  if fh = fh2 then raise (FoundHashval(a));
-	  cr := c
-	done;
-	raise Not_found (*** unreachable ***)
-      with
-      | FoundHashval(a) -> a
-      | End_of_file -> raise Not_found
-    end
-  else
-    raise Not_found
+  let fal = Hashtbl.find_all rootabbrevs r in
+  List.assoc fh fal
 
 let save_hashed_ctree r fh a (tr:ctree) =
   ensure_dir_exists !ctreedatadir;
-  let fn = Filename.concat !ctreedatadir (hashval_hexstring r) in
-  if Sys.file_exists fn then
-    begin
-      let ch = open_out_gen [Open_wronly;Open_binary;Open_append] 0o644 fn in
-      let c = seo_prod seo_hashval seo_hashval seoc (fh,a) (ch,None) in
-      seocf c;
-      close_out ch      
-    end
-  else
-    begin
-      let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
-      let c = seo_prod seo_hashval seo_hashval seoc (fh,a) (ch,None) in
-      seocf c;
-      close_out ch;
-    end;
+  begin
+    try
+      ignore (lookup_frame_ctree_root_abbrev fh r)
+    with Not_found ->
+      let fn = Filename.concat !ctreedatadir "rootabbrevsindex" in
+      if Sys.file_exists fn then
+	begin
+	  let ch = open_out_gen [Open_wronly;Open_binary;Open_append] 0o644 fn in
+	  let c = seo_prod3 seo_hashval seo_hashval seo_hashval seoc (r,fh,a) (ch,None) in
+	  seocf c;
+	  close_out ch      
+	end
+      else
+	begin
+	  let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
+	  let c = seo_prod3 seo_hashval seo_hashval seo_hashval seoc (r,fh,a) (ch,None) in
+	  seocf c;
+	  close_out ch;
+	end
+  end;
   let fn = Filename.concat !ctreedatadir (hashval_hexstring a) in
   if not (Sys.file_exists fn) then
     begin
