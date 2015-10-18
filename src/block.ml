@@ -68,11 +68,11 @@ let set_genesis_stakemods x =
  ***)
 set_genesis_stakemods "0000000000000000000000000000000000000000"
 
-let genesistimestamp = ref 1444792499L;; (*** Too early, but OK for testing. For the mainnet, this should be the timestamp in the same bitcoin block used to initialize the stake modifiers ***)
+let genesistimestamp = ref 1445189821L;; (*** Too early, but OK for testing. For the mainnet, this should be the timestamp in the same bitcoin block used to initialize the stake modifiers ***)
 
 (*** max target/min difficulty: 2^220 (for mainnet) ***)
 let max_target = ref (shift_left_big_int unit_big_int 220)
-let genesistarget = ref !max_target (*** initialize to minimum difficulty for testing ***)
+let genesistarget = ref (shift_left_big_int unit_big_int 205) (* current estimate for initial difficulty *)
 let genesisledgerroot : hashval ref = ref (hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e");; (*** snapshot ledger root ***)
 
 (*** base reward of 50 fraenks (50 trillion cants) like bitcoin, but assume the first 350000 blocks have passed. ***)
