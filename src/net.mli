@@ -106,3 +106,6 @@ val rec_msg_nohang : in_channel -> float -> float -> (hashval option * hashval *
 val handle_msg : in_channel -> out_channel -> connstate -> hashval option -> hashval -> msg -> unit
 
 val try_requests : (int * hashval) list -> unit
+
+val handle_orphans : unit -> unit
+val handle_delayed : unit -> unit

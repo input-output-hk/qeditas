@@ -29,6 +29,8 @@ let myaddr () =
 (*** recentstxs: associate hashes of txs/stxs with stxs (may or may not be in blocks) ***)
 let recentledgerroots : (hashval, int64 * hashval) Hashtbl.t = Hashtbl.create 1024
 let recentblockheaders : (hashval * (big_int * int64 * blockheader)) list ref = ref [] (*** ordered by cumulative stake ***)
+let recentorphanblockheaders : (hashval * (int64 * blockheader)) list ref = ref []
+let recentearlyblockheaders : (hashval * (big_int * int64 * blockheader)) list ref = ref []
 let recentcommitments : (int64 * hashval) list ref = ref []
 let recentblockdeltahs : (hashval, blockdeltah) Hashtbl.t = Hashtbl.create 1024
 let recentblockdeltas : (hashval, blockdelta) Hashtbl.t = Hashtbl.create 1024
@@ -551,17 +553,18 @@ let preconns = ref []
 let this_nodes_nonce = ref 0L
 
 let broadcast_inv invl =
-  let invl2 = List.map (fun (k,_,h) -> (k,h)) invl in
-  List.iter
-    (fun (s,sin,sout,peeraddr,cs) ->
-      try
-	if cs.alive then
-	  begin
-	    ignore (send_msg sout (Inv(invl)));
-	    cs.sentinv <- invl2 @ cs.sentinv
-	  end
-      with _ -> ())
-    !conns
+  if not (invl = []) then
+    let invl2 = List.map (fun (k,_,h) -> (k,h)) invl in
+    List.iter
+      (fun (s,sin,sout,peeraddr,cs) ->
+	try
+	  if cs.alive then
+	    begin
+	      ignore (send_msg sout (Inv(invl)));
+	      cs.sentinv <- invl2 @ cs.sentinv
+	    end
+	with _ -> ())
+      !conns
 
 let send_initial_inv sout cs =
   let tosend = ref [] in
@@ -576,7 +579,7 @@ let send_initial_inv sout cs =
       end)
     !recentblockheaders;
   Hashtbl.iter (fun txh _ -> incr cnt; if !cnt < 50000 then tosend := (4,0L,txh)::!tosend) recentstxs;
-  send_msg sout (Inv(!tosend));
+  if not (!tosend = []) then ignore (send_msg sout (Inv(!tosend)));
   cs.sentinv <- List.map (fun (k,_,h) -> (k,h)) !tosend
 
 exception EnoughConnections
@@ -652,6 +655,9 @@ let fallbacknodes = [
 ]
 
 let testnetfallbacknodes = [
+(*
+"127.0.0.1:5959"
+*)
 "108.61.219.125:20804"
 ]
 
@@ -762,7 +768,7 @@ let handle_msg sin sout cs replyto mh m =
 	  cs.rinv <- (k,h)::cs.rinv;
 	  match k with
 	  | 1 -> (*** block header ***)
-	      if not (known_blockheader_p blkh h) then toget := (k,h)::!toget
+	      if not (known_blockheader_p blkh h) then (toget := (k,h)::!toget; Printf.printf "get it since not known blockheader\n"; flush stdout)
 	  | 2 -> (*** blockdeltah ***)
 	      if not (known_blockdeltah_p blkh h) then toget := (k,h)::!toget
 	  | 3 -> (*** blockdelta ***)
@@ -774,6 +780,7 @@ let handle_msg sin sout cs replyto mh m =
 	invl;
       if not (!toget = []) then
 	let mh = send_msg sout (GetData(!toget)) in
+	Printf.printf "Just sent GetData\n"; flush stdout;
 	cs.invreq <- !toget @ cs.invreq
   | (None,GetData(invl)) ->
       let headerl = ref [] in
@@ -787,7 +794,7 @@ let handle_msg sin sout cs replyto mh m =
 	    with Not_found -> (*** should look for it in a file in this case ***)
 	      ())
 	invl;
-      ignore (send_msg sout (Headers(List.rev !headerl)));
+      ignore (send_msg sout (Headers(!headerl)));
       List.iter
 	(fun (k,h) ->
 	  match k with
@@ -817,14 +824,17 @@ let handle_msg sin sout cs replyto mh m =
 	  )
 	invl
   | (None,Headers(bhl)) ->
+      Printf.printf "got Headers\n"; flush stdout;
       let tm = Int64.of_float (Unix.time()) in
+      let tobroadcast = ref [] in
       List.iter
 	(fun (blkh,(bhd,bhs)) ->
-	  let bhdh = hash_blockheaderdata bhd in
-	  if List.mem (1,bhdh) cs.invreq then (*** only accept if it seems to have been requested ***)
-	    begin
-	      cs.invreq <- List.filter (fun (k,h) -> not (k = 1 && h = bhdh)) cs.invreq;
-	      if bhd.timestamp <= Int64.add tm 60L then (*** do not accept blockheaders from too far the future ***)
+	  Printf.printf "header at height %Ld\n" blkh; flush stdout;
+	  if valid_blockheader blkh (bhd,bhs) then
+	    let bhdh = hash_blockheaderdata bhd in
+	    if List.mem (1,bhdh) cs.invreq then (*** only accept if it seems to have been requested ***)
+	      begin
+		cs.invreq <- List.filter (fun (k,h) -> not (k = 1 && h = bhdh)) cs.invreq;
 		match 
 		  match bhd.prevblockhash with
 		  | None ->
@@ -840,7 +850,9 @@ let handle_msg sin sout cs replyto mh m =
 			    Some(cs)
 			  else
 			    None
-			with Not_found -> None (*** reject orphan headers ***)
+			with Not_found ->
+			  recentorphanblockheaders := (bhdh,(blkh,(bhd,bhs)))::!recentorphanblockheaders;
+			  None
 		      end
 		with
 		| Some(prevcumulstk) -> (*** header is accepted, put it on the list with the new cumulative stake ***)
@@ -849,31 +861,36 @@ let handle_msg sin sout cs replyto mh m =
 		    Printf.printf "Got header with cumul stake: %s\n" (string_of_big_int cumulstk); flush stdout;
 		    let bhdh = hash_blockheaderdata bhd in
 		    if not (known_blockheader_p blkh bhdh) then (*** make sure it's new ***)
-		      begin
-			insertnewblockheader (hash_blockheaderdata bhd) cumulstk false blkh (bhd,bhs);
-			begin (*** If there is some block we are waiting to publish, see if it has more cumulative stake that this one. If not, forget it. ***)
-			  match !waitingblock with
-			  | Some(_,_,_,_,_,mycumulstk) when lt_big_int mycumulstk cumulstk ->
-			      Printf.printf "A better block was found. Not publishing mine.\n"; flush stdout;
-			      waitingblock := None
-			  | _ -> ()
-			end;
-			if List.mem (2,bhdh) cs.rinv then (*** request the corresponding blockdeltah if possible ***)
-			  begin
-			    ignore (send_msg sout (GetData([(2,bhdh)])));
-			    cs.invreq <- (2,bhdh)::cs.invreq
-			  end
-			else if List.mem (3,bhdh) cs.rinv then (*** otherwise request the corresponding blockdelta if possible ***)
-			  begin
-			    ignore (send_msg sout (GetData([(3,bhdh)])));
-			    cs.invreq <- (3,bhdh)::cs.invreq
-			  end
-		      end
-		| None -> (*** header is rejected, ignore it for now, maybe should ignore it forever? ***)
-		    Printf.printf "header rejected\n";
-		    ()
-	    end)
-	bhl
+		      if bhd.timestamp <= Int64.add tm 60L then (*** if it seems to be early, then delay putting it in the sorted list of recent block headers ***)
+			recentearlyblockheaders := (bhdh,(cumulstk,blkh,(bhd,bhs)))::!recentearlyblockheaders
+		      else
+			begin
+			  tobroadcast := (1,blkh,bhdh)::!tobroadcast;
+			  insertnewblockheader bhdh cumulstk false blkh (bhd,bhs);
+			  begin (*** If there is some block we are waiting to publish, see if it has more cumulative stake that this one. If not, forget it. ***)
+			    match !waitingblock with
+			    | Some(_,_,_,_,_,mycumulstk) when lt_big_int mycumulstk cumulstk ->
+				Printf.printf "A better block was found. Not publishing mine.\n"; flush stdout;
+				waitingblock := None
+			    | _ -> ()
+			  end;
+			  if List.mem (2,bhdh) cs.rinv then (*** request the corresponding blockdeltah if possible ***)
+			    begin
+			      ignore (send_msg sout (GetData([(2,bhdh)])));
+			      cs.invreq <- (2,bhdh)::cs.invreq
+			    end
+			  else if List.mem (3,bhdh) cs.rinv then (*** otherwise request the corresponding blockdelta if possible ***)
+			    begin
+			      ignore (send_msg sout (GetData([(3,bhdh)])));
+			      cs.invreq <- (3,bhdh)::cs.invreq
+			    end
+			end
+		  | None -> (*** header is rejected, ignore it for now, maybe should ignore it forever? ***)
+		      Printf.printf "header rejected\n";
+		      ()
+	      end)
+	bhl;
+      broadcast_inv !tobroadcast
   | (None,MBlockdeltah(vers,h,bdh)) ->
       Printf.printf "Handling MBlockdeltah.\n"; flush stdout;
       if List.mem (2,h) cs.invreq then (*** only accept if it seems to have been requested ***)
@@ -882,7 +899,7 @@ let handle_msg sin sout cs replyto mh m =
 	  Hashtbl.add recentblockdeltahs h bdh
 	end
   | (None,MBlockdelta(vers,h,bd)) ->
-      Printf.printf "Handling MBlockdeltah.\n"; flush stdout;
+      Printf.printf "Handling MBlockdelta.\n"; flush stdout;
       if List.mem (3,h) cs.invreq then (*** only accept if it seems to have been requested ***)
 	begin
 	  cs.invreq <- List.filter (fun (k,h2) -> not (k = 3 && h2 = h)) cs.invreq;
@@ -938,3 +955,70 @@ let try_requests rql =
 	end
     )
     !conns
+
+let handle_orphans () =
+  let tobroadcast = ref [] in
+  let rl = ref [] in
+  List.iter
+    (fun (bhdh,(blkh,(bhd,bhs))) ->
+      match 
+	match bhd.prevblockhash with
+	| None ->
+	    Printf.printf "genesis\n";
+	    if valid_blockheaderchain blkh ((bhd,bhs),[]) (*** first block, special conditions ***)
+	    then Some(zero_big_int)
+	    else None
+	| Some(pbhh) ->
+	    begin
+	      try
+		let (cs,_,pbh) = List.assoc pbhh !recentblockheaders in
+		if blockheader_succ pbh (bhd,bhs) then
+		  Some(cs)
+		else
+		  None
+	      with Not_found ->
+		rl := (bhdh,(blkh,(bhd,bhs)))::!rl;
+		None
+	    end
+      with
+      | Some(prevcumulstk) -> (*** header is accepted, put it on the list with the new cumulative stake ***)
+	  let (_,_,tar) = bhd.tinfo in
+	  let cumulstk = cumul_stake prevcumulstk tar bhd.deltatime in
+	  Printf.printf "Deorphan header with cumul stake: %s\n" (string_of_big_int cumulstk); flush stdout;
+	  if not (known_blockheader_p blkh bhdh) then (*** make sure it's new ***)
+	    begin
+	      tobroadcast := (1,blkh,bhdh)::!tobroadcast;
+	      insertnewblockheader bhdh cumulstk false blkh (bhd,bhs);
+	      begin (*** If there is some block we are waiting to publish, see if it has more cumulative stake that this one. If not, forget it. ***)
+		match !waitingblock with
+		| Some(_,_,_,_,_,mycumulstk) when lt_big_int mycumulstk cumulstk ->
+		    Printf.printf "A better block was found. Not publishing mine.\n"; flush stdout;
+		    waitingblock := None
+		| _ -> ()
+	      end;
+	    end
+      | None -> (*** header is rejected, ignore it for now, maybe should ignore it forever? ***)
+	  Printf.printf "header rejected\n";
+	  ()
+    )
+    !recentorphanblockheaders;
+  recentorphanblockheaders := !rl;
+  broadcast_inv !tobroadcast
+
+let handle_delayed () =
+  let tobroadcast = ref [] in
+  let tm = Int64.of_float (Unix.time()) in
+  let rl = ref [] in
+  List.iter
+    (fun (bhdh,(cs,blkh,(bhd,bhs))) ->
+      if bhd.timestamp <= tm then
+	begin
+	  tobroadcast := (1,blkh,bhdh)::!tobroadcast;
+	  insertnewblockheader bhdh cs false blkh (bhd,bhs)
+	end
+      else
+	rl := (bhdh,(cs,blkh,(bhd,bhs)))::!rl)
+    !recentearlyblockheaders;
+  recentearlyblockheaders := !rl;
+  broadcast_inv !tobroadcast
+
