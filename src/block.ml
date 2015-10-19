@@ -371,6 +371,9 @@ let sei_blockdeltah i c =
   sei_prod4 (sei_list sei_addr_preasset) (sei_option sei_poforfeit) sei_cgraft (sei_list sei_hashval)
     i c
 
+let blockdelta_blockdeltah bd =
+  (bd.stakeoutput,bd.forfeiture,bd.prevledgergraft,List.map (fun (tau,_) -> hashtx tau) bd.blockdelta_stxl)
+
 (*** multiply stake by 1.25 ***)
 let incrstake s =
   Int64.add s (Int64.shift_right s 2)

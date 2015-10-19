@@ -90,6 +90,8 @@ type blockdeltah = addr_preasset list * poforfeit option * cgraft * hashval list
 val seo_blockdeltah : (int -> int -> 'a -> 'a) -> blockdeltah -> 'a -> 'a
 val sei_blockdeltah : (int -> 'a -> int * 'a) -> 'a -> blockdeltah * 'a
 
+val blockdelta_blockdeltah : blockdelta -> blockdeltah
+
 val coinstake : block -> tx
 
 val incrstake : int64 -> int64
