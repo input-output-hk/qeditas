@@ -297,7 +297,37 @@ let start_staking () =
     let (blkh,cs,currledgerroot,tm,bho,(csm,fsmprev,tar)) = beststakingoption () in
     Printf.printf "should stake on top of current best block, height %Ld, hash %s\n" blkh (match bho with Some(bhd,_) -> (hashval_hexstring (hash_blockheaderdata bhd)) | None -> "(genesis)"); flush stdout;
     possibly_request_full_block blkh bho;
-    let ca = lookup_frame_ctree_root_abbrev !localframehash currledgerroot in
+    let ca = 
+      begin
+	try
+	  lookup_frame_ctree_root_abbrev !localframehash currledgerroot
+	with
+	| Not_found -> (*** in this case, it's likely the transformed ctree hasn't been formed/saved as an abbrev ***)
+	    Printf.printf "Do not know the abbrev for the ctree with root %s\nTrying to construct it by transforming using the block.\n" (hashval_hexstring currledgerroot);
+	    match bho with
+	    | None ->
+		raise Not_found
+	    | Some(bhd,bhs) ->
+		let bhh = hash_blockheaderdata bhd in
+		Printf.printf "Trying to look up block %s\n" (hashval_hexstring bhh); flush stdout;
+		let bd = Hashtbl.find recentblockdeltas bhh in
+		Printf.printf "Found block %s\n" (hashval_hexstring bhh); flush stdout;
+		let tr1a = ctree_of_block ((bhd,bhs),bd) in
+		let tr1h = ctree_hashroot tr1a in
+		let ca = lookup_frame_ctree_root_abbrev !localframehash tr1h in
+		let tr1b = CAbbrev(tr1h,lookup_frame_ctree_root_abbrev !localframehash tr1h) in
+		let tr1 = octree_lub (Some(tr1a)) (Some(tr1b)) in (*** the tree of the block combined with the tree this node is keeping up with ***)
+		Printf.printf "About to transform ctree\n"; flush stdout;
+		match txl_octree_trans blkh (coinstake ((bhd,bhs),bd)::List.map (fun (tx,_) -> tx) bd.blockdelta_stxl) tr1 with
+		| None ->
+		    Printf.printf "Ctree became empty, which should not have happened after a valid block\n"; flush stdout;
+		    raise (Failure("Ctree became empty, which should not have happened after a valid block\n"))
+		| Some(tr2) ->
+		    match frame_filter_ctree (wrap_frame !localframe) tr2 with
+		    | CAbbrev(cr2,ca2) -> ca2
+		    | _ -> raise Not_found
+      end
+    in
     let (fromstkr,tostkr,stkerr) = Unix.open_process_full stkexec [||] in
     stakingproccomm := Some(fromstkr,tostkr,stkerr);
     if send_assets_to_staker tostkr (CAbbrev(currledgerroot,ca)) then
@@ -375,7 +405,7 @@ let main () =
     loadknownpeers();
     search_for_conns ();
     while true do (*** main process loop ***)
-      Unix.sleep 1; (*** while debugging to prevent massive output ***)
+      if !Config.testnet then Unix.sleep 1; (*** while debugging to prevent massive output ***)
       try
 	if !Config.staking then
 	  begin (*** if staking check to see if staking has found a hit ***)
@@ -560,8 +590,9 @@ let main () =
 	    | Some(stktm,blkh,bhh,bh,bd,cs) when Int64.of_float (Unix.time()) >= stktm ->
 		waitingblock := None;
 		insertnewblockheader bhh cs true blkh bh;
+		Hashtbl.add recentblockdeltahs bhh (blockdelta_blockdeltah bd);
 		Hashtbl.add recentblockdeltas bhh bd;
-		broadcast_inv [(1,blkh,bhh)]; (*** broadcast it with Inv ***)
+		broadcast_inv [(1,blkh,bhh);(2,blkh,bhh);(3,blkh,bhh)]; (*** broadcast it with Inv ***)
 		start_staking(); (*** start staking again ***)
 	    | None -> (*** if there is no waiting block and we aren't staking, then restart staking ***)
 		begin
@@ -730,6 +761,8 @@ let main () =
 	  )
 	  !conns;
 	conns := List.filter (fun (s,sin,sout,peeraddr,cs) -> cs.alive) !conns;
+	handle_orphans();
+	handle_delayed();
 	Printf.printf "preconns %d, conns %d\n" (List.length !preconns) (List.length !conns); flush stdout;
       with (*** ensuring no exception escapes the main loop ***)
       | Failure(x) -> Printf.printf "Failure: %s\n...but continuing\n" x; flush stdout
