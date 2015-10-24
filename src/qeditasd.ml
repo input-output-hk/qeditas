@@ -223,10 +223,12 @@ let rand_int64 () =
     (Int64.of_int32 random_int32_array.(0))
     (Int64.shift_right_logical (Int64.of_int32 random_int32_array.(1)) 32);;
 
+let lastsearchforconns = ref (Unix.time());;
+
 let search_for_conns () =
   try
     List.iter tryconnectpeer (getknownpeers());
-    if !conns = [] then
+    if !preconns = [] && !conns = [] then
       begin
 	List.iter tryconnectpeer (getfallbacknodes())
       end
@@ -761,6 +763,13 @@ let main () =
 	  )
 	  !conns;
 	conns := List.filter (fun (s,sin,sout,peeraddr,cs) -> cs.alive) !conns;
+	(*** Every 5 minutes, if the number of connections is < half !maxconns, then try to make a new conn. ***)
+	let tm = Unix.time() in
+	if (tm -. !lastsearchforconns > 300.0 && !preconns = [] && (2 * List.length !conns < !Config.maxconns)) then
+	  begin
+	    search_for_conns();
+	    lastsearchforconns := tm
+	  end;
 	handle_orphans();
 	handle_delayed();
 	Printf.printf "preconns %d, conns %d\n" (List.length !preconns) (List.length !conns); flush stdout;
