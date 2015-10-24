@@ -552,7 +552,37 @@ let conns = ref []
 let preconns = ref []
 let this_nodes_nonce = ref 0L
 
+(*** This is only approximate; it takes the height of a recent block header with the highest cumul stake ***)
+let current_block_height () =
+  match !recentblockheaders with
+  | (_,(_,blkh,_))::_ -> blkh
+  | [] -> 0L
+
+let lastbroadcastextra = ref (Unix.time());;
+
+let extra_inv_h invl mblkh =
+  let invr = ref invl in
+  let cnt = ref 0 in
+  List.iter (fun (bhh,(cumulstk,blkh,bh)) ->
+    incr cnt;
+    if !cnt < 50000 && blkh >= mblkh && not (List.mem (1,blkh,bhh) !invr) then
+      invr := (1,blkh,bhh)::!invr)
+    !recentblockheaders;
+  !invr
+
+(*** extra_inv is a function that adds extra inventory to inventory messages to make certain block headers propagate ***)
+let extra_inv invl =
+  let tm = Unix.time() in
+  if tm -. !lastbroadcastextra > 5400.0 then (*** every 90 minutes or so, send a big inv broadcast including the last 256 headers or so ***)
+    begin
+      lastbroadcastextra := tm;
+      extra_inv_h invl (Int64.sub (current_block_height()) 256L)
+    end
+  else (*** otherwise also send the past 8 headers or so ***)
+    extra_inv_h invl (Int64.sub (current_block_height()) 8L)
+
 let broadcast_inv invl =
+  let invl = extra_inv invl in
   if not (invl = []) then
     let invl2 = List.map (fun (k,_,h) -> (k,h)) invl in
     List.iter
@@ -629,26 +659,29 @@ let knownpeers : (string,int64) Hashtbl.t = Hashtbl.create 1000
 
 let tryconnectpeer n =
   if List.length !conns + List.length !preconns >= !Config.maxconns then raise EnoughConnections;
-  let (ip,port,v6) = extract_ip_and_port n in
-  begin
-    try
-      match !Config.socks with
-      | None ->
-	  let s = connectpeer ip port in
-	  ignore (initialize_conn n s)
-      | Some(4) ->
-	  let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
-	  ignore (initialize_conn_2 n s sin sout);
-      | Some(5) ->
-	  raise (Failure "socks5 is not yet supported")
-      | Some(z) ->
-	  raise (Failure ("socks" ^ (string_of_int z) ^ " is not yet supported"))
-    with
-    | RequestRejected ->
-	Printf.printf "RequestRejected\n"; flush stdout;
-    | _ ->
-	()
-  end
+  try
+    ignore (List.find (fun (_,_,_,peeraddr,_) -> n = peeraddr) !conns);
+  with Not_found ->
+    let (ip,port,v6) = extract_ip_and_port n in
+    begin
+      try
+	match !Config.socks with
+	| None ->
+	    let s = connectpeer ip port in
+	    ignore (initialize_conn n s)
+	| Some(4) ->
+	    let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
+	    ignore (initialize_conn_2 n s sin sout);
+	| Some(5) ->
+	    raise (Failure "socks5 is not yet supported")
+	| Some(z) ->
+	    raise (Failure ("socks" ^ (string_of_int z) ^ " is not yet supported"))
+      with
+      | RequestRejected ->
+	  Printf.printf "RequestRejected\n"; flush stdout;
+      | _ ->
+	  ()
+    end
 
 let fallbacknodes = [
 "108.61.219.125:20805"
@@ -768,7 +801,7 @@ let handle_msg sin sout cs replyto mh m =
 	  cs.rinv <- (k,h)::cs.rinv;
 	  match k with
 	  | 1 -> (*** block header ***)
-	      if not (known_blockheader_p blkh h) then (toget := (k,h)::!toget; Printf.printf "get it since not known blockheader\n"; flush stdout)
+	      if not (known_blockheader_p blkh h) then (toget := (k,h)::!toget; Printf.printf "get %s since not known blockheader\n" (hashval_hexstring h); flush stdout)
 	  | 2 -> (*** blockdeltah ***)
 	      if not (known_blockdeltah_p blkh h) then toget := (k,h)::!toget
 	  | 3 -> (*** blockdelta ***)
