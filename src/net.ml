@@ -40,6 +40,7 @@ let waitingblock : (int64 * int64 * hashval * blockheader * blockdelta * big_int
 
 let rec insertnewblockheader_real bhh cs mine blkh bh l =
   match l with
+  | (bhh1,(_,_,bh1))::r when bhh = bhh1 -> l (*** already in the list ***)
   | (bhh1,(cs1,blkh1,bh1))::r when lt_big_int cs1 cs || (mine && eq_big_int cs1 cs) -> (bhh,(cs,blkh,bh))::l (*** consider the ones this process has created preferable to others with the same cumulative stake ***)
   | x::r -> x::insertnewblockheader_real bhh cs mine blkh bh r
   | [] -> [(bhh,(cs,blkh,bh))]
