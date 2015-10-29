@@ -163,6 +163,12 @@ let verifymessage_a alpha recid fcomp (r,s) m =
   | Some(q) -> pubkey_hashval q fcomp = alpha
   | None -> false
 
+let verifymessage_a_recover alpha recid fcomp (r,s) m =
+  let e = md256_big_int (sha256dstr m) in
+  match recover_key e (r,s) recid with
+  | Some(q) when pubkey_hashval q fcomp = alpha -> Some(q)
+  | _ -> None
+
 let verifymessage alpha by0 (r,s) m =
   let by27 = by0-27 in
   let recid = by27 land 3 in
@@ -192,6 +198,16 @@ let verifybitcoinmessage_a alpha recid fcomp (r,s) m =
   seosbf c;
   Buffer.add_string ms m;
   verifymessage_a alpha recid fcomp (r,s) (Buffer.contents ms)
+
+let verifybitcoinmessage_a_recover alpha recid fcomp (r,s) m =
+  let m = if !Config.testnet then "testnet:" ^ m else m in
+  let ml = String.length m in
+  let ms = Buffer.create (26 + ml) in
+  Buffer.add_string ms "\024Bitcoin Signed Message:\n";
+  let c = seo_varint seosb (Int64.of_int ml) (ms,None) in (*** output the length as a varint ***)
+  seosbf c;
+  Buffer.add_string ms m;
+  verifymessage_a_recover alpha recid fcomp (r,s) (Buffer.contents ms)
 
 let verifybitcoinmessage alpha by0 (r,s) m =
   let m = if !Config.testnet then "testnet:" ^ m else m in

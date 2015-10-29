@@ -24,6 +24,7 @@ val verify_p2pkhaddr_signat : big_int -> p2pkhaddr -> signat -> int -> bool -> b
 val verifymessage_a : hashval -> int -> bool -> signat -> string -> bool
 val verifymessage : hashval -> int -> signat -> string -> bool
 val verifybitcoinmessage_a : hashval -> int -> bool -> signat -> string -> bool
+val verifybitcoinmessage_a_recover : hashval -> int -> bool -> signat -> string -> (big_int * big_int) option
 val verifybitcoinmessage : hashval -> int -> signat -> string -> bool
 val verifymessage_base64 : hashval -> string -> string -> bool
 val verifybitcoinmessage_base64 : hashval -> string -> string -> bool
