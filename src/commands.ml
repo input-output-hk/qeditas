@@ -53,21 +53,21 @@ let load_recenttxs () =
 	Printf.printf "Problem in recenttxs file: %s\n" (Printexc.to_string exc);
 	close_in ch;;
 
-let txqueue : (hashval,Tx.stx) Hashtbl.t = Hashtbl.create 100
+let txpool : (hashval,Tx.stx) Hashtbl.t = Hashtbl.create 100
 
-let load_txqueue () =
-  let fn = Filename.concat !Config.datadir "txqueue" in
+let load_txpool () =
+  let fn = Filename.concat !Config.datadir "txpool" in
   if Sys.file_exists fn then
     let ch = open_in_bin fn in
     try
       while true do
 	let ((txid,stau),_) = sei_prod sei_hashval Tx.sei_stx seic (ch,None) in
-	Hashtbl.add txqueue txid stau
+	Hashtbl.add txpool txid stau
       done
     with
     | End_of_file -> close_in ch
     | exc ->
-	Printf.printf "Problem in txqueue file: %s\n" (Printexc.to_string exc);
+	Printf.printf "Problem in txpool file: %s\n" (Printexc.to_string exc);
 	close_in ch;;
 
 let load_wallet () =
@@ -104,7 +104,7 @@ let load_wallet () =
 	      let a = addr_qedaddrstr (hashval_p2sh_addr h) in
 	      (h,a,scr))::!walletp2shs
 	| 2 ->
-	    let (endors,_) = sei_prod5 sei_payaddr sei_payaddr sei_varintb sei_bool sei_signat seic (s,None) in (*** For each (alpha,beta,esg) beta can use esg to justify signing for alpha; endorsements can be used for spending/moving, but not for staking. ***)
+	    let (endors,_) = sei_prod6 sei_payaddr sei_payaddr (sei_prod sei_big_int_256 sei_big_int_256) sei_varintb sei_bool sei_signat seic (s,None) in (*** For each (alpha,beta,esg) beta can use esg to justify signing for alpha; endorsements can be used for spending/moving, but not for staking. ***)
 	    walletendorsements := endors::!walletendorsements
 	| 3 ->
 	    let (watchaddr,_) = sei_addr seic (s,None) in
@@ -134,7 +134,7 @@ let save_wallet () =
   List.iter
     (fun endors ->
       output_byte s 2;
-      seocf (seo_prod5 seo_payaddr seo_payaddr seo_varintb seo_bool seo_signat seoc endors (s,None)))
+      seocf (seo_prod6 seo_payaddr seo_payaddr (seo_prod seo_big_int_256 seo_big_int_256) seo_varintb seo_bool seo_signat seoc endors (s,None)))
     !walletendorsements;
   List.iter
     (fun watchaddr ->
@@ -193,7 +193,7 @@ let endorsement_in_wallet_p alpha =
     let b = (p = 1) in
     begin
       try
-	ignore (List.find (fun (beta,_,_,_,_) -> beta = (b,x4,x3,x2,x1,x0)) !walletendorsements);
+	ignore (List.find (fun (beta,_,_,_,_,_) -> beta = (b,x4,x3,x2,x1,x0)) !walletendorsements);
 	true
       with Not_found -> false
     end
@@ -208,7 +208,7 @@ let endorsement_in_wallet_2_p alpha beta =
     let c = (q = 1) in
     begin
       try
-	ignore (List.find (fun (alpha2,beta2,_,_,_) -> alpha2 = (b,x4,x3,x2,x1,x0) && beta2 = (c,y4,y3,y2,y1,y0)) !walletendorsements);
+	ignore (List.find (fun (alpha2,beta2,_,_,_,_) -> alpha2 = (b,x4,x3,x2,x1,x0) && beta2 = (c,y4,y3,y2,y1,y0)) !walletendorsements);
 	true
       with Not_found -> false
     end
@@ -273,7 +273,7 @@ let importprivkey_real (k,b) =
       walletkeys := (k,b,(x,y),qedwif k b,h,a)::!walletkeys;
       walletendorsements := (*** remove endorsements if the wallet has the private key for the address, since it can now sign directly ***)
 	List.filter
-	  (fun (alpha2,beta,recid,fcomp,esg) -> if alpha = payaddr_addr alpha2 then (replwall := true; false) else true)
+	  (fun (alpha2,beta,(x,y),recid,fcomp,esg) -> if alpha = payaddr_addr alpha2 then (replwall := true; false) else true)
 	  !walletendorsements;
       walletwatchaddrs :=
 	List.filter
@@ -314,11 +314,12 @@ let importendorsement a b s =
     begin
       let alphap = (false,x4,x3,x2,x1,x0) in
       if privkey_in_wallet_p alpha then raise (Failure "Not adding endorsement since the wallet already has the private key for this address.");
-      if not (verifybitcoinmessage_a (x4,x3,x2,x1,x0) recid fcomp esg ("endorse " ^ b)) then
-	raise (Failure "endorsement signature verification failed; not adding endorsement to wallet");
-      Printf.printf "just verified endorsement signature:\naddrhex = %s\nrecid = %d\nfcomp = %s\nesgr = %s\nesgs = %s\nendorse %s\n" (hashval_hexstring (x4,x3,x2,x1,x0)) recid (if fcomp then "true" else "false") (let (r,s) = esg in string_of_big_int r) (let (r,s) = esg in string_of_big_int s) b; flush stdout;
-      walletendorsements := (alphap,betap,recid,fcomp,esg)::!walletendorsements;
-      save_wallet() (*** overkill, should append if possible ***)
+      match verifybitcoinmessage_a_recover (x4,x3,x2,x1,x0) recid fcomp esg ("endorse " ^ b) with
+      | None -> raise (Failure "endorsement signature verification failed; not adding endorsement to wallet")
+      | Some(x,y) ->
+	  Printf.printf "just verified endorsement signature:\naddrhex = %s\nrecid = %d\nfcomp = %s\nesgr = %s\nesgs = %s\nendorse %s\n" (hashval_hexstring (x4,x3,x2,x1,x0)) recid (if fcomp then "true" else "false") (let (r,s) = esg in string_of_big_int r) (let (r,s) = esg in string_of_big_int s) b; flush stdout;
+	  walletendorsements := (alphap,betap,(x,y),recid,fcomp,esg)::!walletendorsements;
+	  save_wallet() (*** overkill, should append if possible ***)
     end
   else if p = 1 then (*** endorsement by a p2sh address, endorsement can only be checked if the script for alpha is known, so it should have been imported earlier ***)
     begin
@@ -348,7 +349,11 @@ let importwatchbtcaddr a =
   save_wallet() (*** overkill, should append if possible ***)
 
 let printassets () =
-  let ctr = Ctre.CAbbrev(hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",hexstring_hashval "df418292e7c54837ebdd3962cbfee9d4bc8ca981") in
+  let cr = hexstring_hashval !Config.currledgerroot in
+  Printf.printf "localframehash %s cr %s\n" (hashval_hexstring !localframehash) (hashval_hexstring cr); flush stdout;
+  let ca = lookup_frame_ctree_root_abbrev cr !localframehash in
+  Printf.printf "ca %s\n" (hashval_hexstring ca); flush stdout;
+  let ctr = Ctre.CAbbrev(cr,ca) in
   Printf.printf "Controlled p2pkh assets:\n";
   List.iter
     (fun (k,b,(x,y),w,h,z) ->
@@ -377,7 +382,7 @@ let printassets () =
     !walletp2shs;
   Printf.printf "Assets via endorsement:\n";
   List.iter
-    (fun (alpha,beta,recid,fcomp,esg) ->
+    (fun (alpha,beta,(x,y),recid,fcomp,esg) ->
       let alpha2 = payaddr_addr alpha in
       match Ctre.ctree_addr alpha2 ctr with
       | (Some(Ctre.CLeaf(_,hl)),_) ->
@@ -465,7 +470,7 @@ let do_rpccom r c =
 	      walletkeys := (k,b,(x,y),qedwif k b,h,a)::!walletkeys;
 	      walletendorsements := (*** remove endorsements if the wallet has the private key for the address, since it can now sign directly ***)
 		List.filter
-		  (fun (alpha2,beta,recid,fcomp,esg) -> not (alpha = payaddr_addr alpha2))
+		  (fun (alpha2,beta,(x,y),recid,fcomp,esg) -> not (alpha = payaddr_addr alpha2))
 		  !walletendorsements;
 	      walletwatchaddrs :=
 		List.filter
@@ -523,7 +528,7 @@ let do_rpccom r c =
 	  let (by0,esg) = decode_signature s in
 	  if not (verifybitcoinmessage (x4,x3,x2,x1,x0) by0 esg ("endorse " ^ b)) then
 	    raise (Failure "endorsement signature verification failed; not adding endorsement to wallet");
-	  walletendorsements := (alphap,betap,recid,fcomp,esg)::!walletendorsements;
+	  walletendorsements := (alphap,betap,(x,y),recid,fcomp,esg)::!walletendorsements;
 	  save_wallet();
 	  output_byte c 1
 	with
