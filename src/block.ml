@@ -68,7 +68,7 @@ let set_genesis_stakemods x =
  ***)
 set_genesis_stakemods "0000000000000000000000000000000000000000"
 
-let genesistimestamp = ref 1445189821L;; (*** Too early, but OK for testing. For the mainnet, this should be the timestamp in the same bitcoin block used to initialize the stake modifiers ***)
+let genesistimestamp = ref 1446148367L;; (*** Too early, but OK for testing. For the mainnet, this should be the timestamp in the same bitcoin block used to initialize the stake modifiers ***)
 
 (*** max target/min difficulty: 2^220 (for mainnet) ***)
 let max_target = ref (shift_left_big_int unit_big_int 220)
