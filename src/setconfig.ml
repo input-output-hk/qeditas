@@ -6,7 +6,8 @@ let stringconfigvars = [
 ("ctreedatadir",fun x -> Config.ctreedatadir := x);
 ("chaindatadir",fun x -> Config.chaindatadir := x);
 ("seed",fun x -> Config.seed := x);
-("lastcheckpoint",fun x -> Config.lastcheckpoint := x)
+("lastcheckpoint",fun x -> Config.lastcheckpoint := x);
+("currledgerroot",fun x -> Config.currledgerroot := x)
 ];;
 let boolconfigvars = [
 ("testnet",fun x -> Config.testnet := x);
