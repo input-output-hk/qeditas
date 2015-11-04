@@ -116,7 +116,7 @@ let possibly_request_full_block blkh bho =
 	      in
 	      if valid_block None None blkh ((bhd,bhs),bd) then
 		begin
-		  Printf.printf "Constructed a valid block\n"; flush stdout;
+		  Printf.printf "Constructed a valid block with %d txs.\n" (List.length bd.blockdelta_stxl); flush stdout;
 		  begin
 		    let tr1a = ctree_of_block ((bhd,bhs),bd) in
 		    let tr1h = ctree_hashroot tr1a in
@@ -261,7 +261,7 @@ let send_assets_to_staker tostkr c =
     )
     !Commands.walletkeys;
   List.iter
-    (fun (alpha,beta,_,_,_) ->
+    (fun (alpha,beta,_,_,_,_) ->
       let (p,x4,x3,x2,x1,x0) = alpha in
       let (q,_,_,_,_,_) = beta in
       if not p && not q then (*** only p2pkh can stake ***)
@@ -313,7 +313,7 @@ let start_staking () =
 		let bhh = hash_blockheaderdata bhd in
 		Printf.printf "Trying to look up block %s\n" (hashval_hexstring bhh); flush stdout;
 		let bd = Hashtbl.find recentblockdeltas bhh in
-		Printf.printf "Found block %s\n" (hashval_hexstring bhh); flush stdout;
+		Printf.printf "Found block %s with %d txs\n" (hashval_hexstring bhh) (List.length bd.blockdelta_stxl); flush stdout;
 		let tr1a = ctree_of_block ((bhd,bhs),bd) in
 		let tr1h = ctree_hashroot tr1a in
 		let ca = lookup_frame_ctree_root_abbrev !localframehash tr1h in
@@ -405,7 +405,9 @@ let main () =
       end;
     sethungsignalhandler();
     loadknownpeers();
-    search_for_conns ();
+    search_for_conns();
+    Commands.load_recenttxs();
+    Commands.load_txpool();
     while true do (*** main process loop ***)
       if !Config.testnet then Unix.sleep 1; (*** while debugging to prevent massive output ***)
       try
@@ -447,23 +449,50 @@ let main () =
 				in
 				let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh reward_locktime,true),Currency(rewfn blkh)))] in
 				let coinstk : tx = ([(alpha2,aid)],stkoutl) in
+				let prevc = Some(CAbbrev(prevledgerroot,lookup_frame_ctree_root_abbrev !localframehash prevledgerroot)) in
+				let octree_ctree c =
+				  match c with
+				  | Some(c) -> c
+				  | None -> raise (Failure "tree should not be empty")
+				in
+				let dync = ref (octree_ctree (tx_octree_trans blkh coinstk prevc)) in
+				let otherstxs = ref [] in
+				Hashtbl.iter
+				  (fun h ((tauin,tauout),sg) ->
+				    Printf.printf "Trying to include tx %s\n" (hashval_hexstring h); flush stdout;
+				    if tx_valid (tauin,tauout) then
+				      try
+					Printf.printf "tx valid\n"; flush stdout;
+					let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets tauin !dync) in
+					Printf.printf "found input assets\n"; flush stdout;
+					if tx_signatures_valid blkh al ((tauin,tauout),sg) then
+					  begin
+					    Printf.printf "signatures valid\n"; flush stdout;
+					    if ctree_supports_tx None None blkh (tauin,tauout) !dync >= 0L then
+					      begin
+						Printf.printf "ctree supports tx\n"; flush stdout;
+						let c = octree_ctree (tx_octree_trans blkh (tauin,tauout) (Some(!dync))) in
+						Printf.printf "transformed ctree\n"; flush stdout;
+						otherstxs := ((tauin,tauout),sg)::!otherstxs;
+						dync := c
+					      end
+					  end
+				      with _ -> ())
+				  Commands.txpool;
+				otherstxs := List.rev !otherstxs;
+				let othertxs = List.map (fun (tau,_) -> tau) !otherstxs in
 				let prevcforblock =
 				  match
-				    get_tx_supporting_octree
-				      coinstk
-				      (Some(CAbbrev(prevledgerroot,lookup_frame_ctree_root_abbrev !localframehash prevledgerroot)))
+				    get_txl_supporting_octree (coinstk::othertxs) prevc
 				  with
 				  | Some(c) -> c
 				  | None -> raise (Failure "ctree should not have become empty")
 				in
 				let (prevcforheader,cgr) = factor_inputs_ctree_cgraft [(alpha2,aid)] prevcforblock in
 				let (newcr,newca) =
-				  match tx_octree_trans blkh coinstk (Some(CAbbrev(prevledgerroot,lookup_frame_ctree_root_abbrev !localframehash prevledgerroot))) with
-				  | None -> raise (Failure "ctree should not have become empty")
-				  | Some(c) ->
-				      match frame_filter_ctree (wrap_frame !localframe) c with
-				      | CAbbrev(cr,ca) -> (cr,ca)
-				      | _ -> raise (Failure "frame_filter_ctree was given a wrapped frame but did not return an abbrev")
+				  match frame_filter_ctree (wrap_frame !localframe) !dync with
+				  | CAbbrev(cr,ca) -> (cr,ca)
+				  | _ -> raise (Failure "frame_filter_ctree was given a wrapped frame but did not return an abbrev")
 				in
 				Hashtbl.add recentledgerroots newcr (blkh,newca); (*** remember the association so the relevant parts of the new ctree can be reloaded when needed ***)
 				let bhdnew : blockheaderdata
@@ -493,9 +522,9 @@ let main () =
 				    }
 				  with Not_found ->
 				    try
-				      let (_,beta,recid,fcomp,esg) =
+				      let (_,beta,(w,z),recid,fcomp,esg) =
 					List.find
-					  (fun (alpha2,beta,recid,fcomp,esg) ->
+					  (fun (alpha2,beta,(w,z),recid,fcomp,esg) ->
 					    let (p,x0,x1,x2,x3,x4) = alpha2 in
 					    let (q,_,_,_,_,_) = beta in
 					    not p && (x0,x1,x2,x3,x4) = alpha && not q)
@@ -517,12 +546,13 @@ let main () =
 				    with Not_found ->
 				      raise (Failure("Was staking for " ^ Cryptocurr.addr_qedaddrstr (hashval_p2pkh_addr alpha) ^ " but have neither the private key nor an appropriate endorsement for it."))
 				in
+				Printf.printf "Including %d txs in block\n" (List.length !otherstxs);
 				let bhnew = (bhdnew,bhsnew) in
 				let bdnew : blockdelta =
 				  { stakeoutput = stkoutl;
 				    forfeiture = None; (*** leave this as None for now; should check for double signing ***)
 				    prevledgergraft = cgr;
-				    blockdelta_stxl = []
+				    blockdelta_stxl = !otherstxs
 				  }
 				in
 				if blkh = 1L then
