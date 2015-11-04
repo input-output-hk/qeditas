@@ -101,7 +101,7 @@ doc:<address>:<documentname>[:<theoryname>] *
 Created transactions are appended to the 'recenttxs' file.");
 ("signrawtransaction",1,Some(1),"signrawtransaction <txid>","Sign a transaction (partially or completely) depending on what information is in the wallet.
 The (partially) signed transaction is added to the 'recenttxs' file.");
-("sendrawtransaction",1,Some(1),"sendrawtransaction <txid>","If the tx is completely signed, put it in the 'txqueue' file. qeditasd will then publish it.");
+("sendrawtransaction",1,Some(1),"sendrawtransaction <txid>","If the tx is completely signed, put it in the 'txpool' file. qeditasd will then publish it.");
 ("help",0,Some 1,"help [command]","Give a list of commands or help for a specific command.")
 ];;
 
@@ -265,13 +265,27 @@ let process_command r =
 	  load_wallet();
 	  List.iter
 	    (fun (alpha,_) -> (*** for now, assume there's no obligation here (wrong in general, but need to look up the asset in the general case ***)
+	      Printf.printf "alpha %s\n" (Cryptocurr.addr_qedaddrstr alpha);
 	      let (i,x4,x3,x2,x1,x0) = alpha in
 	      if i = 0 then (*** only handle p2pkh for now ***)
 		try
 		  let (k,b,(x,y),w,h,beta) = List.find (fun (k,b,(x,y),w,h,beta) -> h = (x4,x3,x2,x1,x0)) !walletkeys in
 		  let ra = rand_256() in
+		  Printf.printf "adding sig\n";
 		  sin2 := (Script.P2pkhSignat(Some(x,y),b,Signat.signat_hashval txid k ra))::!sin2
-		with Not_found -> ()
+		with Not_found ->
+		  try
+		    let (_,((j,y4,y3,y2,y1,y0) as beta),(w,z),recid,fcomp,esg) =
+		      List.find (fun (alpha2,beta,(w,z),recid,fcomp,esg) -> payaddr_addr alpha2 = alpha) !walletendorsements
+		    in
+		    if not j then
+		      let (k,b,(x,y),wif,h,gamma) = List.find (fun (k,b,(x,y),wif,h,beta) -> h = (y4,y3,y2,y1,y0)) !walletkeys in
+		      let ra = rand_256() in
+		      Printf.printf "adding sig by endorsement\n";
+		      sin2 := (Script.EndP2pkhToP2pkhSignat(Some(w,z),fcomp,Some(x,y),b,esg,Signat.signat_hashval txid k ra))::!sin2
+		    else
+		      raise Not_found
+		  with Not_found -> ()
 	    )
 	    txin;
 	  (*** don't worry about sout for now; it's needed for publications ***)
@@ -289,7 +303,7 @@ let process_command r =
 	load_recenttxs();
 	try
 	  let stau = Hashtbl.find recenttxs txid in
-	  let fn = Filename.concat !Config.datadir "txqueue" in
+	  let fn = Filename.concat !Config.datadir "txpool" in
 	  if Sys.file_exists fn then
 	    begin
 	      let ch = open_out_gen [Open_wronly;Open_binary;Open_append] 0o644 fn in
@@ -306,6 +320,9 @@ let process_command r =
 	  raise (Failure "Unknown tx")
       end
   | [c] when c = "printassets" ->
+      localframe := load_currentframe();
+      localframehash := hashframe !localframe;
+      load_root_abbrevs_index();
       load_wallet();
       printassets()
   | [c;w] when c = "importprivkey" ->
