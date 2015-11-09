@@ -1,0 +1,9 @@
+*~
+*.log
+*.aux
+*.dvi
+*.ps
+*.pdf
+*.bbl
+*.blg
+*.idx

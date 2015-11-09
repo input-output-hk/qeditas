@@ -1,0 +1,175 @@
+\documentclass{book}
+
+\newcommand\branch[1]{{\tt{#1}}}
+\newcommand\file[1]{{\tt{#1}}}
+\newcommand\dir[1]{{\tt{#1}}}
+\newcommand\module[1]{{\sf{#1}}}
+\newcommand\exec[1]{{\tt{#1}}}
+\newcommand\commlinearg[1]{{\tt{#1}}}
+\newcommand\var[1]{{\sf{#1}}}
+\newcommand\func[1]{{\sf{#1}}}
+\newcommand\type[1]{{\sf{#1}}}
+
+\def\dev{\branch{dev}}
+\def\master{\branch{master}}
+\def\testing{\branch{testing}}
+\def\initdistr{\branch{initdistr}}
+
+\title{Qeditas Technical Documentation}
+\author{The Qeditas Developers}
+
+\begin{document}
+\maketitle
+
+\chapter{Introduction}
+
+This document is intended as a reference
+for those wanting to understand or modify the
+code supporting Qeditas.
+
+\chapter{Git Branches}\label{chap:branches}
+
+There are three primary git branches: \master, \dev and \testing.
+The \master branch is intended to contain the code which can be tagged to create
+specific Qeditas versions.
+The \dev branch is where code can be written, modified and to some degree tested.
+The \testing branch contains a number of unit tests.
+The code in \dev should regularly be merged into \testing and
+the unit tests run to ensure the unit tests still pass.
+In addition, new unit tests should be added as new code is added to the \dev branch.
+When the code in \dev is stable, it should be merged to \master.
+
+Another branch, \initdistr, contains code for computing the ledger tree for
+the initial distribution of Qeditas currency units. This distribution
+was based on a snapshot of the Bitcoin block chain.
+
+\chapter{Configuration Related Code}\label{chap:config}
+
+The modules \module{config} and \module{setconfig}
+are for customizing the configuration of Qeditas.
+The \file{configure} script creates an OCaml file \file{config.ml}
+setting default values for the variables exposed in the interface \file{config.mli}:
+\begin{itemize}
+\item \var{datadir} : the location of the main directory containing the local Qeditas configuration file, wallet file, and other data (usually \dir{.qeditas} in the user's home directory)
+\item \var{ctreedatadir} : the location of the directory where abbreviations for compact (ledger) trees are stored (usually the \dir{ctrees} subdirectory of \var{datadir})
+\item \var{chaindatadir} : the location of the directory where abbreviations for (compact) ledger trees are stored (usually the \dir{chain} subdirectory of \var{datadir})\footnote{At the moment, this is probably unused.}
+\item \var{testnet} : set to true if Qeditas is running on the testnet instead of the mainnet
+\item \var{staking} : set to true if Qeditas should stake
+\item \var{ip} : optionally the IP address to listen for incoming connections
+\item \var{ipv6} : optionally the IPv6 address to listen for incoming connections
+\item \var{port} : the port to listen for incoming connections
+\item \var{socks} : None if connections are not routed through SOCKS; Some($v$) if connections are routed through SOCKS protocol $v$ where $v$ is 4 or 5\footnote{At the moment, 5 is not yet supported.}
+\item \var{maxconns} : the maximum number of connections
+\item \var{seed} : the initial seed
+\item \var{lastcheckpoint} : the last checkpoint
+\item \var{currledgerroot} : the hashroot of the current ledger tree
+\end{itemize}
+
+The functions exposed in the interface \file{setconfig.mli}
+override the default compiled settings by reading a configuration file
+and checking the command line arguments of \exec{qeditasd} or \exec{qeditascli}.
+This is done by calling \func{datadir\_from\_command\_line}
+to set \var{datadir} from the command line if the argument \commlinearg{-datadir} was given,
+then calling \func{process\_config\_file} to read the \file{qeditas.conf} file in \var{datadir},
+and finally calling \func{process\_config\_args} to set the remaining configuration variables
+by processing other command line arguments than \commlinearg{-datadir}.
+
+\chapter{Serialization}\label{chap:ser}
+
+The module \module{ser} (\file{ser.ml} and \file{ser.mli}) contains the basic code for serializing data.
+Throughout the code there are functions with names of the form {\sf{seo\_}}$\tau$ (output)
+and {\sf{sei\_}}$\tau$ (input).
+In each case {\sf{seo\_}}$\tau$ is a function for creating a serialized output for an
+element of type $\tau$
+and {\sf{sei\_}}$\tau$ is a function for creating an element of type $\tau$ given its serialization.
+
+There are two representations for the serializations: strings and channels
+and the input and output functions are polymorphic so they can support both representations.
+The types \type{seosbt} and \type{seist} correspond to the string representation
+and there are corresponding atomic
+functions \func{seosb} (output bits to a string buffer), \func{seosbf} (flush output to string buffer) and \func{seis} (input bits from a string).
+The types \type{seosct} and \type{seict} correspond to the channel representation
+and there are corresponding atomic
+functions \func{seoc} (output bits to a channel), \func{seocf} (flush output channel) and \func{seic} (input bits from a channel).
+
+The functions to output its take three arguments: the number of bits $n$, the bits to output as an integer $m$ with $0\leq m < 2^n$ and the serialization output object.
+The functions to flush the output takes the serialization output object
+and ensures any remaining its are output, assuming the remaining its are zero.
+The functions to input its from a channel take two arguments: the number of bits $n$ to input and the serialization input object. It returns both an integer $m$ where $0\leq m < 2^n$ and the serialization input object.
+
+The remainder of the functions defined in \module{ser} are for
+serialization basic data: booleans, bytes, 32-bit integers, 64-bit integers, big integers (the OCaml type \type{big\_int}) assumed to be 256-bit integers and strings.
+There are also other serialization functions for integers: \func{seo\_varint} and \func{sei\_varint} uses the varint representation used in Bitcoin, while \func{seo\_varintb} and \func{sei\_varintb} uses a different compact representation to represent numbers less than $65,536$.
+
+In addition there are functions used to construct serialization functions
+for list types, option types and product types with up to $6$ components.
+For example, there are functions \func{seo\_list} and \func{sei\_list}.
+When serialization functions are needed for lists of bytes, we simply
+use \func{seo\_list} applied to \func{seo\_int8}
+and \func{sei\_list} applied to \func{sei\_int8}.
+
+Note that the serialization code is inherently higher-order (functions are first-class values).
+Firstly, the atomic functions are passed as arguments to the serialization functions
+for each type so the same serialization code can be used for both representations.
+Secondly, the serialization functions themselves are passed to functions like \func{seo\_list}
+and \func{sei\_list}.
+
+There is one minor issue with the serialization code which may be confusing
+and hopefully will not be a nightmare to maintain.
+The bits are used to construct a byte from least significant to most significant.
+As a consequence, different ways to output the same sequence of bits can be confusing.
+Let $o$ be an atomic output function (either $\func{seosb}$ or $\func{seoc}$).
+For example, suppose we wish to output the bit $0$ followed by the bit $1$.
+We can do this in one of two ways:
+\begin{itemize}
+\item Call $o$ twice: first as $o 1 0$ (to output the one bit $0$) and then as $o 1 1$ (to output the one bit $1$).
+\item Call $o$ once as $o 2 2$ (to output the two bits $10$, the binary representation of $2$).
+\end{itemize}
+In some places this can make serialization code difficult to correctly interpret.
+
+\chapter{Cryptographic Hashing}\label{chap:hash}
+
+The modules \module{hashaux}, \module{sha256}, \module{ripemd160}, \module{hash}
+and \module{htree} contain code for cryptographic hashing functions.
+
+\chapter{Cryptocurrency Operations}\label{chap:cryptocurr}
+
+The modules \module{secp256k1}, \module{cryptocurr}, \module{signat} and \module{script}
+contain code for cryptocurrency related operations.
+In particular, \module{secp256k1} implements the elliptic curve {\tt{secp256k1}}~\cite{sec2final},
+\module{cryptocurr} supports base 58 formats for private keys and addresses,
+\module{signat} supports cryptographic signatures
+and \module{script} supports the Bitcoin scripting language (mostly).
+
+\chapter{Formalized Mathematics}\label{chap:math}
+
+\module{mathdata}
+
+\chapter{Assets and Transactions}\label{chap:assetstx}
+
+\module{assets}
+\module{tx}
+
+\chapter{Ledger Trees}\label{chap:ctre}
+
+\module{ctre}
+\module{ctregraft}
+
+\chapter{Blocks and Block Chains}\label{chap:block}
+
+\module{block}
+
+\chapter{Networking}\label{chap:net}
+
+\module{net}
+
+\chapter{Top Level Code}\label{chap:top}
+
+\module{commands}
+\module{qeditascli}
+\module{qeditasd}
+
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\end{document}
