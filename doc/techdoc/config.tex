@@ -1,0 +1,29 @@
+The modules \module{config} and \module{setconfig}
+are for customizing the configuration of Qeditas.
+The \file{configure} script creates an OCaml file \file{config.ml}
+setting default values for the variables exposed in the interface \file{config.mli}:
+\begin{itemize}
+\item \var{datadir} : the location of the main directory containing the local Qeditas configuration file, wallet file, and other data (usually \dir{.qeditas} in the user's home directory)
+\item \var{ctreedatadir} : the location of the directory where abbreviations for compact (ledger) trees are stored (usually the \dir{ctrees} subdirectory of \var{datadir})
+\item \var{chaindatadir} : the location of the directory where abbreviations for (compact) ledger trees are stored (usually the \dir{chain} subdirectory of \var{datadir})\footnote{At the moment, this is probably unused.}
+\item \var{testnet} : set to true if Qeditas is running on the testnet instead of the mainnet
+\item \var{staking} : set to true if Qeditas should stake
+\item \var{ip} : optionally the IP address to listen for incoming connections
+\item \var{ipv6} : optionally the IPv6 address to listen for incoming connections
+\item \var{port} : the port to listen for incoming connections
+\item \var{socks} : None if connections are not routed through SOCKS; Some($v$) if connections are routed through SOCKS protocol $v$ where $v$ is 4 or 5\footnote{At the moment, 5 is not yet supported.}
+\item \var{maxconns} : the maximum number of connections
+\item \var{seed} : the initial seed
+\item \var{lastcheckpoint} : the last checkpoint
+\item \var{currledgerroot} : the hashroot of the current ledger tree
+\end{itemize}
+
+The functions exposed in the interface \file{setconfig.mli}
+override the default compiled settings by reading a configuration file
+and checking the command line arguments of \exec{qeditasd} or \exec{qeditascli}.
+This is done by calling \func{datadir\_from\_command\_line}
+to set \var{datadir} from the command line if the argument \commlinearg{-datadir} was given,
+then calling \func{process\_config\_file} to read the \file{qeditas.conf} file in \var{datadir},
+and finally calling \func{process\_config\_args} to set the remaining configuration variables
+by processing other command line arguments than \commlinearg{-datadir}.
+

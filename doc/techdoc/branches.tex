@@ -1,0 +1,19 @@
+There are three primary git branches: \master, {\dev} and \testing.
+The {\master} branch is intended to contain the code which can be tagged to create
+specific Qeditas versions.
+The {\dev} branch is where code can be written, modified and to some degree tested.
+The {\testing} branch contains a number of unit tests.
+The code in {\dev} should regularly be merged into {\testing} and
+the unit tests run to ensure the unit tests still pass.
+In addition, new unit tests should be added as new code is added to the {\dev} branch.
+When the code in {\dev} is stable, it should be merged to \master.
+
+The source for this document is also part of the {\dev} branch and
+the intention is for it to correspond to the code in the {\dev} branch.
+Likewise, the source for this document can be merged into the {\master} branch
+when appropriate.
+
+Another branch, \initdistr, contains code for computing the ledger tree for
+the initial distribution of Qeditas currency units. This distribution
+was based on a snapshot of the Bitcoin block chain.
+
