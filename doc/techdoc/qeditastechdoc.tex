@@ -1,14 +1,16 @@
 \documentclass{book}
 
-\newcommand\branch[1]{{\tt{#1}}}
-\newcommand\file[1]{{\tt{#1}}}
-\newcommand\dir[1]{{\tt{#1}}}
-\newcommand\module[1]{{\sf{#1}}}
-\newcommand\exec[1]{{\tt{#1}}}
-\newcommand\commlinearg[1]{{\tt{#1}}}
-\newcommand\var[1]{{\sf{#1}}}
-\newcommand\func[1]{{\sf{#1}}}
-\newcommand\type[1]{{\sf{#1}}}
+\usepackage{makeidx}
+
+\newcommand\branch[1]{{\texttt{#1}}\index{#1@\texttt{#1}}\index{branch!#1@\texttt{#1}}}
+\newcommand\file[1]{{\texttt{#1}}\index{#1@\texttt{#1}}\index{file!#1@\texttt{#1}}}
+\newcommand\dir[1]{{\texttt{#1}}\index{#1@\texttt{#1}}\index{directory!#1@\texttt{#1}}}
+\newcommand\module[1]{{\textsf{#1}}\index{#1@\texttt{#1}}\index{module!#1@\texttt{#1}}}
+\newcommand\exec[1]{{\texttt{#1}}\index{#1@\texttt{#1}}\index{executable!#1@\texttt{#1}}}
+\newcommand\commlinearg[1]{{\texttt{#1}}\index{#1@\texttt{#1}}\index{command line argument!#1@\texttt{#1}}}
+\newcommand\var[1]{{\textsf{#1}}\index{#1@\texttt{#1}}\index{variable!#1@\texttt{#1}}}
+\newcommand\func[1]{{\textsf{#1}}\index{#1@\texttt{#1}}\index{function!#1@\texttt{#1}}}
+\newcommand\type[1]{{\textsf{#1}}\index{#1@\texttt{#1}}\index{type!#1@\texttt{#1}}}
 
 \def\dev{\branch{dev}}
 \def\master{\branch{master}}
@@ -17,6 +19,8 @@
 
 \title{Qeditas Technical Documentation}
 \author{The Qeditas Developers}
+
+\makeindex
 
 \begin{document}
 \maketitle
@@ -71,5 +75,7 @@
 
 \bibliographystyle{plain}
 \bibliography{refs}
+
+\printindex
 
 \end{document}
