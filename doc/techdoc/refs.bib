@@ -640,8 +640,34 @@ title={Qeditas: A Formal Library as a Bitcoin Spin-Off},
 year=2015
 }
 
-@misc{ripemd160,
-author={Dobbertin, Bosselaers, Preneel},
-title={RIPEMD-160: A Strengthened Version of RIPEMD},
-year=1996
+
+@inproceedings{ripemd160,
+  author    = {Hans Dobbertin and Antoon Bosselaers and Bart Preneel},
+  title     = {RIPEMD-160: A Strengthened Version of RIPEMD},
+  pages     = {71-82},
+  editor    = {Dieter Gollmann},
+  booktitle = {FSE},
+  publisher = {Springer},
+  series    = {LNCS},
+  volume    = {1039},
+  year      = {1996},
+  isbn      = {3-540-60865-6},
+  abstract  = {Cryptographic hash functions are an important tool in cryptography
+               for applications such as digital ﬁngerprinting of messages, message 
+               authentication, and key derivation. During the last ﬁve years, several
+               fast software hash functions have been proposed; most of them are based
+               on the design principles of Ron Rivest’s MD4. One such proposal was RIPEMD,
+               which was developed in the framework of the EU project RIPE (Race Integrity Primitives Evaluation).
+               Because of recent progress in the cryptanalysis of these hash functions, we 
+               propose a new version of RIPEMD with a 160-bit result, as well as a plug-in 
+               substitute for RIPEMD with a 128-bit result. We also compare the software 
+               performance of several MD4-based algorithms, which is of independent interest.},
+  url      = {http://homes.esat.kuleuven.be/~cosicart/pdf/AB-9601/AB-9601.pdf}
+}
+
+@misc{sha256,
+author={NIST},
+title = {{FIPS} 180-4: {S}ecure {H}ash {S}tandard ({SHS})},
+year=2012,
+month=March
 }
