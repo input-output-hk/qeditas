@@ -1,3 +1,240 @@
-The modules \module{hashaux}, \module{sha256}, \module{ripemd160}, \module{hash}
-and \module{htree} contain code for cryptographic hashing functions.
+The modules {\module{hashaux}}, {\module{sha256}}, {\module{ripemd160}}, {\module{hash}}
+and {\module{htree}} contain code for cryptographic hashing functions.
+The two hashing functions supported are {\tt{SHA256}}~\cite{sha256} and {\tt{RIPEMD-160}}~\cite{ripemd160}.
+The {\tt{RIPEMD-160}} code only supports hashing a 256 bit input and is
+assumed to be called on the result of applying {\tt{SHA256}}.
 
+Profiling suggests that the hashing functions are the biggest computational bottleneck
+in Qeditas. Improvements to the code described here could make Qeditas run significantly faster.
+
+\section{Auxiliary Functions}
+
+The module {\module{hashaux}} implements a few helper functions needed by both hashing functions.
+\begin{itemize}
+\item {\func{hexsubstring\_int32}} takes a string of hexadecimal digits and a position. The 8 characters starting at the position are interpreted as a 32-bit integer (big endian).
+\item {\func{int32\_hexstring}} takes a string buffer and a 32-bit integer and adds 8 hexadecimal digits to the buffer representing the integer (big endian).
+\item {\func{big\_int\_sub\_int32}} takes a big integer $x$ and an integer $i$ and returns the 32-bit integer resulting from shifting away $i$ bits of $x$ (i.e., dividing by $2^i$) and then taking the 32 least significant bits (i.e., modulo $2^{32}$).
+\item {\func{int32\_big\_int\_bits}} takes a 32-bit integer $x$ and an integer $i$ and returns the big integer resulting from shifting $x$ forward by $i$ bits (i.e., multiplying by $2^i$).
+\item {\func{int32\_rev}} takes a 32-bit integer of the form $b_3 2^{24} + b_2 2^{16} + b_1 2^{8} + b_0$
+and returns the reversed 32-bit integer $b_0 2^{24} + b_1 2^{16} + b_2 2^{8} + b_3$.
+\end{itemize}
+
+\section{Sha256}
+
+The module {\module{sha256}} defines a type {\type{md256}} (message digest of 256 bits)
+as a product of 8 32-bit integers.
+(The type {\type{md256}} is also sometimes used to represent other 256-bit numbers, such as the
+$x$ or $y$ component of a public key.)
+There is also an array {\var{currblock}} of 16 32-bit integers.
+Various other arrays are used internally and not exposed by the interface.
+
+The following functions are defined:
+
+\begin{itemize}
+\item {\func{sha256init}} initializes the state to begin performing the hashing operation.
+\item {\func{sha256round}} performs one round of the hashing operation.
+\item {\func{getcurrmd256}} returns the current {\type{md256}} (extracted from the internal array {\var{currhashval}}).
+\item {\func{sha256str}} returns the result of hashing a given string with {\tt{SHA256}}.
+\item {\func{sha256str}} returns the result of double hashing a given string with {\tt{SHA256}}.
+\item {\func{md256\_hexstring}} converts a 256-bit message digest to the corresponding hexadecimal string.
+\item {\func{hexstring\_md256}} converts a hexadecimal string to the 256-bit message digest to the corresponding hexadecimal string.
+\item {\func{md256\_big\_int}} converts a 256-bit message digest to the corresponding big integer.
+\item {\func{big\_int\_md256}} converts a big integer (assuming it is less than $2^{256}$) to the 256-bit message digest to the corresponding hexadecimal string.
+\item {\func{seo\_md256}} serializes a 256-bit message digest.
+\item {\func{sei\_md256}} deserializes a 256-bit message digest.
+\end{itemize}
+
+\section{Ripemd160}
+
+The module {\module{ripemd160}} implements {\tt{RIPEMD-160}} restrict to 256-bit message digests as inputs.
+The module defines a type {\type{md}} (message digest of 160 bits)
+as a product of 5 32-bit integers.
+
+The following functions are defined:
+
+\begin{itemize}
+\item {\func{ripemd160\_md256}} returns the result of hashing a given 256-bit message digest with {\tt{RIPEMD-160}}.
+\item {\func{md\_hexstring}} converts a 160-bit message digest to the corresponding hexadecimal string.
+\item {\func{hexstring\_md}} converts a hexadecimal string to the 160-bit message digest to the corresponding hexadecimal string.
+\end{itemize}
+
+\section{Hash}
+
+The module {\module{hash}} is important. It defines a type {\type{hashval}} as 5 32-bit integers (representing a 160-bit hash value).
+
+A function {\func{hash160}} takes an arbitrary string to the result of hashing first by {\tt{SHA256}} and then by {\tt{RIPEMD-160}}.
+The type {\type{hashval}} is implemented the same way as the type {\type{md}} in the module {\module{ripemd160}}. If they were defined differently, the function {\func{hash160}} would be ill-typed.
+
+There are a variety of functions for creating, using and combining hash values.
+The following functions 
+\begin{itemize}
+\item {\func{hashval\_bitseq}} converts a hash value to a list of 160 booleans.
+\item {\func{hashval\_hexstring}} converts a hash value to a string of 40 hexadecimal digits.
+\item {\func{hexstring\_hashval}} converts a string of 40 hexadecimal digits to a hash value.
+\item {\func{printhashval}} prints a hash value as 40 hexadecimal digits.
+\item {\func{hashval\_rev}} performs a bytewise reversal of the hash value.\footnote{This seems to be unused.}
+\item {\func{hashval\_big\_int}} converts a hash value to a big integer.
+\item {\func{big\_int\_hashval}} converts a big integer to a hash value.
+\item {\func{seo\_hashval}} serializes hash values.
+\item {\func{sei\_hashval}} deserializes hash values.
+\end{itemize}
+The following functions create (effectively) unique hash values from given input.
+Internally in each case the value being hashed is prefixed with a distinct 32-bit
+integer so that the hash value given by different functions will be unique.
+For example, {\func{hashint32}} prefixes the 32-bit integer with the 32-bit integer $1$
+while {\func{hashint64}} prefixes the 64-bit integer with the 32-bit integer $2$.
+\begin{itemize}
+\item {\func{hashint32}} hashes a 32-bit integer.
+\item {\func{hashint64}} hashes a 64-bit integer.
+\item {\func{hashpair}} hashes a pair of hashes.
+\item {\func{hashpubkey}} hashes a public key, given as two {\type{md256}} values.
+\item {\func{hashpubkeyc}} hashes a compressed public key, given by a boolean (indicating if $y$ is even or odd) and one {\type{md256}} values (giving $x$).
+\item {\func{hashtag}} combines a hash value with a 32-bit integer to create a different hash value. This
+is used when we wish to ensure later data structures create unique hash values.
+\item {\func{hashlist}} hashes a list of hash values. This could be implemented by a simple recursion using {\func{hashpair}}, but this would be inefficient. Instead the list is iterated over with {\func{sha256round}} being called when appropriate.
+\item {\func{hashfold}} is given a function $f$ which returns a hashval for a given input and a list of appropriate inputs for $f$ and iteratively calls $f$ on the components of the list while performing {\func{sha256round}} to compute a hash value for the list of hash values computed by $f$ over the list.
+\item {\func{hashbitseq}} takes a list of booleans and creates a hash values.
+The naive way of doing this using {\func{hashlist}} would be too inefficient.
+Instead the booleans are treated as 32-bit integers by considering them in groups of 32.
+\end{itemize}
+Sometimes optional hash values are used. This is important, for example, when we want to have an ``empty'' hash value $\bot$ corresponding to the hash of some ``empty'' data.
+\begin{itemize}
+\item {\func{ohashlist}} takes a list of hash values and computes an optional hash value.
+The optional hash value is $\bot$ if and only if the input is the empty list.
+\item {\func{hashopair}} takes two optional hash values and returns an optional hash value.
+The output is $\bot$ if and only if both inputs were $\bot$.
+\item {\func{hashopair1}} takes a hash value $x$ and an optional hash value $y$
+and returns a hash value (known to not be $\bot$).
+{\func{hashopair1}} is essentially the special case of {\func{hashopair}} where the first value is known not to be $\bot$.
+\item {\func{hashopair2}} takes an optional hash value $x$ and a hash value $y$
+and returns a hash value (known to not be $\bot$).
+{\func{hashopair2}} is essentially the special case of {\func{hashopair}} where the second value is known not to be $\bot$.
+\end{itemize}
+
+In addition, various types of addresses are defined.
+Fundamentally there are four kinds of addresses:
+{\type{p2pkhaddr}} (pay to public key hash addresses), {\type{p2shaddr}} (pay to script hash addresses),
+{\type{termaddr}} (term addresses) and {\type{pubaddr}} (publication addresses).
+Each of these types is defined the same way as hash values (as 5 32-bit integers)
+and so an object of one of these types can be used as an object of another.
+\begin{itemize}
+\item {\type{p2pkhaddr}} A pay to public key hash addresses is the hash value
+obtained by hashing a public key. The intention is that the holder of the corresponding private key
+can sign transactions related to the address.
+The code for checking such signatures is in the module {\module{signat}}.
+\item {\type{p2shaddr}} A pay to script hash address is the hash value
+obtained by hashing a script.\footnote{Qeditas uses essentially the same scripting language as Bitcoin as of early 2015. Two Bitcoin operations are not supported: OP\_SHA1 and OP\_RIPEMD160.}
+Such a script can act as a generalized signature in the following sense:
+the script is executed and if the result is $1$ then the generalized signature is accepted.
+This is a ``generalized signature'' since some of the script operations check a signature.
+The code for executing scripts and checking generalized signatures is in the module {\module{script}}.
+\item {\type{termaddr}}
+Term addresses are hash values obtained in one of three ways:
+\begin{enumerate}
+\item A term address may be the hash root of a closed simply typed term $t$.
+This is the global (theory independent) term address of $t$.
+\item Given a theory $T$ and a closed term $t$ which has type $\tau$ in the theory $T$,
+the combined hash of $T$, hash root of $t$ and the hash of $\tau$
+gives a term address.\footnote{The combined hash is again hashed with a tag with $32$ to avoid the possibility that the combined hash value is the same as a different kind of term address.}
+This is the address of the term $t$ in the theory $T$.
+\item Given a theory $T$ and a closed proposition $t$,
+the combined hash of $T$ and hashroot of $t$
+gives a term address.\footnote{The combined hash is again hashed with a tag with $33$ to avoid the possibility that the combined hash value is the same as a different kind of term address.}
+\end{enumerate}
+Term addresses store ownership information about terms and propositions (either globally or as part of a theory).
+The author of the first document published which defines a term or proves a proposition can and must
+also supply ownership information. This ownership information determine the conditions under
+which the term or proposition can be imported into future documents.
+Term addresses corresponding to terms or propositions within a theory are also used
+to ensure terms have the correct type (without needing to repeat the definition) in the theory
+and to ensure propositions are already known (without needing to repeat a proof).
+\item {\type{pubaddr}}
+A publication address corresponds to the hash root of a published document, theory specification or signature specification.
+\end{itemize}
+
+In addition to the four basic kinds of addresses, there are two other types of addresses:
+\begin{itemize}
+\item {\type{payaddr}}
+The type {\type{payaddr}} (of pay addresses) is the disjoint sum of the types {\type{p2pkhaddr}} and {\type{p2shaddr}}.
+This is implemented by taking a boolean along with 8 32-bit integers.
+The 8 32-bit integers is a hash value representing either a {\type{p2pkhaddr}}
+or a {\type{p2pkhaddr}}.
+The boolean is {\val{false}} if the hash value represents a {\type{p2pkhaddr}},
+and is {\val{true}} if the hash value represents a {\type{p2shaddr}}.
+\item {\type{addr}}
+The type {\type{addr}} (of addresses) is the disjoint sum of the four types
+{\type{p2pkhaddr}}, {\type{p2shaddr}},
+{\type{termaddr}} and {\type{pubaddr}}.
+This is implemented by taking an integer $i\in\{0,1,2,3\}$ along with 8 32-bit integers.
+The 8 32-bit integers is a hash value representing either a {\type{p2pkhaddr}}, a {\type{p2shaddr}},
+a {\type{termaddr}} or a {\type{pubaddr}}.
+If $i=0$, the hash value represents a {\type{p2pkhaddr}}.
+If $i=1$, the hash value represents a {\type{p2shaddr}}.
+If $i=2$, the hash value represents a {\type{termaddr}}.
+If $i=3$, the hash value represents a {\type{pubaddr}}.
+\end{itemize}
+
+The following functions operate on addresses.
+\begin{itemize}
+\item {\func{hashval\_p2pkh\_payaddr}} gives the pay address corresponding to a hash value interpreted as a pay to public key hash addresses.
+\item {\func{hashval\_p2sh\_payaddr}} gives the pay address corresponding to a hash value interpreted as a pay to script hash address.
+\item {\func{hashval\_p2pkh\_addr}} gives the address corresponding to a hash value interpreted as a pay to public key hash addresses.
+\item {\func{hashval\_p2sh\_addr}} gives the address corresponding to a hash value interpreted as a pay to script hash address.
+\item {\func{hashval\_term\_addr}} gives the address corresponding to a hash value interpreted as a term address.
+\item {\func{hashval\_pub\_addr}} gives the address corresponding to a hash value interpreted as a publication address.
+\item {\func{addr\_bitseq}} returns a list of 162 booleans corresponding to an address, where the first two booleans determine which kind of address it is and the remaining 160 are the hash value.
+\item {\func{bitseq\_addr}} returns an address given a list of 162 booleans.
+\item {\func{p2pkhaddr\_payaddr}} converts a pay to public key hash address (a hash value) to a pay address by indicating it is a pay to public key hash address.
+\item {\func{p2shaddr\_payaddr}} converts a pay to public key hash address (a hash value) to a pay address by indicating it is a pay to script hash address.
+\item {\func{p2pkhaddr\_addr}} converts a pay to public key hash address (a hash value) to an address by indicating it is a pay to public key hash address.
+\item {\func{p2shaddr\_addr}} converts a pay to public key hash address (a hash value) to an address by indicating it is a pay to script hash address.
+\item {\func{payaddr\_addr}} converts a pay address to an address. In practice this simply means converting the first component from a boolean to an integer ({\val{false}} to $0$ and {\val{true}} to $1$).
+\item {\func{termaddr\_addr}} converts a term address (a hash value) to an address by indicating it is a term address.
+\item {\func{pubaddr\_addr}} converts a publication address (a hash value) to an address by indicating it is a publication address.
+\item {\func{payaddr\_p}} checks if an address is a pay address.
+\item {\func{p2pkhaddr\_p}} checks if an address is a pay to public key hash address.
+\item {\func{p2shaddr\_p}} checks if an address is a pay to script hash address.
+\item {\func{termaddr\_p}} checks if an address is a term address.
+\item {\func{pubaddr\_p}} checks if an address is a publication address.
+\item {\func{hashaddr}} hashes the address creating a unique hash value. (This is different from the underlying hash value of the address since the prefix is included before rehashing.)
+\item {\func{hashpayaddr}} performs the same operation of {\func{hashaddr}} but only on pay addresses.
+\item {\func{hashtermaddr}} performs the same operation of {\func{hashaddr}} on term addresses.
+\item {\func{hashpubaddr}} performs the same operation of {\func{hashaddr}} on publication addresses.
+\item {\func{seo\_addr}} serializes an address.
+\item {\func{sei\_addr}} deserializes an address.
+\item {\func{seo\_payaddr}} serializes a pay address.
+\item {\func{sei\_payaddr}} deserializes a pay address.
+\item {\func{seo\_termaddr}} serializes a term address.
+\item {\func{sei\_termaddr}} deserializes a term address.
+\item {\func{seo\_pubaddr}} serializes a publication address.
+\item {\func{sei\_pubaddr}} deserializes a publication address.
+\end{itemize}
+
+\section{Htree}
+
+The module {\module{htree}} defines a polymorphic type {\type{htree}}
+which stores data in a tree indexed by a list of booleans.
+In practice the list of booleans comes from a hash value.
+The following functions are exported:
+\begin{itemize}
+\item {\func{htree\_lookup}} is given a boolean list and an {\type{htree}}
+and returns the data if found and {\val{None}} if it is not found.
+\item {\func{htree\_create}} is given a boolean list $\overline{b}$ and data $x$
+and returns a new {\type{htree}} with only this single entry ($x$ at position $\overline{b}$).
+\item {\func{htree\_insert}} is given an {\type{htree}}, a boolean list and data $x$
+and returns the result of inserting the data into the {\type{htree}} ($x$ at position $\overline{b}$).
+This will shadow data already at position $\overline{b}$ if there were any. (In practice this should never
+happen since $\overline{b}$ should be obtained from a hash value determined by $x$.)
+\item {\func{ohtree\_hashroot}} computes an optional hash value
+given a function $f$ (which computes optional hash values for members of the underlying type),
+the current depth $n$
+and an optional {\type{htree}}.
+This is essentially the Merkle root of the {\type{htree}}.
+\end{itemize}
+
+In practice {\type{htree}} is used in two ways: one is to story theories
+and the other is to store theory-specific signatures.\footnote{Here {\em{signature}} is used
+to mean a collection of constants, definitions and known propositions and should not
+be confused with cryptographic signatures.}
+These specific uses will be discussed in Chapter~\ref{chap:math}
+where the module {\module{mathdata}} is considered.
