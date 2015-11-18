@@ -141,9 +141,10 @@ This is the address of the term $t$ in the theory $T$.
 the combined hash of $T$ and hashroot of $t$
 gives a term address.\footnote{The combined hash is again hashed with a tag with $33$ to avoid the possibility that the combined hash value is the same as a different kind of term address.}
 \end{enumerate}
-Term addresses store ownership information about terms and propositions (either globally or as part of a theory).
+Ownership information about a term or proposition (either globally or as part of a theory)
+is stored at corresponding term address.
 The author of the first document published which defines a term or proves a proposition can and must
-also supply ownership information. This ownership information determine the conditions under
+also supply ownership information. This ownership information determines the conditions under
 which the term or proposition can be imported into future documents.
 Term addresses corresponding to terms or propositions within a theory are also used
 to ensure terms have the correct type (without needing to repeat the definition) in the theory
