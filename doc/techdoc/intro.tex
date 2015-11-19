@@ -1,8 +1,72 @@
 This document is intended as a reference
 for those wanting to understand, modify or extend the
 code supporting Qeditas~\cite{White2015c}.
+The document is currently under construction (in November 2015),
+as is the Qeditas code itself.
 
-% add info about git repo
-% also about coq version
+Qeditas is intended to be a realization of the QED Project~\cite{QED}
+to construct a library of formalized mathematics.
+For those wanting to learn more about formalized
+mathematics~\cite{Barendregt2005} is a good starting point.
+Some popular systems for formalizing mathematics include
+Mizar~\cite{RudnickiTrybulec2001},
+Isabelle~\cite{Nipkow-Paulson-Wenzel:2002},
+various HOL systems~\cite{Gordon91,harrison-hollight},
+Coq~\cite{Coq:manual} and
+Agda~\cite{Norell08}.
+Some large formalizations of major mathematical results
+are described in~\cite{Gonthier2007}, \cite{Gonthier2013}
+and
+\cite{Flyspeck2015}.
 
-% \section{Style Issues}
+Qeditas uses a block chain and distributed consensus system to maintain both a library
+of formal publications
+and information about who made a definition or proved a theorem.
+In addition, the block chain maintains and enforces a rights management
+system determining conditions under whcih an object can be imported and used
+(without repeating the definition)
+and when a theorem can imported as something known (without needing to reprove it).
+The first network with a block chain and distributed consensus system
+was Bitcoin and Nakamoto's white paper~\cite{Nakamoto2008} provides a good introduction.
+Qeditas uses a proof of stake consensus system~\cite{ProofOfStakeDefinite}
+combined with proof of storage (similar to proof of retrievability~\cite{MillerJSPK14}).
+Proof of stake is sensitive to the initial distribution, and Qeditas
+has an initial distribution based on a snapshot of the Bitcoin block chain.
+This makes Qeditas a Bitcoin ``spin-off''~\cite{Spinoff,PreSpinoff}.
+
+\section{Code Repository}
+
+\input{branches}
+
+\section{Qeditas Theory in Coq}
+
+There is also a separate formal Qeditas related development in Coq
+in which certain properties were proven.
+The git repository is named {\tt{qeditastheory}}
+and is also publicly available:
+\begin{verbatim}
+git clone git://qeditas.org/qeditastheory.git
+\end{verbatim}
+The Coq code is somewhat out of date since some aspects of Qeditas have changed
+in the meantime. Nevertheless the Coq development should usually indicate how
+different data types were intended to be used and what properties certain functions
+were meant to have. In appropriate places we will point not only to the Qeditas
+OCaml code, but also corresponding code in the Coq version.
+
+\section{License and Credit}
+
+Qeditas is an open source project and all code and documentation is released
+under the MIT License. The code and documentation is attributed to
+``The Qeditas developers'' rather than giving a list of names or handles.
+Some open source developers advise not to include names and handles inside
+code comments. Having a name in the code might suggest a kind of ``ownership''
+that may make others uncomfortable making modifications to the code.
+If individual coders wish to record their contributions to the
+code, the appropriate place would be in this technical documentation.
+(For example, most of the initial code for Qeditas and the
+first version of this documentation was written
+by Bill White in 2015.)
+Also, if code is taken or ported from other open source projects, this
+should be noted in this document.
+(For example, the code for elliptic curves and proof checking was taken from Egal~\cite{Brown2014}
+and this is noted in the appropriate sections.)
