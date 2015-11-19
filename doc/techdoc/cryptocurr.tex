@@ -5,3 +5,243 @@ In particular, \module{secp256k1} implements the elliptic curve {\tt{secp256k1}}
 \module{signat} supports cryptographic signatures
 and \module{script} supports the Bitcoin scripting language (mostly).
 
+\section{Elliptic Curve Code}
+
+The module \module{secp256k1} contains the operations for the corresponding elliptic curve~\cite{sec2final}.
+Most of the code in this module was taken from the code for Egal~\cite{Brown2014}.
+256-bit integers are represented using big integers (\type{big\_int}) from ocaml's {\tt{nums}} library.
+A function {\func{evenp}} is defined and exposed since it is used elsewhere.
+
+The 256-bit prime $p$ used in the elliptic curve is
+exposed as the big integer {\val{\_p}}.
+The following functions implement operations modulo $p$:
+\begin{itemize}
+\item {\func{add}} implements addition modulo $p$.
+\item {\func{mul}} implements multiplication modulo $p$.
+\item {\func{pow}} implements $x^i$ modulo $p$ where $x$ is a big integer and $i$ is an integer.
+\item {\func{eea}} implements the Extended Euclidean Algorithm which is used to compute
+multiplicative inverses modulo $p$.
+\end{itemize}
+
+Points on the elliptic curve are represented by element of type {\type{pt}}
+which is defined to be an optional pair $(x,y)$ of big integers.
+{\val{None}} represents the zero point (point at infinity).
+The following functions are defined and exposed:
+\begin{itemize}
+\item {\func{addp}} implements addition of two points.
+\item {\func{smulp}} implements scalar multiplication of a big integer to a point.
+\end{itemize}
+
+The base point $g$ on the curve (which generates the group) is exposed as {\val{\_g}}.
+The order $n$ of $g$ is exposed as the big integer {\val{\_n}}.
+The function {\func{curve\_y}} takes a boolean $e$ and a big integer $x$
+and returns the big integer $y$ such that $(x,y)$ is a point on the curve
+where $y$ is even if $e$ is true
+and $y$ is odd if $e$ is false.
+
+As usual, there are serialization functions {\serfunc{seo\_pt}} and {\serfunc{sei\_pt}} for
+points. The serialization functions assume the components $x$ and $y$ of the point
+are positive integers less than $2^{256}$.
+
+\section{Cryptocurrency Operations}
+
+The module {\module{cryptocurr}} implements
+functions which convert private keys and addresses 
+to and from base 58 representations.
+\begin{itemize}
+\item {\func{base58}} converts a big integer into a base 58 string.
+\item {\func{frombase58}} converts a base 58 string to a big integer.
+\item {\func{qedwif}} converts a big integer (private key) and a boolean (indicating if it is for a compressed address) to a base 58 string.
+The Qeditas WIF format uses a two byte prefix of $5,8$ for compressed addresses
+and $2,30$ for uncompressed addresses.
+The result is that compressed WIFs start with the character {\tt{k}} and uncompressed WIFs start
+with the character {\tt{K}}.
+\item {\func{privkey\_from\_wif}} takes a Qeditas WIF string and returns the corresponding
+private key (as a big integer) along with a boolean indicating if it is for the compressed address.
+\item {\func{privkey\_from\_btcwif}} takes a Bitcoin WIF string and returns the corresponding
+private key (as a big integer) along with a boolean indicating if it is for the compressed address.
+This function is included to make it easy for people to import Bitcoin private keys corresponding to the
+initial distribution.
+\item {\func{pubkey\_hashval}} takes a non-zero public key (a pair $(x,y)$) and a boolean (indicating if the compressed address should be used)
+and returns the $20$ bytes which result from hashing
+either the compressed public key ($2$ with $x$ if $y$ is even; $3$ with $x$ if $y$ is odd)
+or the uncompressed public key ($4$ with $x$ and $y$).
+This hash value is also the corresponding pay to public key hash address.
+\item {\func{hashval\_from\_addrstr}} takes a string with a Qeditas address and returns the underlying hash value.
+\item {\func{hashval\_btcaddrstr}} takes a hash value and returns the corresponding Bitcoin address.
+\item {\func{addr\_qedaddrstr}} takes a Qeditas address and returns a base 58 string representation of the address.
+The prefix byte used is different for the four different kinds of addresses:
+\begin{itemize}
+\item Pay to public key hash addresses use a prefix byte of $58$
+and so these Qeditas addresses begin with the character {\tt{Q}}.
+\item Pay to script hash addresses use a prefix byte of $120$
+and so these Qeditas addresses begin with the character {\tt{q}}.
+\item Term addresses use a prefix byte of $66$
+and so these Qeditas addresses begin with the character {\tt{T}}.
+\item Publication addresses use a prefix byte of $56$
+and so these Qeditas addresses begin with the character {\tt{P}}.
+\end{itemize}
+\item {\func{qedaddrstr\_addr}} takes a string with a base 58 Qeditas address and returns the Qeditas address.
+\item {\func{btcaddrstr\_addr}} takes a string with a base 58 Bitcoin address (either p2pkh or p2sh) and returns the Qeditas address.
+\end{itemize}
+Some of the code in this module was taken from the code for Egal~\cite{Brown2014}.
+Egal included {\tt{BIP 32}} code that isn't needed in Qeditas.
+Egal relied on openssl to compute {\tt{SHA256}} and {\tt{ripemd160}} hashes, but Qeditas does this itself.
+
+\section{Cryptographic Signature Checking}
+
+The module {\module{signat}} implements functions for creating and verifying
+cryptographic signatures over the elliptic curve.
+A cryptographic signature (represented by the type {\type{signat}})
+is a pair $(r,s)$ of big integers.
+As usual, the functions ${\serfunc{seo\_signat}}$ and ${\serfunc{sei\_signat}}$
+serialize and deserialize elements of type {\type{signat}}.
+Let $n$ be the order of the group for {\tt{secp256k1}}.
+\begin{itemize}
+\item {\func{decode\_signature}} takes a base 64 string and returns $(i,c,(r,s))$
+where $i\in\{0,1,2,3\}$ (``recid'') is a tag to help recover the public key from the signature
+and what was signed,
+$c$ (``fcomp'') is a boolean indicating if the signature is for a compressed public key
+and $(r,s)$ is the cryptographic signature.
+\item {\func{signat\_big\_int}} takes a big integer $e<n$ (in practice $e<2^{160}$),
+a big integer private key $k<n$ and a random big integer $R<n$
+and returns a signature $(r,s)$.
+The signature $(r,s)$ signs $e$ with the private key $k$.
+\item {\func{signat\_hashval}} is the same as {\func{signat\_big\_int}} except
+it is given a hash value $h$ to sign instead of a big integer.
+The implementation simply converts $h$ to a (160-bit) big integer using {\func{hashval\_big\_int}} and calls
+{\func{signat\_big\_int}}.
+The result is a signature $(r,s)$ signing $h$ with the given private key.
+\item {\func{verify\_signed\_big\_int}} takes a big integer $e$, a point (public key) $(x,y)$
+and a signature $(r,s)$
+and returns a boolean indicating if $(r,s)$ is a valid
+signature of $e$ by the private key corresponding to $(x,y)$.
+\item {\func{verify\_p2pkhaddr\_signat}}
+takes a big integer $e$, a {\type{p2pkhaddr}} $\alpha$ (equivalently, a hash value),
+a signature $(r,s)$,
+an integer $i\in\{0,1,2,3\}$
+and a boolean $c$.
+It uses $e$, $(r,s)$ and $i$ to recover a point on the curve using
+{\func{recover\_key}}.
+If {\func{recover\_key}} returns the zero point, then the signature is not valid and the boolean false is returned.
+Otherwise, {\func{recover\_key}} returns a public key $(x,y)$.
+The {\type{p2pkhaddr}} corresponding to $(x,y)$ (compressed if $c$ is true, uncompressed otherwise)
+is computed using {\func{pubkey\_hashval}} and compared with $\alpha$.
+If they are the same, then the signature is valid and the boolean true is returned.
+Otherwise, the signature is not valid and the boolean false is returned.
+\item {\func{verifybitcoinmessage}} is used to verify a bitcoin signed message returning a boolean (true if valid, false otherwise).
+The inputs are a {\type{p2pkhaddr}} $\alpha$, $i\in\{0,1,2,3\}$, a boolean $c$, a cryptographic signature $(r,s)$
+and a string $m$ (the message).
+If Qeditas is running in the testnet, then the message is prefixed with {\tt{testnet:}}.
+This allows people to sign, for example, endorsements which are valid on the testnet, but not on the mainnet.
+The message is then modified the same way as the Bitcoin core client (essentially
+including {\tt{Bitcoin Signed Message:}} and some characters indicating the length of this prefix and the length of the message).
+The remainder of the work is performed by the internal {\func{verifymessage}} function:
+The message is double {\tt{SHA256}} hashed and converted to a big integer $e$.
+The public key is attempted to be recovered
+using $e$, $(r,s)$ and $i$ using {\func{recover\_key}} (with false returned upon failure).
+Assuming the public key $(x,y)$ is recovered, the final check verifies that the hash of the public key
+(compressed if $c$ is true, uncompressed otherwise) is $\alpha$.
+\item {\func{verifybitcoinmessage\_recover}} is used to verify a bitcoin signed message returning an optional public key $(x,y)$ (the corresponding public key if the signature is valid, the {\tt{None}} if not).
+It behaves equivalently to {\func{verifybitcoinmessage}}
+except upon success it returns the public key as ${\tt{Some}}(x,y)$
+and returns {\tt{None}} upon failure.
+In this case, internal {\func{verifymessage\_recover}} function is used.
+\end{itemize}
+
+There is also an internal function {\func{recover\_key}} which
+computes a public key $(x,y)$
+from a big integer $e$ (from the hash value of what was signed), a signature $(r,s)$ and a ``recid'' $i\in\{0,1,2,3\}$.
+This should be the public key corresponding to the private key which was used to construct $(r,s)$
+from $e$.
+
+\section{Scripts and Generalized Signatures}
+
+The module {\module{script}} implements the Bitcoin scripting language
+(with the exceptions of OP\_SHA1 and OP\_RIPEMD160).
+The main reason the Bitcoin scripting language is included is so p2sh
+addresses in the Bitcoin snapshot can be redeemed.
+Scripts are represented by lists of integers which should be bytes.
+The following functions operate on scripts:
+\begin{itemize}
+\item {\func{hash160\_bytelist}} takes a script and computes its hash by
+taking the SHA256 and then RIPEMD160.
+The hash value returned should be interpreted as a {\type{p2shaddr}}.
+The procedure is the same way Bitcoin computes p2sh addresses.
+\item {\func{eval\_script}}
+evaluates a script in context.
+The inputs are a big integer $e$ (which corresponds to what is meant to be ``signed''),
+the script $\overline{s}$ and two stacks.
+The function returns the two stacks which result from evaluating the script.
+\item {\func{verify\_p2sh}}
+compares a script's hash against the given {\type{p2shaddr}}
+and verifies that the script evaluates to ``true.''
+A boolean is returned.
+The inputs are a big integer $e$ (which corresponds to what is meant to be ``signed''),
+a {\type{p2shaddr}} $\beta$ and a script $\overline{s}$.
+The only way {\val{true}} will be returned is if the following occurs:
+\begin{enumerate}
+\item The script is evaluated and the top of the main stack is a script $\overline{s_1}$ which hashes to give $\beta$.
+\item The script $\overline{s_1}$ is popped off the main stack and evaluated leaving something nonzero at the top of the main stack.
+\end{enumerate}
+\end{itemize}
+The process of evaluating the script is more complicated than it is in Bitcoin.
+The reason is that {\tt{OP\_CHECKSIG}} and {\tt{OP\_CHECKMULTISIG}} may be signatures
+by endorsement. An endorsement may be, for example, an endorsement of a p2sh address
+to a p2pkh address. In order to check the endorsement, another script must be checked
+to be a valid ``signature'' of a different value (the hash of the endorsement message).
+For this reason, the main functions that do the work: {\func{eval\_script}},
+{\func{eval\_script\_if}},
+{\func{checksig}},
+{\func{checkmultisig}} and 
+{\func{check\_p2sh}}
+are mutually recursive.
+
+In order to account for endorsements in a uniform way,
+the type {\type{gensignat}} of ``generalized signatures'' is defined.
+There are six constructors of type {\type{gensignat}} corresponding to 
+six ways of making a signature:
+\begin{itemize}
+\item {\val{P2pkhSignat}} is an ordinary cryptographic signature $(r,s)$ corresponding
+to a given public key $(x,y)$ which may or may not be compressed. (Note that the public key is explicitly given here and need not be recovered during signature checking.)
+The public key corresponds to a {\tt{p2pkhaddr}} (again, one compressed and one uncompressed).
+\item {\val{P2shSignat}} is a script and should be checked by calling {\func{verify\_p2sh}} above.
+The script corresponds to a certain {\tt{p2shaddr}}. (Note that the correspondence is not
+direct. The script itself is not hashed to obtain the {\tt{p2shaddr}}.
+Instead the script should evaluate to yield a script which hashes
+to the {\tt{p2shaddr}} at the top of the main stack.)
+\item {\val{EndP2pkhToP2pkhSignat}} This is a p2pkh signature via a p2pkh endorsement.
+This means that two public keys (and two booleans indicating compressed or uncompressed) are given
+along with two signatures.
+One of the signatures is of a Bitcoin message with the appropriate base 58 Qeditas pay to public key hash address, signed with the private key for the other public key.
+The other signature is the signature of what should be signed.
+\item {\val{EndP2pkhToP2shSignat}}
+This is a p2sh signature via an endorsement a p2pkh endorsement.
+That is, a signature of a Bitcoin message with the appropriate base 58 Qeditas pay to script hash
+address is given, corresponding to the public key of the p2pkh address.
+Also, a script corresponding to the p2sh address is given which ``signs'' what should be signed.
+\item {\val{EndP2shToP2pkhSignat}}
+This is a p2pkh signature via an endorsement a p2sh endorsement.
+Here a script is given which ``signs'' the Bitcoin message with an endorsement to a base 58 Qeditas pay to public key hash address.
+An ordinary cryptographic signature (corresponding to the p2pkh address)
+signing what is to be ``signed'' is given.
+\item {\val{EndP2shToP2shSignat}}
+This is a p2sh signature via an endorsement a p2sh endorsement.
+Here a script is given which ``signs'' the Bitcoin message with an endorsement to a base 58 Qeditas pay to script hash address.
+A separate script corresponding to the other p2sh address is given which ``signs'' what should be signed.
+\end{itemize}
+As usual, there are two functions {\serfunc{seo\_gensignat}} and
+{\serfunc{sei\_gensignat}} for serializing generalized signatures.
+
+There is one important function for working with generalized signatures:
+\begin{itemize}
+\item {\func{verify\_gensignat}} takes a big integer $e$ (corresponding to the hash value
+of what should be signed), a generalized signature
+and an address, and returns a boolean indicating if the generalized signature
+verifies that the owner of the address ``signed'' $e$.
+The address should be either a pay to public key hash address or pay to script hash address.
+(If a term address or publication address is given, {\val{false}} is returned.)
+Each of the six cases is considered separately in the code, but the idea is clear:
+check that the signature corresponds to the given address and
+check that the signature ``signs'' $e$.
+\end{itemize}
