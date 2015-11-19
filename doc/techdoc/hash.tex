@@ -40,8 +40,8 @@ The following functions are defined:
 \item {\func{hexstring\_md256}} converts a hexadecimal string to the 256-bit message digest to the corresponding hexadecimal string.
 \item {\func{md256\_big\_int}} converts a 256-bit message digest to the corresponding big integer.
 \item {\func{big\_int\_md256}} converts a big integer (assuming it is less than $2^{256}$) to the 256-bit message digest to the corresponding hexadecimal string.
-\item {\func{seo\_md256}} serializes a 256-bit message digest.
-\item {\func{sei\_md256}} deserializes a 256-bit message digest.
+\item {\serfunc{seo\_md256}} serializes a 256-bit message digest.
+\item {\serfunc{sei\_md256}} deserializes a 256-bit message digest.
 \end{itemize}
 
 \section{Ripemd160}
@@ -75,8 +75,8 @@ The following functions
 \item {\func{hashval\_rev}} performs a bytewise reversal of the hash value.\footnote{This seems to be unused.}
 \item {\func{hashval\_big\_int}} converts a hash value to a big integer.
 \item {\func{big\_int\_hashval}} converts a big integer to a hash value.
-\item {\func{seo\_hashval}} serializes hash values.
-\item {\func{sei\_hashval}} deserializes hash values.
+\item {\serfunc{seo\_hashval}} serializes hash values.
+\item {\serfunc{sei\_hashval}} deserializes hash values.
 \end{itemize}
 The following functions create (effectively) unique hash values from given input.
 Internally in each case the value being hashed is prefixed with a distinct 32-bit
@@ -201,17 +201,17 @@ The following functions operate on addresses.
 \item {\func{hashpayaddr}} performs the same operation of {\func{hashaddr}} but only on pay addresses.
 \item {\func{hashtermaddr}} performs the same operation of {\func{hashaddr}} on term addresses.
 \item {\func{hashpubaddr}} performs the same operation of {\func{hashaddr}} on publication addresses.
-\item {\func{seo\_addr}} serializes an address.
-\item {\func{sei\_addr}} deserializes an address.
-\item {\func{seo\_payaddr}} serializes a pay address.
-\item {\func{sei\_payaddr}} deserializes a pay address.
-\item {\func{seo\_termaddr}} serializes a term address.
-\item {\func{sei\_termaddr}} deserializes a term address.
-\item {\func{seo\_pubaddr}} serializes a publication address.
-\item {\func{sei\_pubaddr}} deserializes a publication address.
+\item {\serfunc{seo\_addr}} serializes an address.
+\item {\serfunc{sei\_addr}} deserializes an address.
+\item {\serfunc{seo\_payaddr}} serializes a pay address.
+\item {\serfunc{sei\_payaddr}} deserializes a pay address.
+\item {\serfunc{seo\_termaddr}} serializes a term address.
+\item {\serfunc{sei\_termaddr}} deserializes a term address.
+\item {\serfunc{seo\_pubaddr}} serializes a publication address.
+\item {\serfunc{sei\_pubaddr}} deserializes a publication address.
 \end{itemize}
 
-\section{Htree}
+\section{Hash Trees}
 
 The module {\module{htree}} defines a polymorphic type {\type{htree}}
 which stores data in a tree indexed by a list of booleans.
