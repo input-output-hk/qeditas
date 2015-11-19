@@ -7,13 +7,10 @@ open Hash
 open Secp256k1
 open Signat
 
-val blnum_le : big_int -> int -> int list
-val blnum_be : big_int -> int -> int list
-
-val hash160_bytelist : int list -> hashval
+val hash160_bytelist : int list -> p2shaddr
 val eval_script : big_int -> int list -> int list list -> int list list -> int list list * int list list
 
-val verify_p2sh : big_int -> hashval -> int list -> bool
+val verify_p2sh : big_int -> p2shaddr -> int list -> bool
 
 type gensignat =
   | P2pkhSignat of pt * bool * signat

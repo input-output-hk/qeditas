@@ -308,13 +308,13 @@ let importendorsement a b s =
   let (q,y4,y3,y2,y1,y0) = beta in
   if q = 0 && not (privkey_in_wallet_p beta) then raise (Failure ("The private key for " ^ b ^ " must be in the wallet before an endorsement to it can be added."));
   let betap = (q=1,y4,y3,y2,y1,y0) in
-  let (recid,fcomp,esg) = decode_signature_a s in
+  let (recid,fcomp,esg) = decode_signature s in
   let (p,x4,x3,x2,x1,x0) = alpha in
   if p = 0 then
     begin
       let alphap = (false,x4,x3,x2,x1,x0) in
       if privkey_in_wallet_p alpha then raise (Failure "Not adding endorsement since the wallet already has the private key for this address.");
-      match verifybitcoinmessage_a_recover (x4,x3,x2,x1,x0) recid fcomp esg ("endorse " ^ b) with
+      match verifybitcoinmessage_recover (x4,x3,x2,x1,x0) recid fcomp esg ("endorse " ^ b) with
       | None -> raise (Failure "endorsement signature verification failed; not adding endorsement to wallet")
       | Some(x,y) ->
 	  Printf.printf "just verified endorsement signature:\naddrhex = %s\nrecid = %d\nfcomp = %s\nesgr = %s\nesgs = %s\nendorse %s\n" (hashval_hexstring (x4,x3,x2,x1,x0)) recid (if fcomp then "true" else "false") (let (r,s) = esg in string_of_big_int r) (let (r,s) = esg in string_of_big_int s) b; flush stdout;
@@ -408,136 +408,3 @@ let printassets () =
     )
     !walletwatchaddrs
     
-(***
-let do_rpccom r c =
-  match r with
-  | AddNode(n) ->
-      let (remip,remport,v6) = extract_ip_and_port n in
-      if addnode remip remport then
-	output_byte c 1
-      else
-	output_byte c 0
-  | GetInfo ->
-      let sb = Buffer.create 100 in
-
-      send_string c (Buffer.contents sb)
-  | ImportWatchAddr(a) ->
-      begin
-	try
-
-	  output_byte c 1
-	with
-	| Failure(m) ->
-	    output_byte c 0;
-	    send_string c m
-	| _ ->
-	    output_byte c 0;
-	    send_string c "Exception raised."
-      end
-  | ImportPrivKey(w) ->
-      begin
-      end
-  | ImportWatchBtcAddr(a) ->
-      begin
-	try
-	  let alpha = btcaddrstr_addr a in
-	  if privkey_in_wallet_p alpha then raise (Failure "Not adding as a watch address since the wallet already has the private key for this address.");
-	  if endorsement_in_wallet_p alpha then raise (Failure "Not adding as a watch address since the wallet already has an endorsement for this address.");
-	  if watchaddr_in_wallet_p alpha then raise (Failure "Watch address is already in wallet.");
-	  let alphaq = addr_qedaddrstr alpha in
-	  walletwatchaddrs := alpha::!walletwatchaddrs;
-	  save_wallet();
-	  output_byte c 1;
-	  send_string c alphaq
-	with
-	| Failure(m) ->
-	    output_byte c 0;
-	    send_string c m
-	| _ ->
-	    output_byte c 0;
-	    send_string c "Exception raised."
-      end
-  | ImportBtcPrivKey(w) ->
-      begin
-	try
-	  let (k,b) = privkey_from_btcwif w in
-	  match Secp256k1.smulp k Secp256k1._g with
-	  | Some(x,y) ->
-	      let h = pubkey_hashval (x,y) b in
-	      let alpha = Hash.hashval_p2pkh_addr h in
-	      let a = addr_qedaddrstr alpha in
-	      if privkey_in_wallet_p alpha then raise (Failure "Private key already in wallet.");
-	      walletkeys := (k,b,(x,y),qedwif k b,h,a)::!walletkeys;
-	      walletendorsements := (*** remove endorsements if the wallet has the private key for the address, since it can now sign directly ***)
-		List.filter
-		  (fun (alpha2,beta,(x,y),recid,fcomp,esg) -> not (alpha = payaddr_addr alpha2))
-		  !walletendorsements;
-	      walletwatchaddrs :=
-		List.filter
-		  (fun alpha2 -> not (alpha = alpha2))
-		  !walletwatchaddrs;
-	      save_wallet();
-	      output_byte c 1;
-	      send_string c a
-	  | None ->
-	      raise (Failure "This private key does not give a public key.")
-	with
-	| Failure(m) ->
-	    output_byte c 0;
-	    send_string c m
-	| _ ->
-	    output_byte c 0;
-	    send_string c "Exception raised."
-      end
-  | ImportP2sh(scr) ->
-      begin
-	try
-	  let bl = bytelist_of_hexstring scr in
-	  let h = hash160_bytelist bl in
-	  let alpha = hashval_p2sh_addr h in
-	  let a = addr_qedaddrstr alpha in
-	  walletp2shs := (h,a,bl)::!walletp2shs;
-	  walletwatchaddrs :=
-	    List.filter
-	      (fun alpha2 -> not (alpha = alpha2))
-	      !walletwatchaddrs;
-	  save_wallet();
-	  output_byte c 1;
-	  send_string c a
-	with
-	| Failure(m) ->
-	    output_byte c 0;
-	    send_string c m
-	| _ ->
-	    output_byte c 0;
-	    send_string c "Exception raised."
-      end
-  | ImportEndorsement(a,b,s) ->
-      begin
-	try
-	  let alpha = qedaddrstr_addr a in
-	  let (p,x4,x3,x2,x1,x0) = alpha in
-	  if not (p=0) then raise (Failure (a ^ " expected to be a p2pkh address."));
-	  let alphap = (false,x4,x3,x2,x1,x0) in
-	  if privkey_in_wallet_p alpha then raise (Failure "Not adding endorsement since the wallet already has the private key for this address.");
-	  if endorsement_in_wallet_p alpha then raise (Failure "An endorsement for this address is already in the wallet.");
-	  let beta = qedaddrstr_addr b in
-	  let (q,y4,y3,y2,y1,y0) = beta in
-	  if q = 0 && not (privkey_in_wallet_p beta) then raise (Failure ("The private key for " ^ b ^ " must be in the wallet before an endorsement to it can be added."));
-	  let betap = (q=1,y4,y3,y2,y1,y0) in
-	  let (by0,esg) = decode_signature s in
-	  if not (verifybitcoinmessage (x4,x3,x2,x1,x0) by0 esg ("endorse " ^ b)) then
-	    raise (Failure "endorsement signature verification failed; not adding endorsement to wallet");
-	  walletendorsements := (alphap,betap,(x,y),recid,fcomp,esg)::!walletendorsements;
-	  save_wallet();
-	  output_byte c 1
-	with
-	| Failure(m) ->
-	    output_byte c 0;
-	    send_string c m
-	| _ ->
-	    output_byte c 0;
-	    send_string c "Exception raised."
-      end
-  | _ -> ()
-***)

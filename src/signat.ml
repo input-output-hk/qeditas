@@ -76,7 +76,7 @@ let rec bytelist_to_big_int rst n c =
   else
     (c,rst)
 
-let decode_signature sg =
+let decode_signature_real sg =
   match base64decode sg with
   | (by0::rst) ->
       let (r,rst2) = bytelist_to_big_int rst 32 zero_big_int in
@@ -87,8 +87,8 @@ let decode_signature sg =
 	raise (Failure("Signature Too Long"))
   | [] -> raise (Failure("Empty Signature"))
 
-let decode_signature_a sg =
-  let (by0,(r,s)) = decode_signature sg in
+let decode_signature sg =
+  let (by0,(r,s)) = decode_signature_real sg in
   let by27 = by0-27 in
   let recid = by27 land 3 in
   let fcomp = by27 land 4 > 0 in
@@ -157,27 +157,17 @@ let verify_p2pkhaddr_signat e alpha (r,s) recid fcomp =
   | Some(q) -> pubkey_hashval q fcomp = alpha
   | None -> false
 
-let verifymessage_a alpha recid fcomp (r,s) m =
+let verifymessage alpha recid fcomp (r,s) m =
   let e = md256_big_int (sha256dstr m) in
   match recover_key e (r,s) recid with
   | Some(q) -> pubkey_hashval q fcomp = alpha
   | None -> false
 
-let verifymessage_a_recover alpha recid fcomp (r,s) m =
+let verifymessage_recover alpha recid fcomp (r,s) m =
   let e = md256_big_int (sha256dstr m) in
   match recover_key e (r,s) recid with
   | Some(q) when pubkey_hashval q fcomp = alpha -> Some(q)
   | _ -> None
-
-let verifymessage alpha by0 (r,s) m =
-  let by27 = by0-27 in
-  let recid = by27 land 3 in
-  let fcomp = by27 land 4 > 0 in
-  verifymessage_a alpha recid fcomp (r,s) m
-
-let verifymessage_base64 alpha sg m =
-  let (by0,(r,s)) = decode_signature sg in
-  verifymessage alpha by0 (r,s) m
 
 let md256_of_bitcoin_message m =
   let m = if !Config.testnet then "testnet:" ^ m else m in
@@ -189,7 +179,7 @@ let md256_of_bitcoin_message m =
   Buffer.add_string ms m;
   sha256dstr (Buffer.contents ms)
 
-let verifybitcoinmessage_a alpha recid fcomp (r,s) m =
+let verifybitcoinmessage alpha recid fcomp (r,s) m =
   let m = if !Config.testnet then "testnet:" ^ m else m in
   let ml = String.length m in
   let ms = Buffer.create (26 + ml) in
@@ -197,9 +187,9 @@ let verifybitcoinmessage_a alpha recid fcomp (r,s) m =
   let c = seo_varint seosb (Int64.of_int ml) (ms,None) in (*** output the length as a varint ***)
   seosbf c;
   Buffer.add_string ms m;
-  verifymessage_a alpha recid fcomp (r,s) (Buffer.contents ms)
+  verifymessage alpha recid fcomp (r,s) (Buffer.contents ms)
 
-let verifybitcoinmessage_a_recover alpha recid fcomp (r,s) m =
+let verifybitcoinmessage_recover alpha recid fcomp (r,s) m =
   let m = if !Config.testnet then "testnet:" ^ m else m in
   let ml = String.length m in
   let ms = Buffer.create (26 + ml) in
@@ -207,21 +197,7 @@ let verifybitcoinmessage_a_recover alpha recid fcomp (r,s) m =
   let c = seo_varint seosb (Int64.of_int ml) (ms,None) in (*** output the length as a varint ***)
   seosbf c;
   Buffer.add_string ms m;
-  verifymessage_a_recover alpha recid fcomp (r,s) (Buffer.contents ms)
-
-let verifybitcoinmessage alpha by0 (r,s) m =
-  let m = if !Config.testnet then "testnet:" ^ m else m in
-  let ml = String.length m in
-  let ms = Buffer.create (26 + ml) in
-  Buffer.add_string ms "\024Bitcoin Signed Message:\n";
-  let c = seo_varint seosb (Int64.of_int ml) (ms,None) in (*** output the length as a varint ***)
-  seosbf c;
-  Buffer.add_string ms m;
-  verifymessage alpha by0 (r,s) (Buffer.contents ms)
-
-let verifybitcoinmessage_base64 alpha sg m =
-  let (by0,(r,s)) = decode_signature sg in
-  verifybitcoinmessage alpha by0 (r,s) m
+  verifymessage_recover alpha recid fcomp (r,s) (Buffer.contents ms)
 
 let seo_signat o rs c = seo_prod seo_big_int_256 seo_big_int_256 o rs c
 let sei_signat i c = sei_prod sei_big_int_256 sei_big_int_256 i c

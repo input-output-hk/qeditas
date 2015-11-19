@@ -2,8 +2,7 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
-(*** Significant portions of this code consists of modified from the
- proof checker Egal - Copyright (c) 2014 Chad E Brown, MIT software license.
+(*** Significant portions of this code consists of modified from the proof checker Egal.
  The main difference in the syntax is Qeditas provides explicit support for type variables.
  ***)
 

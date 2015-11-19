@@ -3,13 +3,6 @@
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 (* Most of this code is taken directly from Egal. *)
-(* Egal included BIP0032 code that isn't needed in Qeditas. *)
-(* Egal relied on openssl to compute sha256 and ripemd160 hashes, but Qeditas does this itself. *)
-
-(* Code for BIP0032 (HD Wallets) *)
-(* https://en.bitcoin.it/wiki/BIP_0032 *)
-(* Chad E. Brown, ported from Krona Rev's Lisp code: https://github.com/kronarev/bip0032sbcl *)
-(* This contains much more code than is actually needed by Egal at the moment, but it might be useful later. *)
 
 open Big_int
 open Ser
@@ -17,8 +10,6 @@ open Hashaux
 open Sha256
 open Hash
 open Secp256k1
-
-exception Invalid
 
 (* base58 representation *)
 let _base58strs = ["1";"2";"3";"4";"5";"6";"7";"8";"9";"A";"B";"C";"D";"E";"F";"G";"H";"J";"K";"L";"M";"N";"P";"Q";"R";"S";"T";"U";"V";"W";"X";"Y";"Z";"a";"b";"c";"d";"e";"f";"g";"h";"i";"j";"k";"m";"n";"o";"p";"q";"r";"s";"t";"u";"v";"w";"x";"y";"z"]

@@ -1,13 +1,10 @@
 (* Copyright (c) 2015 The Qeditas developers *)
-(* Copyright (c) 2014 Chad E Brown *)
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 open Ser
 
 (* Most of this code is taken directly from Egal. *)
-
-(* Secp256k1, Chad E. Brown, ported from Krona Rev's Lisp code: https://github.com/kronarev/bip0032sbcl *)
 
 (* Code for the Elliptic Curve secp256k1 *)
 (* https://en.bitcoin.it/wiki/Secp256k1 *)

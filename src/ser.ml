@@ -4,10 +4,6 @@
 
 open Big_int
 
-(*** This is a generalized version of the serialization code found in the
- proof checker Egal - Copyright (c) 2014 Chad E Brown, MIT software license.
- ***)
-
 (*** Generic serialization code ***)
 
 (*** String Buffer (out) / String (in), partly copied from Egal ***)

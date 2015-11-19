@@ -538,7 +538,7 @@ let valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v) =
     match bhs.blocksignatendorsement with
     | None -> verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) bhd.stakeaddr bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
     | Some(beta,recid,fcomp,esg) -> (*** signature via endorsement ***)
-	verifybitcoinmessage_a bhd.stakeaddr recid fcomp esg ("endorse " ^ (addr_qedaddrstr (hashval_p2pkh_addr beta)))
+	verifybitcoinmessage bhd.stakeaddr recid fcomp esg ("endorse " ^ (addr_qedaddrstr (hashval_p2pkh_addr beta)))
 	  &&
 	verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) beta bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
   end
