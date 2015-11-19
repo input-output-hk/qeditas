@@ -21,20 +21,20 @@ The functions to input its from a channel take two arguments: the number of bits
 
 The remainder of the functions defined in \module{ser} are for
 serialization basic data: booleans, bytes, 32-bit integers, 64-bit integers, big integers (the OCaml type \type{big\_int}) assumed to be 256-bit integers and strings.
-There are also other serialization functions for integers: \func{seo\_varint} and \func{sei\_varint} uses the varint representation used in Bitcoin, while \func{seo\_varintb} and \func{sei\_varintb} uses a different compact representation to represent numbers less than $65,536$.
+There are also other serialization functions for integers: \serfunc{seo\_varint} and \serfunc{sei\_varint} uses the varint representation used in Bitcoin, while \serfunc{seo\_varintb} and \serfunc{sei\_varintb} uses a different compact representation to represent numbers less than $65,536$.
 
 In addition there are functions used to construct serialization functions
 for list types, option types and product types with up to $6$ components.
-For example, there are functions \func{seo\_list} and \func{sei\_list}.
+For example, there are functions \serfunc{seo\_list} and \serfunc{sei\_list}.
 When serialization functions are needed for lists of bytes, we simply
-use \func{seo\_list} applied to \func{seo\_int8}
-and \func{sei\_list} applied to \func{sei\_int8}.
+use \serfunc{seo\_list} applied to \serfunc{seo\_int8}
+and \serfunc{sei\_list} applied to \serfunc{sei\_int8}.
 
 Note that the serialization code is inherently higher-order (functions are first-class values).
 Firstly, the atomic functions are passed as arguments to the serialization functions
 for each type so the same serialization code can be used for both representations.
-Secondly, the serialization functions themselves are passed to functions like \func{seo\_list}
-and \func{sei\_list}.
+Secondly, the serialization functions themselves are passed to functions like \serfunc{seo\_list}
+and \serfunc{sei\_list}.
 
 There is one minor issue with the serialization code which may be confusing
 and hopefully will not be a nightmare to maintain.
