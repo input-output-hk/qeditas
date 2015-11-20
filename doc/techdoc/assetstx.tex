@@ -1,2 +1,93 @@
+\section{Assets}
+
 \module{assets}
+
+\begin{itemize}
+\item {\type{obligation}}
+\item {\type{preasset}}
+\item {\type{asset}}
+\item {\type{asset\_assetid}}
+\item {\type{asset\_preasset}}
+\item {\type{addr\_asset}}
+\end{itemize}
+
+As usual, there are functions for serializing and deserializing elements of these types:
+{\serfunc{seo\_obligation}},
+{\serfunc{sei\_obligation}},
+{\serfunc{seo\_preasset}},
+{\serfunc{sei\_preasset}},
+{\serfunc{seo\_asset}},
+{\serfunc{sei\_asset}},
+{\serfunc{seo\_addr\_assetid}},
+{\serfunc{sei\_addr\_assetid}},
+{\serfunc{seo\_addr\_preasset}},
+{\serfunc{sei\_addr\_preasset}},
+{\serfunc{seo\_addr\_asset}}
+and
+{\serfunc{sei\_addr\_asset}}.
+
+
+\begin{itemize}
+\item {\func{assetid}}
+\item {\func{assetobl}}
+\item {\func{assetpre}}
+\item {\func{hashobligation}}
+\item {\func{hashpreasset}}
+\item {\func{hashasset}}
+\item {\func{hash\_addr\_assetid}}
+\item {\func{hash\_addr\_preasset}}
+\item {\func{hash\_addr\_asset}}
+\item {\func{new\_assets}}
+\item {\func{remove\_assets}}
+\item {\func{get\_spent}}
+\item {\func{add\_vout}}
+\item {\func{preasset\_value}}
+\item {\func{asset\_value}}
+\item {\func{asset\_value\_sum}}
+\item {\func{output\_signaspec\_uses\_objs}}
+\item {\func{output\_signaspec\_uses\_props}}
+\item {\func{output\_doc\_uses\_objs}}
+\item {\func{output\_doc\_uses\_props}}
+\item {\func{output\_creates\_objs}}
+\item {\func{output\_creates\_props}}
+\item {\func{output\_creates\_neg\_props}}
+\item {\func{output\_markers}}
+\item {\func{rights\_out\_obj}}
+\item {\func{rights\_out\_prop}}
+\item {\func{count\_obj\_rights}}
+\item {\func{count\_prop\_rights}}
+\item {\func{count\_rights\_used}}
+\item {\func{obj\_rights\_mentioned}}
+\item {\func{prop\_rights\_mentioned}}
+\item {\func{rights\_mentioned}}
+\item {\func{units\_sent\_to\_addr}}
+\item {\func{out\_cost}}
+\end{itemize}
+
+\section{Transactions}
+
 \module{tx}
+
+{\type{tx}}
+{\type{stx}}
+
+The serialization and deserialization functions are
+{\serfunc{seo\_tx}},
+{\serfunc{sei\_tx}},
+{\serfunc{seo\_stx}}
+and
+{\serfunc{sei\_stx}}.
+
+\begin{itemize}
+\item {\func{hashtx}}
+\item {\func{tx\_inputs}}
+\item {\func{tx\_outputs}}
+\item {\func{no\_dups}}
+\item {\func{tx\_inputs\_valid}}
+\item {\func{tx\_outputs\_valid}}
+\item {\func{tx\_valid}}
+\item {\func{tx\_signatures\_valid}}
+\item {\func{txout\_update\_ottree}}
+\item {\func{txout\_update\_ostree}}
+\end{itemize}
+
