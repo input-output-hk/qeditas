@@ -1,6 +1,181 @@
 The \module{mathdata} contains the code for representing types,
 terms and proofs
 and the code for type checking and proof checking.
+This is arguably the most important module in Qeditas.
+A bug in this module could lead to non-theorems being accepted as theorems
+undermining the primary purpose of the Qeditas system.
+Fortunately the \file{mathdata.ml} file is not long (currently less than 2000 lines of code)
+and thus can be manually audited.
+We attempt to give enough information in this chapter for someone who wishes to undertake such an audit.
 
 Much of the code in this module was taken from the code for Egal~\cite{Brown2014} system.
 The main difference in the syntax is Qeditas provides explicit support for type variables.
+Support for theories and signatures have also been added, and the type of documents has been modified.
+Additionally, the checking functions are parameterized by functions to verify a term
+identified only by its hash root has a type in a theory
+and to verify a proposition identified only by its hash root is known to be a theorem in a theory.
+Such information will be looked up in the ledger tree (see Chapter~\ref{chap:ctre}) by checking what is held at corresponding term addresses.
+
+One might argue that it would be safer to use an older, established proof checker for this purpose.
+However, experience has shown that even established systems can be vulnerable to ``tricks''
+which can be used to prove what should be a non-theorem.
+For example, on {\tt{proofmarket.org}}~\cite{ProofMarket}
+a bitcoin bounty was placed on the proposition {\sf{False}} in Coq~\cite{Coq:manual}.
+In spite of the fact that Coq is an advanced tool used by many people for many projects,
+such a ``proof'' of {\sf{False}} was given.\footnote{In fact, two different proofs were given.}
+The ``proofs'' were related to implementation issues rather than an inconsistency
+in the underlying logic, but only the implementation will matter in a system like Qeditas.
+By using a simple underlying logic (simple type theory)
+and isolating the implementation in the reasonably small module {\module{mathdata}}
+it is hoped that such apparent inconsistencies can be avoided.
+
+\section{Simple Types}
+
+{\type{tp}}
+
+{\serfunc{seo\_tp}} and {\serfunc{sei\_tp}} serialize and deserialize types.
+% {\func{tp\_to\_str}} returns a string representation of the type and {\func{str\_to\_tp}} returns a type given a string representation of the type.\footnote{These are included to help with testing, and are not currently used outside {\module{mathdata}} otherwise.}
+
+{\func{hashtp}} takes a type and returns a hash value obtained by serializing the type
+to a string, hashing the string, and then hashing the result tagged with $64$.
+(The intention of hashing tagged results is to ensure that, for example, the hash value
+associated with a type will not accidentally be the same as the the hash value associated
+with a term, proof or anything else.)
+
+\section{Terms and Propositions}
+
+{\type{tm}}
+
+{\serfunc{seo\_tm}} and {\serfunc{sei\_tm}} serialize and deserialize terms.
+% {\func{tm\_to\_str}} returns a string representation of the term and {\func{str\_to\_tm}} returns a term given a string representation of the type.\footnote{These are included to help with testing, and are not currently used outside {\module{mathdata}} otherwise.}
+
+{\func{hashtm}} takes a term and returns a hash value obtained by serializing the term
+to a string, hashing the string, and then hashing the result tagged with $66$.
+
+{\func{tm\_hashroot}}
+
+\section{Proof Terms}
+
+{\type{pf}}
+
+{\serfunc{seo\_pf}} and {\serfunc{sei\_pf}} serialize and deserialize proof terms.
+% {\func{pf\_to\_str}} returns a string representation of the proof term and {\func{str\_to\_pf}} returns a proof term given a string representation of the type.\footnote{These are included to help with testing, and are not currently used outside {\module{mathdata}} otherwise.}
+
+{\func{hashpf}} takes a term and returns a hash value obtained by serializing the term
+to a string, hashing the string, and then hashing the result tagged with $67$.
+
+{\func{pf\_hashroot}}
+
+\section{Theories}
+
+{\type{theoryitem}}
+{\type{theoryspec}}
+{\type{theory}}
+
+{\serfunc{seo\_theoryspec}} and {\serfunc{sei\_theoryspec}} serialize and deserialize theory specifications.
+{\serfunc{seo\_theory}} and {\serfunc{sei\_theory}} serialize and deserialize theories.
+
+{\func{hashtheoryspec}} takes a theory specification and returns a hash value obtained by serializing the
+theory specification to a string, hashing the string, and then hashing the result tagged with $68$.
+
+{\func{theoryspec\_hashroot}}
+
+{\func{hashtheory}}
+
+{\func{theoryspec\_theory}}
+
+{\func{theoryspec\_burncost}}
+
+% {\func{theory\_to\_str}} returns a string representation of the theory and {\func{str\_to\_theory}} returns a theory given a string representation of the type. In this case, {\func{theory\_to\_str}} is used elsewhere in the code. In particular, the length of the string (the serialization of the theory) is used to calculate how many zerms must be burned in order to publish the theory (21 zerms must be burned for each character in the string). There is a burn fee for publishing theories since every node must keep the theory locally (in a {\type{ttree}}) in order to check documents.
+
+\section{Signatures}
+
+{\type{signaitem}}
+{\type{signaspec}}
+{\type{gsigna}}
+{\type{signa}}
+
+{\serfunc{seo\_signaspec}} and {\serfunc{sei\_signaspec}} serialize and deserialize signature specifications.
+{\serfunc{seo\_signa}} and {\serfunc{sei\_signa}} serialize and deserialize signatures.
+
+{\func{hashsignaspec}} takes a signature specification and returns a hash value obtained by serializing the
+signature specification to a string, hashing the string, and then hashing the result tagged with $69$.
+
+{\func{signaspec\_hashroot}}
+
+{\func{hashsigna}}
+
+{\func{signaspec\_signa}}
+
+{\func{signaspec\_burncost}}
+
+% {\func{signa\_to\_str}} returns a string representation of the signature and {\func{str\_to\_signa}} returns a signature given a string representation of the type. As with theories, {\func{signa\_to\_str}} is used elsewhere in the code.  In particular, the length of the string (the serialization of the signature) is used to calculate how many zerms must be burned in order to publish the signature (21 zerms must be burned for each character in the string). There is a burn fee for publishing signatures since every node must keep the signature locally (in an {\type{stree}}) in order to check documents.
+
+\section{Documents}
+
+{\type{docitem}}
+{\type{doc}}
+
+{\type{pdoc}}
+
+{\serfunc{seo\_doc}} and {\serfunc{sei\_doc}} serialize and deserialize documents.
+{\serfunc{seo\_pdoc}} and {\serfunc{sei\_pdoc}} serialize and deserialize partial documents.
+
+{\func{hashdoc}}
+{\func{doc\_hashroot}}
+
+{\func{hashpdoc}}
+{\func{pdoc\_hashroot}}
+
+\section{Dependency Checking}
+
+\begin{itemize}
+\item {\func{signaspec\_uses\_objs}}
+\item {\func{signaspec\_uses\_props}}
+\item {\func{doc\_uses\_objs}}
+\item {\func{doc\_uses\_props}}
+\item {\func{doc\_creates\_objs}}
+\item {\func{doc\_creates\_props}}
+\item {\func{doc\_creates\_neg\_props}}
+\item {\func{signaspec\_stp\_markers}}
+\item {\func{signaspec\_known\_markers}}
+\item {\func{doc\_stp\_markers}}
+\item {\func{doc\_known\_markers}}
+\end{itemize}
+
+\section{Trees of Theories and Signatures}
+
+{\type{ttree}}
+{\type{stree}}
+
+\begin{itemize}
+\item {\func{ottree\_insert}}
+\item {\func{ostree\_insert}}
+\item {\func{ottree\_hashroot}}
+\item {\func{ostree\_hashroot}}
+\item {\func{ottree\_lookup}}
+\end{itemize}
+
+\section{Type Checking and Proof Checking}
+
+\begin{itemize}
+\item {\var{beta\_count}}
+\item {\var{term\_count}}
+\end{itemize}
+
+\begin{itemize}
+\item {\exc{CheckingFailure}}
+\item {\exc{NotKnown}}
+\item {\exc{UnknownTerm}}
+\item {\exc{UnknownSigna}}
+\item {\exc{SignaTheoryMismatch}}
+\item {\exc{NonNormalTerm}}
+\item {\exc{BetaLimit}}
+\item {\exc{TermLimit}}
+\end{itemize}
+
+\begin{itemize}
+\item {\func{check\_theoryspec}}
+\item {\func{check\_signaspec}}
+\item {\func{check\_doc}}
+\end{itemize}
