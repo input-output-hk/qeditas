@@ -1,2 +1,112 @@
 \module{ctre}
 \module{ctregraft}
+
+\section{Compact Ledger Trees}
+
+\module{ctre}
+
+% move reward_maturation and reward_locktime
+
+\begin{itemize}
+\item {\type{hlist}}
+Elements of this type can be serialized and deserialized using
+{\serfunc{seo\_hlist}}
+and {\serfunc{sei\_hlist}}.
+\item {\type{nehlist}}
+Elements of this type can be serialized and deserialized using
+{\serfunc{seo\_nehlist}}
+and
+{\serfunc{sei\_nehlist}}.
+\item {\type{frame}}
+Elements of this type can be serialized and deserialized using
+{\serfunc{seo\_frame}}
+and
+{\serfunc{sei\_frame}}.
+\item {\type{rframe}}
+Elements of this type can be serialized and deserialized using
+{\serfunc{seo\_rframe}}
+and
+{\serfunc{sei\_rframe}}.
+\item {\type{ctree}}
+Elements of this type can be serialized and deserialized using
+{\serfunc{seo\_ctree}}
+and
+{\serfunc{sei\_ctree}}.
+\end{itemize}
+
+\begin{itemize}
+\item {\var{localframe}}
+\item {\var{localframehash}}
+\end{itemize}
+
+{\exc{NotSupported}}
+
+\begin{itemize}
+\item {\func{coinage}}
+\item {\func{hlist\_hashroot}}
+\item {\func{nehlist\_hlist}}
+\item {\func{nehlist\_hashroot}}
+\item {\func{normalize\_frame}}
+\item {\func{rframe\_lub}}
+\item {\func{hashctree}}
+\item {\func{ctree\_hashroot}}
+\item {\func{octree\_hashroot}}
+\item {\func{ctree\_lookup\_asset}}
+\item {\func{remove\_hashed\_ctree}}
+\item {\func{archive\_unused\_ctrees}}
+\item {\func{remove\_unused\_ctrees}}
+\item {\func{ctree\_pre}}
+\item {\func{ctree\_addr}}
+\item {\func{frame\_filter\_ctree}}
+\item {\func{frame\_filter\_octree}}
+\item {\func{rframe\_filter\_ctree}}
+\item {\func{rframe\_filter\_octree}}
+\item {\func{lookup\_all\_ctree\_root\_abbrevs}}
+\item {\func{lookup\_frame\_ctree\_root\_abbrev}}
+\item {\func{get\_ctree\_abbrev}}
+\item {\func{load\_root\_abbrevs\_index}}
+\item {\func{strip\_bitseq\_true}}
+\item {\func{strip\_bitseq\_false}}
+\item {\func{strip\_bitseq\_true0}}
+\item {\func{strip\_bitseq\_false0}}
+\item {\func{ctree\_lookup\_input\_assets}}
+\item {\func{ctree\_supports\_tx}}
+\item {\func{ctree\_supports\_tx\_2}}
+\item {\func{tx\_octree\_trans}}
+\item {\func{txl\_octree\_trans}}
+\item {\func{octree\_lub}}
+\item {\func{full\_needed}}
+\item {\func{get\_tx\_supporting\_octree}}
+\item {\func{get\_txl\_supporting\_octree}}
+\item {\func{print\_hlist}}
+\item {\func{print\_hlist\_to\_buffer}}
+\item {\func{print\_ctree}}
+\item {\func{print\_ctree\_all}}
+\item {\func{wrap\_frame}}
+\item {\func{hashframe}}
+\item {\func{frame\_add\_leaf}}
+\item {\func{frame\_set\_hash\_pos}}
+\item {\func{frame\_set\_abbrev\_pos}}
+\item {\func{frame\_set\_abbrev\_level}}
+\item {\func{frame\_set\_all\_pos}}
+\item {\func{build\_rframe\_to\_req}}
+\item {\func{split\_rframe\_for\_reqs}}
+\end{itemize}
+
+\section{Grafting Trees}
+
+\module{ctregraft}
+
+
+{\type{cgraft}}
+with serialization function
+{\serfunc{seo\_cgraft}}
+and deerialization function
+{\serfunc{sei\_cgraft}}.
+
+\begin{itemize}
+\item {\func{cgraft\_valid}}
+\item {\func{ctree\_cgraft}}
+\item {\func{factor\_tx\_ctree\_cgraft}}
+\item {\func{factor\_inputs\_ctree\_cgraft}}
+\end{itemize}
