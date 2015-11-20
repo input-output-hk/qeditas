@@ -85,78 +85,57 @@ type pdoc =
 val seo_tp : (int -> int -> 'a -> 'a) -> tp -> 'a -> 'a
 val sei_tp : (int -> 'a -> int * 'a) -> 'a -> tp * 'a
 
-val tp_to_str : tp -> string
 val hashtp : tp -> hashval
-val str_to_tp : string -> tp
 
 val seo_tm : (int -> int -> 'a -> 'a) -> tm -> 'a -> 'a
 val sei_tm : (int -> 'a -> int * 'a) -> 'a -> tm * 'a
 
-val tm_to_str : tm -> string
 val hashtm : tm -> hashval
-val str_to_tm : string -> tm
+val tm_hashroot : tm -> hashval
 
 val seo_pf : (int -> int -> 'a -> 'a) -> pf -> 'a -> 'a
 val sei_pf : (int -> 'a -> int * 'a) -> 'a -> pf * 'a
 
-val pf_to_str : pf -> string
 val hashpf : pf -> hashval
-val str_to_pf : string -> pf
+val pf_hashroot : pf -> hashval
 
 val seo_theoryspec : (int -> int -> 'a -> 'a) -> theoryspec -> 'a -> 'a
 val sei_theoryspec : (int -> 'a -> int * 'a) -> 'a -> theoryspec * 'a
-
-val hashtheoryspec : theoryspec -> hashval
-
 val seo_theory : (int -> int -> 'a -> 'a) -> theory -> 'a -> 'a
 val sei_theory : (int -> 'a -> int * 'a) -> 'a -> theory * 'a
 
-val theory_to_str : theory -> string
-val str_to_theory : string -> theory
+val hashtheoryspec : theoryspec -> hashval
+val theoryspec_hashroot : theoryspec -> hashval option
+val hashtheory : theory -> hashval option
+
+val theoryspec_theory : theoryspec -> theory
+val theoryspec_burncost : theoryspec -> int64
 
 val seo_signaspec : (int -> int -> 'a -> 'a) -> signaspec -> 'a -> 'a
 val sei_signaspec : (int -> 'a -> int * 'a) -> 'a -> signaspec * 'a
-
-val hashsignaspec : signaspec -> hashval
-
 val seo_signa : (int -> int -> 'a -> 'a) -> signa -> 'a -> 'a
 val sei_signa : (int -> 'a -> int * 'a) -> 'a -> signa * 'a
 
-val signa_to_str : signa -> string
+val hashsignaspec : signaspec -> hashval
+val signaspec_hashroot : signaspec -> hashval
 val hashsigna : signa -> hashval
-val str_to_signa : string -> signa
+
+val signaspec_signa : signaspec -> signa
+val signaspec_burncost : signaspec -> int64
 
 val seo_doc : (int -> int -> 'a -> 'a) -> doc -> 'a -> 'a
 val sei_doc : (int -> 'a -> int * 'a) -> 'a -> doc * 'a
-
-val hashdoc : doc -> hashval
-
 val seo_pdoc : (int -> int -> 'a -> 'a) -> pdoc -> 'a -> 'a
 val sei_pdoc : (int -> 'a -> int * 'a) -> 'a -> pdoc * 'a
 
-val hashpdoc : pdoc -> hashval
-
-(** * computation of hash roots ***)
-val tm_hashroot : tm -> hashval
-val pf_hashroot : pf -> hashval
-val theoryspec_hashroot : theoryspec -> hashval option
-val signaspec_hashroot : signaspec -> hashval
+val hashdoc : doc -> hashval
 val doc_hashroot : doc -> hashval
+
+val hashpdoc : pdoc -> hashval
 val pdoc_hashroot : pdoc -> hashval
-
-val theoryspec_theory : theoryspec -> theory
-
-val hashtheory : theory -> hashval option
-
-val signaspec_signa : signaspec -> signa
 
 val hashgsigna : gsigna -> hashval
 val hashsigna : signa -> hashval
-
-val theory_burncost : theory -> int64
-val theoryspec_burncost : theoryspec -> int64
-val signa_burncost : signa -> int64
-val signaspec_burncost : signaspec -> int64
 
 val signaspec_uses_objs : signaspec -> (hashval * hashval) list
 val signaspec_uses_props : signaspec -> hashval list
@@ -184,6 +163,9 @@ val ottree_lookup : ttree option -> hashval option -> theory
 
 (** * operations including type checking and proof checking ***)
 
+val beta_count : int ref
+val term_count : int ref
+
 exception CheckingFailure
 exception NotKnown of hashval option * hashval
 exception UnknownTerm of hashval option * hashval * tp
@@ -192,9 +174,6 @@ exception SignaTheoryMismatch of hashval option * hashval option * hashval
 exception NonNormalTerm
 exception BetaLimit
 exception TermLimit
-
-val beta_count : int ref
-val term_count : int ref
 
 val check_theoryspec : theoryspec -> theory * gsigna
 

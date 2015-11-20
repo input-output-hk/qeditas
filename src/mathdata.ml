@@ -135,8 +135,6 @@ let rec sei_tp i c =
       let (m0,c) = sei_tp i c in
       (TpAll(m0),c)
 
-let str_to_tp c = let (m,_) = sei_tp seis (c,String.length c,None,0,0) in m
-
 (** ** tp list serialization ***)
 let seo_tpl o al c = seo_list seo_tp o al c
 let sei_tpl i c = sei_list sei_tp i c
@@ -253,8 +251,6 @@ let rec sei_tm i c =
 	let (m0,c) = sei_tm i c in
 	(TTpAll(m0),c)
 
-let str_to_tm c = let (m,_) = sei_tm seis (c,String.length c,None,0,0) in m
-
 (** ** pf serialization ***)
 let rec seo_pf o m c =
   match m with
@@ -343,8 +339,6 @@ let rec sei_pf i c =
     else
       let (d,c) = sei_pf i c in
       (PTpLam(d),c)
-
-let str_to_pf c = let (m,_) = sei_pf seis (c,String.length c,None,0,0) in m
 
 (** ** theoryspec serialization ***)
 let seo_theoryitem o m c =
@@ -621,8 +615,6 @@ let theory_to_str thy =
   seosbf (seo_theory seosb thy (c,None));
   Buffer.contents c
 
-let str_to_theory c = let (m,_) = sei_theory seis (c,String.length c,None,0,0) in m
-
 (** * computation of hash roots ***)
 let rec tm_hashroot m =
   match m with
@@ -790,8 +782,6 @@ let signa_to_str s =
   let c = Buffer.create 1000 in
   seosbf (seo_signa seosb s (c,None));
   Buffer.contents c
-
-let str_to_signa c = let (m,_) = sei_signa seis (c,String.length c,None,0,0) in m
 
 (** * use serializations of theory/signatures to determine the burncost.
  21 zerms (21 billion cants) per byte for each.
