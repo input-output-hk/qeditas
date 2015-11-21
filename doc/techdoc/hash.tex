@@ -70,6 +70,16 @@ The module {\module{hash}} is important. It defines a type {\type{hashval}} as 5
 A function {\func{hash160}} takes an arbitrary string to the result of hashing first by {\tt{SHA256}} and then by {\tt{RIPEMD-160}}.
 The type {\type{hashval}} is implemented the same way as the type {\type{md}} in the module {\module{ripemd160}}. If they were defined differently, the function {\func{hash160}} would be ill-typed.
 
+{\bf{Note:}} The Coq formalization contains Coq module a {\coqmod{CryptoHashes}} which corresponds
+to some of what is in the {\module{hash}} module.
+In particular, a type of {\coqtype{hashval}} is defined along with functions to hash natural numbers,
+addresses (which are defined to be 160 bit sequences in the Coq module {\coqmod{Addr}})
+and pairs of hash values. These functions are injective and give disjoint hash values.
+From these, a number of other hashing functions are defined in ways that continue
+to ensure injectivity and disjointness. The Coq representation is idealized.
+Hash values is infinite and the hashing functions are not cryptographic hashing functions.
+For more information, see~\cite{White2015a}.
+
 There are a variety of functions for creating, using and combining hash values.
 The following functions 
 \begin{itemize}

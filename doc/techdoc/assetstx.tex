@@ -11,6 +11,16 @@ in the {\file{src/unittests}}
 directory in the {\branch{testing}} branch.
 These unit tests give a number of examples demonstrating how the functions described below should behave.
 
+{\bf{Note:}} The Coq module {\coqmod{Assets}} is intended to correspond to {\module{assets}}.
+There are Coq types {\coqtype{preasset}}, {\coqtype{obligation}} and {\coqtype{asset}}
+corresponding to the types with the same names defined in OCaml.
+One difference is that in the OCaml code an obligation also keeps a boolean indicating if the
+asset is a reward since this was needed to implement forfeiture of rewards in case a staker
+double signs.
+Readers can examine the formal properties proven in {\coqmod{Assets}} to have a better
+idea of what properties corresponding OCaml functions should satisfy.
+For more information, see~\cite{White2015b}, although preassets in the version described there are restricted to currency units.
+
 \begin{itemize}
 \item {\type{obligation}}
 \item {\type{preasset}}
@@ -81,6 +91,12 @@ and
 in the {\file{src/unittests}}
 directory in the {\branch{testing}} branch.
 These unit tests give a number of examples demonstrating how the functions described below should behave.
+
+{\bf{Note:}} The Coq module {\coqmod{Transactions}} is intended to correspond to {\module{tx}}.
+The Coq types {\coqtype{Tx}} and {\coqtype{sTx}} correspond to the types {\type{tx}} and {\type{stx}} in the OCaml version.
+Readers can examine the formal properties proven in {\coqmod{Transactions}} to have a better
+idea of what properties corresponding OCaml functions should satisfy.
+For more information, see~\cite{White2015b}.
 
 {\type{tx}}
 {\type{stx}}

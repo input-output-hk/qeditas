@@ -14,7 +14,7 @@ These unit tests give a number of examples demonstrating how the functions descr
 
 The module \module{secp256k1} contains the operations for the corresponding elliptic curve~\cite{sec2final}.
 Most of the code in this module was taken from the code for Egal~\cite{Brown2014}.
-256-bit integers are represented using big integers (\type{big\_int}) from ocaml's {\tt{nums}} library.
+256-bit integers are represented using big integers (\type{big\_int}) from OCaml's {\tt{nums}} library.
 A function {\func{evenp}} is defined and exposed since it is used elsewhere.
 
 The 256-bit prime $p$ used in the elliptic curve is
@@ -159,6 +159,11 @@ computes a public key $(x,y)$
 from a big integer $e$ (from the hash value of what was signed), a signature $(r,s)$ and a ``recid'' $i\in\{0,1,2,3\}$.
 This should be the public key corresponding to the private key which was used to construct $(r,s)$
 from $e$.
+
+{\bf{Note:}} The Coq module {\coqmod{CryptoSignatures}} is intended to correspond to
+the {\module{signat}} module. It defines a Coq type {\coqtype{signat}} and functions
+to simulate signing with a private key and checking a signature.
+The actual implementation is trivial, but only the required properties are exported.
 
 \section{Scripts and Generalized Signatures}
 

@@ -10,6 +10,31 @@ These unit tests give a number of examples demonstrating how the functions descr
 
 \module{ctre}
 
+{\bf{Note:}} The largest part of the Coq formalization deals with verifying compact trees
+indeed represent ledgers as intended.
+The Coq module {\coqmod{LedgerStates}} represents ledgers as functions
+describing the current state of the ledger (see the Coq type \coqtype{statefun}).
+The Coq module {\coqmod{MTrees}} uses a form of Merkle tree~\cite{Merkle1980} to approximate such a
+{\coqtype{statefun}} function.
+The Coq types {\coqtype{hlist}} and {\coqtype{nehlist}} defined in {\coqmod{MTrees}} correspond to 
+the types {\type{hlist}} and {\type{nehlist}} defined in {\module{ctre}} in the OCaml code.
+The dependent Coq type {\coqtype{mtree}} $n$ is a Merkle tree with height $n$,
+where the default case is $n=162$ (since Qeditas addresses are determined by 162 bits).
+The Coq module {\coqmod{CTrees}} uses the compact tree (essentially a Patricia tree)
+to represent the Merkle tree and hence approximate the ledger state.
+The dependent Coq type {\coqtype{ctree}} $n$ is a compact tree with height $n$.
+In the OCaml code the corresponding type is the simple type {\type{ctree}}.
+Several functions are defined by recursion on $n$ in both the Coq and OCaml versions,
+even though in the OCaml version the requirement that the compact tree has height $n$
+is no longer enforced by the type system.
+Note that {\coqmod{CTrees}} (mostly) corresponds to {\module{ctre}},
+while {\coqmod{LedgerStates}} and {\coqmod{MTrees}} are only needed in the theory
+and (for the most part) have no counterpart in the OCaml code.
+Note also that frames and compact tree abbreviation nodes are not
+represented in the Coq formalization as these were added later to the
+OCaml code.
+For more information, see~\cite{White2015b}.
+
 % move reward_maturation and reward_locktime
 
 \begin{itemize}
@@ -102,6 +127,10 @@ and
 
 \module{ctregraft}
 
+{\bf{Note:}} 
+In the Coq formalization the Coq module {\coqmod{CTreeGrafting}}
+corresponds to {\module{ctregrafting}}.
+For more information, see~\cite{White2015b}.
 
 {\type{cgraft}}
 with serialization function
