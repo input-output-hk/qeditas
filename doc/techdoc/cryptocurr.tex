@@ -5,6 +5,11 @@ In particular, \module{secp256k1} implements the elliptic curve {\tt{secp256k1}}
 \module{signat} supports cryptographic signatures
 and \module{script} supports the Bitcoin scripting language (mostly).
 
+{\bf{Note:}} The unit tests for these modules are in {\file{basicunittests.ml}}
+in the {\file{src/unittests}}
+directory in the {\branch{testing}} branch.
+These unit tests give a number of examples demonstrating how the functions described below should behave.
+
 \section{Elliptic Curve Code}
 
 The module \module{secp256k1} contains the operations for the corresponding elliptic curve~\cite{sec2final}.
