@@ -1,7 +1,18 @@
 \documentclass{book}
 
 \usepackage{makeidx}
+\usepackage{amsmath}
+\usepackage{amssymb}
 
+\def\tforall{\hat{\forall}}
+\def\cD{\mathcal{D}}
+\def\cE{\mathcal{E}}
+\newcommand\tmh[1]{\mathbf{\sharp}_{#1}}
+\newcommand\tmhr[1]{\mathbf{TR}_{\sharp}(#1)}
+\newcommand\gpa[1]{\mathbf{\hat\sharp}_{#1}}
+\newcommand\hyp[1]{\mathbf{H}_{#1}}
+\newcommand\known[1]{\Box_{#1}}
+\newcommand\defin[1]{{\emph{#1}}\index{#1}}
 \newcommand\branch[1]{{\texttt{#1}}\index{#1@\texttt{#1}}\index{branch!#1@\texttt{#1}}}
 \newcommand\file[1]{{\texttt{#1}}\index{#1@\texttt{#1}}\index{file!#1@\texttt{#1}}}
 \newcommand\dir[1]{{\texttt{#1}}\index{#1@\texttt{#1}}\index{directory!#1@\texttt{#1}}}
@@ -11,6 +22,7 @@
 \newcommand\commlinearg[1]{{\texttt{#1}}\index{#1@\texttt{#1}}\index{command line argument!#1@\texttt{#1}}}
 \newcommand\var[1]{{\textsf{#1}}\index{#1@\textsf{#1}}\index{variable!#1@\textsf{#1}}}
 \newcommand\val[1]{{\textsf{#1}}\index{#1@\textsf{#1}}\index{value!#1@\textsf{#1}}}
+\newcommand\constr[1]{{\textsf{#1}}\index{#1@\textsf{#1}}\index{constructor!#1@\textsf{#1}}}
 \newcommand\exc[1]{{\textsf{#1}}\index{#1@\textsf{#1}}\index{exception!#1@\textsf{#1}}}
 \newcommand\func[1]{{\textsf{#1}}\index{#1@\textsf{#1}}\index{function!#1@\textsf{#1}}}
 \newcommand\serfunc[1]{{\textsf{#1}}\index{#1@\textsf{#1}}\index{function!serialization!#1@\textsf{#1}}\index{serialization function!#1@\textsf{#1}}}

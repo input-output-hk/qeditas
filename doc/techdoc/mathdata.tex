@@ -29,6 +29,18 @@ By using a simple underlying logic (simple type theory)
 and isolating the implementation in the reasonably small module {\module{mathdata}}
 it is hoped that such apparent inconsistencies can be avoided.
 
+The underlying logic is a form of simple type theory~\cite{Church40}
+with support for prefix polymorphism.
+The basic proof calculus is natural deduction~\cite{gent36,praw65}
+and proof terms Curry-Howard style $\lambda$-terms~\cite{howa80}.
+The logic is designed to allow for multiple theories to be
+declared and for signatures to be used to import previous
+typed terms and proven propositions.
+Of the popular proof assistants at the moment,
+the closest would probably be Isabelle~\cite{Nipkow-Paulson-Wenzel:2002},
+although Isabelle follows the LCF style~\cite{GORDON79} instead of
+Curry-Howard.
+
 {\bf{Note:}} Unit tests for the {\module{mathdata}} module are in {\file{mathunittests.ml}}
 in the {\file{src/unittests}}
 directory in the {\branch{testing}} branch.
@@ -43,9 +55,37 @@ except that the checking code is omitted and left abstract.
 
 \section{Simple Types}
 
-{\type{tp}}
+Simple types ($\alpha$, $\beta$) are described by the following grammar:
+$$
+\alpha,\beta ::=  \delta_n |o|\iota_n|(\alpha\to\beta)|(\Pi \alpha)
+$$
+We treat $\to$ as right associative to omit parentheses.
+For example, $\iota_0\to\iota_0\to o$
+means $(\iota_0\to (\iota_0\to o))$.
+Also, we will omit parentheses in $\Pi \alpha$ since
+$\Pi$ will always be used above $\to$ and so no
+ambiguity can result.
 
-{\serfunc{seo\_tp}} and {\serfunc{sei\_tp}} serialize and deserialize types.
+Simple types are implemented as the inductive type {\type{tp}}.
+We describe each constructor:
+\begin{itemize}
+\item ${\mbox{\constr{TpVar}}}(n)$ means the type variable $\delta_n$, where
+the $n$ should be interpreted as a de Bruijn index~\cite{deBruijn72}.
+For example, $\Pi \Pi \delta_1 \to \delta_0 \to \delta_1$
+means the type
+of a function which expects two types $\alpha$ and $\beta$,
+a term of type $\alpha$, a term of type $\beta$
+and returns a term of type $\alpha$.
+\item {\constr{Prop}} means the type $o$ of propositions.
+\item ${\mbox{\constr{Base}}}(n)$ means the $n^{th}$ base type $\iota_n$. Only finitely many base types will be explicitly used in
+a theory. In fact, so far only theories using one base type
+$\iota_0$ have been considered, but the support for multiple
+base types is included in case it is needed later.
+\item ${\mbox{\constr{TpAll}}} \alpha$ means $\Pi \alpha$, binding a type variable. Only types of the form $\Pi\cdots\Pi\alpha$
+where $\alpha$ has no occurrence of a $\Pi$.
+\end{itemize}
+
+The functions {\serfunc{seo\_tp}} and {\serfunc{sei\_tp}} serialize and deserialize types.
 % {\func{tp\_to\_str}} returns a string representation of the type and {\func{str\_to\_tp}} returns a type given a string representation of the type.\footnote{These are included to help with testing, and are not currently used outside {\module{mathdata}} otherwise.}
 
 {\func{hashtp}} takes a type and returns a hash value obtained by serializing the type
@@ -56,27 +96,178 @@ with a term, proof or anything else.)
 
 \section{Terms and Propositions}
 
-{\type{tm}}
+Terms $s,t,u$ are described by the following grammar:
+$$
+s,t ::=  x_n |\tmh{h}|c_n|(st)|(\lambda_\alpha s)|(s\to t)|(\forall_\alpha s)|(s \alpha)|(\Lambda s)|(\tforall s)
+$$
+Here $n$ ranges over non-negative integers
+and $h$ ranges over hash values.
 
-{\serfunc{seo\_tm}} and {\serfunc{sei\_tm}} serialize and deserialize terms.
+Terms $x_n$ are variables,
+where $n$ should be interpreted as a de Bruijn index~\cite{deBruijn72}.
+For example, $\lambda_o x_0 \to \forall_o x_1\to x_0$
+would be written as $\lambda y:o . y\to\forall z:o.y\to z$
+in a named representation.
+A term $\tmh{h}$ is an abbreviation for a term which has $h$ as its hash root (see {\func{tm\_hashroot}} below).
+Note that there are two kinds of application:
+(1) $(st)$ of a term $s$ to a term $t$ and
+(2) $(s\alpha)$ of a term $s$ to a type $\alpha$.
+Likewise there are two abstractions and two universal quantifiers:
+one for the term level and one for the type level.
+First, $(\lambda_\alpha s)$ is a term level abstraction representing
+a function expecting an input of type $\alpha$ 
+with return value determined by this input and $s$.
+Likewise, $(\forall_\alpha s)$ corresponds to universally quantifying
+over the elements of type $\alpha$.
+On the other hand, $(\Lambda s)$ is a type level abstraction
+and represents a function which expects a type $\alpha$
+and then returns a value determined by $\alpha$ and $s$.
+Likewise, $(\tforall s)$ corresponds to universally quantifying
+over all types.
+We refer to 
+$\lambda_\alpha$, $\forall_\alpha$, $\Lambda$ or $\tforall$
+collectively as {\defin{binders}}
+and say the term $s$ in
+$(\lambda_\alpha s)$, $(\forall_\alpha s)$, $(\Lambda s)$ or $(\tforall s)$
+is in the {\defin{scope}} of the binder.
+
+We often omit parentheses.
+Application is assumed to be left associative
+and so $s\alpha\beta t u$ means $((((s\alpha)\beta)t)u)$
+If parenthesis around the body
+of a binder
+are omitted, then they are assumed to be such that the
+scope of the binder is as large as possible.
+For example, $\forall_o x_0\to x_0$ means
+$(\forall_o (x_0\to x_0))$.
+
+The corresponding type in the OCaml code is {\type{tm}}.
+We describe each constructor:
+\begin{itemize}
+\item ${\mbox{\constr{DB}}}(n)$ corresponds to the variable $x_n$  (i.e., the de Bruijn index).
+\item ${\mbox{\constr{TmH}}}(h)$ corresponds to the term $\tmh{h}$
+and should be considered an abbreviation (which is sometimes opaque and sometimes transparent, depending on the current signature).
+\item ${\mbox{\constr{Prim}}}(n)$ corresponds to the primitive $c_n$.
+\item ${\mbox{\constr{Ap}}}(s,t)$ corresponds to term level application $st$.
+\item ${\mbox{\constr{Lam}}}(\alpha,s)$ corresponds to term level abstraction $\lambda_\alpha s$.
+\item ${\mbox{\constr{Imp}}}(s,t)$ corresponds to implication $s\to t$.
+\item ${\mbox{\constr{All}}}(\alpha,s)$ corresponds to term level universal quantification $\forall_\alpha s$.
+\item ${\mbox{\constr{TTpAp}}}(s,\alpha)$ corresponds to type level application $s\alpha$.
+\item ${\mbox{\constr{TTpLam}}}(s)$ corresponds to type level abstraction $\Lambda s$
+\item ${\mbox{\constr{TTpAll}}}(s)$ corresponds to type level universal quantification $\tforall s$.
+\end{itemize}
+
+The functions {\serfunc{seo\_tm}} and {\serfunc{sei\_tm}} serialize and deserialize terms.
 % {\func{tm\_to\_str}} returns a string representation of the term and {\func{str\_to\_tm}} returns a term given a string representation of the type.\footnote{These are included to help with testing, and are not currently used outside {\module{mathdata}} otherwise.}
 
-{\func{hashtm}} takes a term and returns a hash value obtained by serializing the term
+There are two functions {\func{hashtm}} 
+and
+{\func{tm\_hashroot}} which take terms and return
+a corresponding hash value.
+In the case of {\func{hashtm}},
+a hash value is obtained by serializing the term
 to a string, hashing the string, and then hashing the result tagged with $66$.
+This (effectively) guarantees that different terms
+will always be given different hash values.
+On the other hand, {\func{tm\_hashroot}} takes a term and computes its {\defin{hash root}}.
+The hash root of a term does not distinguish between a term
+$\tmh{h}$ and a term $t$ which has $h$ as its hash root.
+In effect, {\func{tm\_hashroot}} views all such abbreviations
+as transparent.
 
-{\func{tm\_hashroot}}
+The {\defin{hash root}} $\tmhr{t}$ of a term $t$ can be defined as follows:
+\begin{itemize}
+\item $\tmhr{\tmh{h}}$ is $h$
+\item $\tmhr{c_n}$ is the hash of $n$ tagged with $96$.
+\item $\tmhr{x_n}$ is the hash of $n$ tagged with $97$.
+\item $\tmhr{st}$ is the hash of the hashed pair of $\tmhr{s}$ and $\tmhr{t}$ tagged with $98$.
+\item $\tmhr{\lambda_\alpha s}$ is the hash of the hashed pair of the hash of $\alpha$ and $\tmhr{s}$ tagged with $99$.
+\item $\tmhr{s\to t}$ is the hash of the hashed pair of $\tmhr{s}$ and $\tmhr{t}$ tagged with $100$.
+\item $\tmhr{\forall_\alpha s}$ is the hash of the hashed pair of the hash of $\alpha$ and $\tmhr{s}$ tagged with $101$.
+\item $\tmhr{s\alpha}$ is the hash of the hashed pair of $\tmhr{s}$ and the hash of $\alpha$ tagged with $102$.
+\item $\tmhr{\Lambda s}$ is the hash of $\tmhr{s}$ tagged with $103$.
+\item $\tmhr{\tforall s}$ is the hash of $\tmhr{s}$ tagged with $104$.
+\end{itemize}
+The reader can verify that this corresponds to the
+definition of {\func{tm\_hashroot}} in the code.
+The tags are used to record which term constructor was
+traversed and is also used to ensure that hash roots
+of terms are not the hash values computed in other contexts.
+
+A proposition is a certain kind of term (in a given context).
+In short, propositions are always of the form
+$\tforall \cdots \tforall t$
+where $t$ has type $o$.
+Usually a proposition is simply of the form
+$t$ where $t$ has type $o$.
 
 \section{Proof Terms}
 
-{\type{pf}}
+Proof terms $\cD,\cE$ are described by the following grammar:
+$$
+\cD,\cE ::= \gpa{h} | \hyp{n} | \known{h} | (\cD s) | (\cD \cE) | (\lambda_s \cD) | (\lambda_\alpha \cD) | (\cD \alpha) | (\Lambda \cD)
+$$
+Here $n$ ranges over non-negative integers
+and $h$ ranges over hash values.
 
-{\serfunc{seo\_pf}} and {\serfunc{sei\_pf}} serialize and deserialize proof terms.
+The proof term $\gpa{h}$
+is an abbreviation for a proof term which has hash root $h$
+(see {\func{pf\_hashroot}} below).
+The proof term $\hyp{n}$
+is the proof of a hypothesis (in a hypothesis context).
+The proof term $\known{h}$
+simply asserts that the proposition with hash root
+$h$ is known. (The current signature maintains a list
+of known propositions and their hash root.
+Inclusion of such a proposition in the signature may require
+checking that the term address corresponding to $h$
+is owned as a proposition in the ledger. The only
+way this could have happened is if the term is the axiom
+of the current theory or was previously proven.)
+There are three kinds of application and three kinds of abstractions.
+At the proof level there are applications
+$(\cD\cE)$
+and abstractions
+$(\lambda_s \cD)$.
+These correspond to the elimination and introduction
+rules for implication.
+At the term level there are applications
+$(\cD t)$
+and abstractions
+$(\lambda_\alpha\cD)$.
+These correspond to the elimination and introduction
+rules for universal quantification.
+Finally at the type level there are applications
+$(\cD\alpha)$
+and abstractions
+$(\Lambda\cD)$.
+Type level application is the way polymorphic known propositions
+are applied at specific types.
+Type level abstraction is the way polymorphic propositions are
+proven.
+
+As with terms, we omit parentheses assuming application
+associates to the left and
+assuming abstraction (binders) have as large a scope as possible.
+
+The corresponding type in the OCaml code is {\type{pf}}.
+We describe each constructor:
+
+The functions {\serfunc{seo\_pf}} and {\serfunc{sei\_pf}} serialize and deserialize proof terms.
 % {\func{pf\_to\_str}} returns a string representation of the proof term and {\func{str\_to\_pf}} returns a proof term given a string representation of the type.\footnote{These are included to help with testing, and are not currently used outside {\module{mathdata}} otherwise.}
 
-{\func{hashpf}} takes a term and returns a hash value obtained by serializing the term
+Again, there are two functions taking a proof term
+and returning a hash value:
+{\func{hashpf}}
+and
+{\func{pf\_hashroot}}.
+The function {\func{hashpf}} takes a term and returns a hash value obtained by serializing the term
 to a string, hashing the string, and then hashing the result tagged with $67$.
-
-{\func{pf\_hashroot}}
+This implies {\func{hashpf}} returns an effectively unique hash value for each proof term.
+The function {\func{pf\_hashroot}} computes a {\defin{hash root}}
+similar to the way hash roots for terms are computed.
+In this case, the hash root for a proof term abbreviation
+$\gpa{h}$ is $h$.
 
 \section{Theories}
 
@@ -169,6 +360,29 @@ signature specification to a string, hashing the string, and then hashing the re
 \end{itemize}
 
 \section{Type Checking and Proof Checking}
+
+All the properties defined will be relative to a
+{\defin{type context}}.
+Since type variables are represented
+as de Bruijn indices, the {\defin{type context}}
+can be taken to simply be a non-negative integer $n$.
+
+The property of when a term has a type
+depends on both a type context and a {\defin{term context}}.
+A {\defin{term context}} $\Gamma$ is a list of types
+$\alpha_0,\ldots,\alpha_{m-1}$
+giving the types of the term level de Bruijn indices
+in the current context.
+
+The property of when a proof term is a proof of a given
+proposition depends on a type context, a term context
+and a {\defin{hypothesis context}}.
+A {\defin{hypothesis context}} $\Phi$ is a list
+$\rho_0,\ldots,\rho_{k-1}$
+of terms (of type $o$ in the current type context
+and term context)
+giving the current assumed hypotheses
+(proof level de Bruijn indices in the proof term).
 
 \begin{itemize}
 \item {\var{beta\_count}}
