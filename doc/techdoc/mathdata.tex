@@ -542,20 +542,47 @@ The two special cases are
 and
 {\type{stree}}.
 A {\type{ttree}} is simply an {\type{htree}} for storing theories (elements the type {\type{theory}}).
-An {\type{stree}} is an {\type{htree}} for storing signatures along with the hash value
-identifier for the theory for which
-the signature is intended.
+An {\type{stree}} is an {\type{htree}} for storing signatures (elements the type {\type{signa}}).
 Each signature is associated with a specific theory (possibly the empty theory)
 and can only be imported into signature specification and documents
-within the same theory.
+within the same theory. This is enforced by storing the signature by an index that
+depends on the hash value identifier of the theory.
 
 \begin{itemize}
-\item {\func{ottree\_insert}}
-\item {\func{ostree\_insert}}
-\item {\func{ottree\_hashroot}}
-\item {\func{ostree\_hashroot}}
-\item {\func{ottree\_lookup}}
+\item {\func{ottree\_insert}} takes an optional {\type{ttree}}, a bit sequence and a theory
+      and returns the {\type{ttree}} resulting from inserting the theory at the location of the bit sequence.
+      Giving {\val{None}} instead of a {\type{ttree}} corresponds to starting with the empty {\type{ttree}},
+      and so the returned {\type{ttree}} will have exactly one entry.
+      The bit sequence should be the $160$-bit hash returned by {\func{hashtheory}} when called on the given theory.
+\item {\func{ostree\_insert}} takes an optional {\type{stree}}, a bit sequence and a signature
+      and returns the {\type{stree}} resulting from inserting the signature at the location of the bit sequence.
+      Giving {\val{None}} instead of a {\type{stree}} corresponds to starting with the empty {\type{stree}},
+      and so the returned {\type{stree}} will have exactly one entry.
+      The bit sequence should be the $160$-bit hash returned by 
+      {\func{hashopair2}} on the optional hash value identifying the intended theory
+      and the hash value returned by {\func{hashsigna}} when called on the given signature.
+\item {\func{ottree\_hashroot}} returns an optional hash value representing the Merkle root
+      of an optional {\type{ttree}}.
+      This value is sometimes called the {\defin{theory root}} and is in block headers
+      as {\field{newtheoryroot}}.
+      Before the first theory is published, the optional {\type{ttree}} is {\val{None}}
+      and the corresponding hash root is also {\val{None}}.
+\item {\func{ostree\_hashroot}} returns an optional hash value representing the Merkle root
+      of an optional {\type{stree}}.
+      This value is sometimes called the {\defin{signature root}} and is in block headers
+      as {\field{newsignaroot}}.
+      Before the first signature is published, the optional {\type{ttree}} is {\val{None}}
+      and the corresponding hash root is also {\val{None}}.
+\item {\func{ottree\_lookup}} lookups a theory in an optional {\type{ttree}} given its optional hash value
+      identifier.
+      If the optional hash value identifier is {\val{None}}, no lookup is performed: the empty theory is returned.
+      Otherwise, the hash value is converted to a bit sequence (list of booleans) and
+      {\func{htree\_lookup}} attempts to find the theory in the tree.
+      If no entry is found, the exception {\exc{Not\_found}} is raised.
 \end{itemize}
+Note that there is no {\func{ostree\_lookup}}.
+The internal function {\func{import\_signatures}} looks up signatures
+as they are required.
 
 \section{Type Checking and Proof Checking}
 
