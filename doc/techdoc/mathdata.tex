@@ -269,68 +269,246 @@ similar to the way hash roots for terms are computed.
 In this case, the hash root for a proof term abbreviation
 $\gpa{h}$ is $h$.
 
-\section{Theories}
+\section{Publications}
 
-{\type{theoryitem}}
-{\type{theoryspec}}
-{\type{theory}}
+There are three kinds of publications: theories, signatures and documents.
+A theory declares the types of some primitives $c_n$ and gives some axioms.
+A signature is to be interpreted within a given theory
+and is intended to make some terms and propositions accessible for use within
+another publication (a document or another signature).
+A signature declares some parameters (opaque terms of the form $\tmh{h}$) giving
+the hash root and the simple type,
+declares some definitions
+and declares some propositions to be known (either axioms of the theory or previously
+proven propositions).
+A document is similar to a signature except proofs of theorems are also allowed.
+In addition, a document may declare a proposition to be a conjecture.
 
-{\serfunc{seo\_theoryspec}} and {\serfunc{sei\_theoryspec}} serialize and deserialize theory specifications.
+For all three kinds of publications there is a representation as a list of ``items.''
+This list is perhaps best thought of as being in reverse order.
+The idea is that after one has processed the ``rest'' of the list, then one
+has sufficient information to process the ``head'' of the list.
+
+In practice there is a distinction between the specification of a theory
+and the theory itself. The same is true of signatures.
+In essence a theory specification or signature specification corresponds to a list
+of declarations, where a theory or signature itself is a ``compiled'' format which
+other publications may used. This ``compiled'' format must be stored by
+every node in order to check later publications. For this reasons,
+Qeditas currency units must be burned in order to publish a theory or publication.
+In particular, $21$ zerms must be burned for each byte in the serialized representation
+of the theory or signature. The idea behind a fee of $21$ zerms is that since there
+is an upper bound of $21$ million fraenks ($21$ billion zerms) we can be sure that
+no more than $1$ GB worth of theories and signatures will ever be published.
+
+\subsection{Theories}
+
+A {\defin{theory item}} is one of the following:
+\begin{itemize}
+\item a declaration of a primitive to have type $\alpha$,
+\item a declaration of a definition of type $\alpha$ defined by a term $s$, or
+\item a declaration of proposition $s$ as an axiom.
+\end{itemize}
+A {\defin{theory specification}} is a list of theory items.
+
+A {\defin{theory}} is a list of simple types $\alpha_0,\ldots,\alpha_{n-1}$
+and a list of hash values $\overline{h}$.
+The idea is that the primitive $c_i$ has the type $\alpha_i$ for $i<n$
+and that $s$ is an axiom of the theory if $\tmhr{s}$ is in the list $\overline{h}$.
+
+In the OCaml code the corresponding types are
+{\type{theoryitem}}, {\type{theoryspec}} and
+{\type{theory}}.
+The type {\type{theoryitem}} has three constructors corresponding to the three cases above.
+\begin{itemize}
+\item $\mbox{\constr{ThyPrim}}(\alpha)$ declares that the primitive $c_n$ has type $\alpha$.
+In practice $n$ is the number of {\constr{ThyPrim}} theory items in the rest of the
+theory specification.
+\item $\mbox{\constr{ThyDef}}(\alpha,s)$ declares that $s$ has type $\alpha$ and so $\tmh{\tmhr{s}}$ can
+be used as an abbreviation.
+\item $\mbox{\constr{ThyAxiom}}(t)$ declares that $t$ is a proposition and an axiom of the theory.
+\end{itemize}
+As usual, 
+{\serfunc{seo\_theoryspec}} and {\serfunc{sei\_theoryspec}} serialize and deserialize theory specifications
+while
 {\serfunc{seo\_theory}} and {\serfunc{sei\_theory}} serialize and deserialize theories.
 
-{\func{hashtheoryspec}} takes a theory specification and returns a hash value obtained by serializing the
-theory specification to a string, hashing the string, and then hashing the result tagged with $68$.
+% The function
+% {\func{hashtheoryspec}} takes a theory specification and returns a hash value obtained by serializing the
+% theory specification to a string, hashing the string, and then hashing the result tagged with $68$.
+% This effectively guarantees that different theory specifications will be given different hash values.
+% This function is used to obtain a unique publication address where the publication will be
+% stored in the ledger if it is published.\footnote{Shouldn't hashtheory be used for this? Otherwise
+% someone could publish the same theory with two different specs. This isn't fatal, but it would mean vacuous burns and overwrites in the ttree.}
 
-{\func{theoryspec\_hashroot}}
+The function {\func{theoryspec\_theory}} converts a theory specification to a theory.
+This is done by extracting the declared types of the first $n$ primitives (see {\func{theoryspec\_primtps}})
+and by extracting the hash roots of declared axioms (see {\func{theoryspec\_hashedaxioms}}).
+The pair is the intended theory. Note that declared definitions are not used to construct the theory.
+Definitions in a theory may be required to check the theory specification is valid (e.g.,
+to check that a term for an axiom is, in fact, a proposition).
 
-{\func{hashtheory}}
+The function {\func{hashtheory}} computes an optional hash value corresponding to a theory.
+This hash value will be the identifier for the theory.
+For the empty theory (no typed primitives and no axioms) the optional hash value will be {\val{None}}.
+The empty theory is not explicitly stored and cannot be explicitly published.
+For nonempty theories, the hash value is used to determine the $160$-bit location
+where the theory is stored in the {\type{ttree}}
+and the publication address where the theory specification is stored in the ledger tree.\footnote{There is actually no need to store theory publications in the ledger tree since the useful information will be in the {\type{ttree}}. However, it seems simplest to publish theory specifications as a special kind of asset created by a transaction. Such assets are stored in the ledger tree at the given address. Making an exception for theories (and signatures) would be needlessly awkward.}
 
-{\func{theoryspec\_theory}}
-
-{\func{theoryspec\_burncost}}
+The function {\func{theoryspec\_burncost}} computes the number of cants that must be burned
+to publish the theory specification. It does this by computing the underlying theory with {\func{theoryspec\_theory}},
+serializing the theory, taking the number of bytes of the serialization and multiplying this by
+$21$ billion).
 
 % {\func{theory\_to\_str}} returns a string representation of the theory and {\func{str\_to\_theory}} returns a theory given a string representation of the type. In this case, {\func{theory\_to\_str}} is used elsewhere in the code. In particular, the length of the string (the serialization of the theory) is used to calculate how many zerms must be burned in order to publish the theory (21 zerms must be burned for each character in the string). There is a burn fee for publishing theories since every node must keep the theory locally (in a {\type{ttree}}) in order to check documents.
 
-\section{Signatures}
+\subsection{Signatures}
 
-{\type{signaitem}}
-{\type{signaspec}}
-{\type{gsigna}}
-{\type{signa}}
+A {\defin{signature item}} is one of the following:
+\begin{itemize}
+\item a reference to another signature to import,
+\item a declaration of a parameter with a given term hash root and given type,
+\item a declaration of a definition with a certain type and a term which should have this type, or
+\item a declaration of a proposition as known.
+\end{itemize}
+A {\defin{signature specification}} is a list of signature items.
 
+A {\defin{global signature}} is a pair of lists:
+\begin{itemize}
+\item The first is a list of hash roots, types and optionally terms.
+      That is, each element is $(h,\alpha,{\mbox{\val{None}}})$ or $(h,\alpha,s)$
+      where $h$ is the term hash root of a term of type $\alpha$ (the term $s$ if it is given).
+      The intention is that we know the term $\tmh{h}$ abbreviates a term of type $\alpha$.
+      If $s$ is given, we also know $\tmh{h}$ can be expanded to be $s$.
+\item The second is a list of hash roots and terms.
+      That is, each element is $(h,s)$ where $s$ has hash root $h$
+      and $s$ is either an axiom of the theory or a previously proven theorem.
+      (Technically, it is $h$ that is the hash root of an axiom or previously proven theorem.
+      Hence we know $s$ is equal to an axiom or previously proven theorem if all hash value
+      abbreviations are expanded.)
+\end{itemize}
+A {\emph{signature}} is a pair of a list of hash values and a global signature.
+The list of hash values is a list of references to other signatures to import.
+A signature here is a certain kind of publication which allows
+easy importation of previous results
+and should not be confused with cryptographic signatures as discussed in Chapter~\ref{chap:cryptocurr}.
+In the OCaml code we typically write {\tt{signat}} when referring to cryptographic signatures
+and {\tt{signa}} when referring to the kinds of signatures as publications under consideration here.
+
+The corresponding types in OCaml are
+{\type{signaitem}} (for {\defin{signature item}}),
+{\type{signaspec}} (for {\defin{signature specification}}),
+{\type{gsigna}} (for {\defin{global signature}}) and
+{\type{signa}} (for {\defin{signature}}).
+The type {\type{sigitem}} has four constructors corresponding to the four cases above.
+\begin{itemize}
+\item $\mbox{\constr{SignaSigna}}(h)$ declares the importation of the signature with hash value identifier $h$.
+The signature must have been previously published.
+\item $\mbox{\constr{SignaParam}}(h,\alpha)$ declares that $\tmh{h}$ has type $\alpha$ and can be used
+as an opaque abbreviation (a ``parameter'').
+\item $\mbox{\constr{SignaDef}}(\alpha,s)$ declares that $s$ has type $\alpha$ and so $\tmh{\tmhr{s}}$ can
+be used as an abbreviation.
+\item $\mbox{\constr{SignaKnown}}(t)$ declares that $t$ is a proposition which is already known.
+\end{itemize}
+As usual,
 {\serfunc{seo\_signaspec}} and {\serfunc{sei\_signaspec}} serialize and deserialize signature specifications.
 {\serfunc{seo\_signa}} and {\serfunc{sei\_signa}} serialize and deserialize signatures.
 
-{\func{hashsignaspec}} takes a signature specification and returns a hash value obtained by serializing the
-signature specification to a string, hashing the string, and then hashing the result tagged with $69$.
-
-{\func{signaspec\_hashroot}}
-
-{\func{hashsigna}}
-
+The function
 {\func{signaspec\_signa}}
+compiles a signature specification into a signature.
+The function {\func{signaspec\_signas}} computes the signatures which should be imported
+by filtering out the declared signatures to import.
+The function {\func{signaspec\_trms}} computes the term hash roots along with their types
+and optional term definitions by filtering out the parameter and definition
+declarations.
+Finally, {\func{signaspec\_knowns}} computes the term hash roots and corresponding known
+propositions by filtering the declared knowns and computing their hash roots.
 
-{\func{signaspec\_burncost}}
+The function {\func{hashsigna}} computes a hash value to identify the signature.
+This is used to create both the $160$-bit location where the signature is stored
+in the {\type{stree}}
+and the publication address where the signature specification is stored in the ledger tree.\footnote{As with theories, there is actually no need to store signature publications in the ledger tree since the useful information will be in the {\type{stree}}. Signature specifications are stored in the ledger tree simply to
+avoid having exceptional cases.}
+
+The function {\func{signaspec\_burncost}} computes the number of cants which must
+be burned
+to publish the signature specification. It does this by computing the underlying signature with {\func{signaspec\_signa}},
+serializing the signature, taking the number of bytes of the serialization and multiplying this by
+$21$ billion).
 
 % {\func{signa\_to\_str}} returns a string representation of the signature and {\func{str\_to\_signa}} returns a signature given a string representation of the type. As with theories, {\func{signa\_to\_str}} is used elsewhere in the code.  In particular, the length of the string (the serialization of the signature) is used to calculate how many zerms must be burned in order to publish the signature (21 zerms must be burned for each character in the string). There is a burn fee for publishing signatures since every node must keep the signature locally (in an {\type{stree}}) in order to check documents.
 
-\section{Documents}
+\subsection{Documents}
 
-{\type{docitem}}
-{\type{doc}}
+A {\defin{document item}} is one of the following:
+\begin{itemize}
+\item a declaration of a signature to import,
+\item a declaration of a parameter with a term hash root and type,
+\item a declaration of a definition with a type and a term of this type,
+\item a declaration of a proposition as known,
+\item a declaration of a proposition as a conjecture, or
+\item a declaration of a proposition as a theorem with a proof.
+\end{itemize}
+A {\defin{document}} is a list of document items.
 
-{\type{pdoc}}
+The corresponding OCaml types are {\type{docitem}} and {\type{doc}}.
+The type {\type{docitem}} has six constructors corresponding to the six cases above.
+\begin{itemize}
+\item $\mbox{\constr{DocSigna}}(h)$ declares the importation of the signature with hash value identifier $h$.
+The signature must have been previously published.
+\item $\mbox{\constr{DocParam}}(h,\alpha)$ declares that $\tmh{h}$ has type $\alpha$ and can be used
+as an opaque abbreviation (a ``parameter'').
+\item $\mbox{\constr{DocDef}}(\alpha,s)$ declares that $s$ has type $\alpha$ and so $\tmh{\tmhr{s}}$ can
+be used as an abbreviation.
+\item $\mbox{\constr{DocKnown}}(t)$ declares that $t$ is a proposition which is already known.
+\item $\mbox{\constr{DocConj}}(t)$ declares that $t$ is a proposition to be treated as a conjecture.
+\item $\mbox{\constr{DocPfOf}}(t,\cD)$ declares that $t$ is a proposition proven by the proof term $\cD$.
+\end{itemize}
 
-{\serfunc{seo\_doc}} and {\serfunc{sei\_doc}} serialize and deserialize documents.
+As always, {\serfunc{seo\_doc}} and {\serfunc{sei\_doc}} serialize and deserialize documents.
+
+There are two functions computing hash values for documents.
+The function
+{\func{hashdoc}}
+computes a unique hash value for each distinct document.
+This hash value is used to calculate the publication address where the document will be stored
+in the ledger tree.
+The function
+{\func{doc\_hashroot}}
+computes a hash root for a document.
+This is done by combining hash roots for document items computed by {\func{docitem\_hashroot}}.
+
+The purpose of hash roots for documents is to allow for the representation of parts
+of the document in a way that still allow the hash root to be computed (as with any Merkle tree~\cite{Merkle1980}).
+The type {\type{pdoc}} is the type of {\defin{partial documents}}.
+Partial documents are an approximation of a document 
+nodes can use for proof of storage in a block header.
+
+The functions
 {\serfunc{seo\_pdoc}} and {\serfunc{sei\_pdoc}} serialize and deserialize partial documents.
 
-{\func{hashdoc}}
-{\func{doc\_hashroot}}
-
-{\func{hashpdoc}}
-{\func{pdoc\_hashroot}}
+There are again two functions computing hash values.
+The function {\func{hashpdoc}} computes a unique hash value for each partial document.
+This is used to compute the hash of the block header in case a partial document
+is used for proof of storage.
+The function {\func{pdoc\_hashroot}} computes the hash root of the partial document.
+If a partial document approximates a document, then both will have the same hash root.
 
 \section{Dependency Checking}
+
+There are a number of functions for computing the dependencies
+of signatures and documents on objects and propositions.
+In some cases the functions are used to check if the publisher has the
+right to use the object or proposition.
+In other cases the functions are used to justify the publisher claiming
+ownership of an object or proposition.
+Ownership of an object or proposition allows the control of the right to use
+the object or proposition later.
+Finally, some of the functions compute the hash values used to check the ledger
+tree to see if a term with a given hash root has a given type in a given theory
+or if a proposition with a given hash root is known in a given theroy.
 
 \begin{itemize}
 \item {\func{signaspec\_uses\_objs}}
@@ -360,6 +538,10 @@ signature specification to a string, hashing the string, and then hashing the re
 \end{itemize}
 
 \section{Type Checking and Proof Checking}
+
+We now turn to the most important functions: those which check that a type
+is valid, check that a term has a type, check that a term is a proposition,
+and check that a proof term is a proof of a proposition.
 
 All the properties defined will be relative to a
 {\defin{type context}}.
