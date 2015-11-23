@@ -427,7 +427,8 @@ Finally, {\func{signaspec\_knowns}} computes the term hash roots and correspondi
 propositions by filtering the declared knowns and computing their hash roots.
 
 The function {\func{hashsigna}} computes a hash value to identify the signature.
-This is used to create both the $160$-bit location where the signature is stored
+This hash value, combined with the hash value identifier of the intended theory,
+is used to create both the $160$-bit location where the signature is stored
 in the {\type{stree}}
 and the publication address where the signature specification is stored in the ledger tree.\footnote{As with theories, there is actually no need to store signature publications in the ledger tree since the useful information will be in the {\type{stree}}. Signature specifications are stored in the ledger tree simply to
 avoid having exceptional cases.}
@@ -526,8 +527,27 @@ or if a proposition with a given hash root is known in a given theroy.
 
 \section{Trees of Theories and Signatures}
 
+In order to check the correctness of a signature specification
+or document, the intended theory is required.
+Likewise, correctness of the new signature specification
+or document depends on all signatures imported.
+For this reason, each Qeditas node needs to store every theory
+and every signature published so far in order to verify the correctness of
+new signature specifications and documents.
+Theories and signatures are stored in trees indexed by their associated
+hash values. The polymorphic type {\type{htree}} in the module {\module{htree}}
+provides the general infrastructure.
+The two special cases are
 {\type{ttree}}
-{\type{stree}}
+and
+{\type{stree}}.
+A {\type{ttree}} is simply an {\type{htree}} for storing theories (elements the type {\type{theory}}).
+An {\type{stree}} is an {\type{htree}} for storing signatures along with the hash value
+identifier for the theory for which
+the signature is intended.
+Each signature is associated with a specific theory (possibly the empty theory)
+and can only be imported into signature specification and documents
+within the same theory.
 
 \begin{itemize}
 \item {\func{ottree\_insert}}
