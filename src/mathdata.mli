@@ -104,8 +104,6 @@ val sei_theoryspec : (int -> 'a -> int * 'a) -> 'a -> theoryspec * 'a
 val seo_theory : (int -> int -> 'a -> 'a) -> theory -> 'a -> 'a
 val sei_theory : (int -> 'a -> int * 'a) -> 'a -> theory * 'a
 
-val hashtheoryspec : theoryspec -> hashval
-val theoryspec_hashroot : theoryspec -> hashval option
 val hashtheory : theory -> hashval option
 
 val theoryspec_theory : theoryspec -> theory
@@ -116,8 +114,6 @@ val sei_signaspec : (int -> 'a -> int * 'a) -> 'a -> signaspec * 'a
 val seo_signa : (int -> int -> 'a -> 'a) -> signa -> 'a -> 'a
 val sei_signa : (int -> 'a -> int * 'a) -> 'a -> signa * 'a
 
-val hashsignaspec : signaspec -> hashval
-val signaspec_hashroot : signaspec -> hashval
 val hashsigna : signa -> hashval
 
 val signaspec_signa : signaspec -> signa
@@ -133,9 +129,6 @@ val doc_hashroot : doc -> hashval
 
 val hashpdoc : pdoc -> hashval
 val pdoc_hashroot : pdoc -> hashval
-
-val hashgsigna : gsigna -> hashval
-val hashsigna : signa -> hashval
 
 val signaspec_uses_objs : signaspec -> (hashval * hashval) list
 val signaspec_uses_props : signaspec -> hashval list

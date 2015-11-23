@@ -1647,14 +1647,17 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	    ensure_addr_empty alpha; (*** make sure the publication is new because otherwise publishing it is pointless ***)
 	    try
 	      ignore (check_theoryspec thy);
-	      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashtheoryspec thy))) in
-	      ignore (List.find
-			(fun a ->
-			  match a with
-			  | (h,bday,obl,Marker) -> List.mem (beta,h) inpl && Int64.add bday intention_minage <= blkh
-			  | _ -> false
-			)
-			al)
+	      match hashtheory (theoryspec_theory thy) with
+	      | Some(thyh) ->
+		  let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce thyh)) in
+		  ignore (List.find
+			    (fun a ->
+			      match a with
+			      | (h,bday,obl,Marker) -> List.mem (beta,h) inpl && Int64.add bday intention_minage <= blkh
+			      | _ -> false
+			    )
+			    al)
+	      | None -> raise NotSupported
 	    with
 	    | CheckingFailure -> raise NotSupported
 	    | NonNormalTerm -> raise NotSupported
@@ -1680,7 +1683,8 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	      in
 	      let thy = ottree_lookup tht th in
 	      ignore (check_signaspec gvtp gvkn th thy sigt sl);
-	      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (hashsignaspec sl)))) in
+	      let slh = hashsigna (signaspec_signa sl) in
+	      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th slh))) in
 	      ignore (List.find
 			(fun a ->
 			  match a with
@@ -2126,10 +2130,10 @@ let rec full_needed_1 outpl =
   | (alpha,(o,(OwnsObj(_,_))))::outpr -> addr_bitseq alpha::full_needed_1 outpr
   | (alpha,(o,(OwnsProp(_,_))))::outpr -> addr_bitseq alpha::full_needed_1 outpr
   | (_,(o,TheoryPublication(gamma,nonce,thy)))::outpr ->
-      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashtheoryspec thy))) in
+      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashopair1 nonce (hashtheory (theoryspec_theory thy)))) in
       addr_bitseq beta::full_needed_1 outpr
   | (_,(o,SignaPublication(gamma,nonce,th,sl)))::outpr ->
-      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (hashsignaspec sl)))) in
+      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (hashsigna (signaspec_signa sl))))) in
       List.map (fun h -> addr_bitseq (hashval_term_addr h)) (signaspec_stp_markers th sl)
       @ List.map (fun h -> addr_bitseq (hashval_term_addr h)) (signaspec_known_markers th sl)
       @ addr_bitseq beta::full_needed_1 outpr

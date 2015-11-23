@@ -377,8 +377,6 @@ let theoryspec_to_str m =
   seosbf (seo_theoryspec seosb m (c,None));
   Buffer.contents c
 
-let hashtheoryspec m = hashtag (hash160 (theoryspec_to_str m)) 68l
-
 (** ** signaspec serialization ***)
 let seo_signaitem o m c =
   match m with
@@ -421,8 +419,6 @@ let signaspec_to_str m =
   let c = Buffer.create 1000 in
   seosbf (seo_signaspec seosb m (c,None));
   Buffer.contents c
-
-let hashsignaspec m = hashtag (hash160 (signaspec_to_str m)) 69l
 
 (** ** doc serialization ***)
 let seo_docitem o m c =
@@ -643,21 +639,6 @@ let rec pf_hashroot d =
   | TLam(a,d) -> hashtag (hashpair (hashtp a) (pf_hashroot d)) 133l
   | PTpAp(d,a) -> hashtag (hashpair (pf_hashroot d) (hashtp a)) 134l
   | PTpLam(d) -> hashtag (pf_hashroot d) 135l
-
-let rec theoryspec_hashroot thy =
-  match thy with
-  | [] -> None
-  | ThyPrim(a)::thy -> Some(hashopair1 (hashtag (hashtp a) 160l) (theoryspec_hashroot thy))
-  | ThyDef(a,m)::thy -> Some(hashopair1 (hashtag (hashpair (hashtp a) (hashtm m)) 161l) (theoryspec_hashroot thy))
-  | ThyAxiom(m)::thy -> Some(hashopair1 (hashtag (hashtm m) 162l) (theoryspec_hashroot thy))
-
-let rec signaspec_hashroot s =
-  match s with
-  | [] -> hashint32 110l
-  | SignaSigna(h)::r -> hashtag (hashpair h (signaspec_hashroot r)) 164l
-  | SignaParam(h,a)::r -> hashtag (hashpair (hashpair h (hashtp a)) (signaspec_hashroot r)) 165l
-  | SignaDef(a,m)::r -> hashtag (hashpair (hashpair (hashtp a) (tm_hashroot m)) (signaspec_hashroot r)) 166l
-  | SignaKnown(m)::r -> hashtag (hashpair (tm_hashroot m) (signaspec_hashroot r)) 167l
 
 let rec docitem_hashroot d =
   match d with

@@ -43,8 +43,8 @@ let hashpreasset u =
   | RightsObj(a,v) -> hashtag (hashpair (hashtermaddr a) (hashint64 v)) 263l
   | RightsProp(a,v) -> hashtag (hashpair (hashtermaddr a) (hashint64 v)) 264l
   | Marker -> hashint32 265l
-  | TheoryPublication(a,nonce,ths) -> hashtag (hashpair (hashpayaddr a) (hashpair nonce (hashtheoryspec ths))) 266l
-  | SignaPublication(a,nonce,th,s) -> hashtag (hashpair (hashpayaddr a) (hashpair nonce (hashopair2 th (hashsignaspec s)))) 267l
+  | TheoryPublication(a,nonce,ths) -> hashtag (hashpair (hashpayaddr a) (hashopair1 nonce (hashtheory (theoryspec_theory ths)))) 266l (*** this only ensures the compiled theory gets a unique hash value ***)
+  | SignaPublication(a,nonce,th,s) -> hashtag (hashpair (hashpayaddr a) (hashpair nonce (hashopair2 th (hashsigna (signaspec_signa s))))) 267l (*** this only ensures the compiled signature gets a unique hash value ***)
   | DocPublication(a,nonce,th,d) -> hashtag (hashpair (hashpayaddr a) (hashpair nonce (hashopair2 th (hashdoc d)))) 268l
 
 let hashobligation (x:obligation) : hashval option =
