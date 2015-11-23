@@ -1584,16 +1584,19 @@ let rec check_theoryspec dl : theory * gsigna  =
       ((tpl,k::kl1),(defl,(k,p)::kl2))
   | [] -> (([],[]),([],[]))
 
-let rec import_signatures th (str:stree) hl sg =
+let rec import_signatures th (str:stree) hl sg imported =
   match hl with
-  | [] -> sg
+  | [] -> (sg,imported)
   | (h::hr) ->
-      match htree_lookup (hashval_bitseq (hashopair2 th h)) str with (*** the theory is committed to oly at the last moment ***)
-      | Some(sl,(tptml2,kl2)) ->
-	  let (tptml3,kl3) = import_signatures th str sl sg in
-	  (tptml3 @ tptml2,kl3 @ kl2)
-      | None ->
-	  raise (UnknownSigna(h))
+      if List.mem h imported then
+	import_signatures th str hr sg imported
+      else
+	match htree_lookup (hashval_bitseq (hashopair2 th h)) str with (*** the theory is committed to only at the last moment ***)
+	| Some(sl,(tptml2,kl2)) ->
+	    let ((tptml3,kl3),imported) = import_signatures th str sl sg imported in
+	    ((tptml3 @ tptml2,kl3 @ kl2),imported)
+	| None ->
+	    raise (UnknownSigna(h))
 
 let tm_tp_p gvtp sg th h a =
   try
@@ -1608,31 +1611,31 @@ let known_p gvkn sg th k =
   with Not_found -> gvkn th k
 
 (*** return the gsigna or raise CheckingFailure ***)
-let rec check_signaspec gvtp gvkn th thy (str:stree option) dl : gsigna =
+let rec check_signaspec_rec gvtp gvkn th thy (str:stree option) dl : gsigna * hashval list =
   match dl with
   | SignaSigna(h)::dr ->
       begin
-	let sg = check_signaspec gvtp gvkn th thy str dr in
+	let (sg,imported) = check_signaspec_rec gvtp gvkn th thy str dr in
 	match str with
-	| Some(str) -> import_signatures th str [h] sg
+	| Some(str) -> import_signatures th str [h] sg imported
 	| None -> raise (UnknownSigna(h))
       end
   | SignaParam(h,a)::dr ->
-      let (tmtpl,kl) = check_signaspec gvtp gvkn th thy str dr in
+      let ((tmtpl,kl),imported) = check_signaspec_rec gvtp gvkn th thy str dr in
       check_ptp 0 a;
       if tm_tp_p gvtp (tmtpl,kl) th h a then
-	((h,a,None)::tmtpl,kl)
+	(((h,a,None)::tmtpl,kl),imported)
       else
 	raise (UnknownTerm(th,h,a))
   | SignaDef(a,m)::dr ->
-      let (tmtpl,kl) = check_signaspec gvtp gvkn th thy str dr in
+      let ((tmtpl,kl),imported) = check_signaspec_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p m) then raise NonNormalTerm;
       check_ptp 0 a;
       check_tpoftm thy (tmtpl,kl) 0 [] m a;
       let h = tm_hashroot m in
-      ((h,a,Some(m))::tmtpl,kl)
+      (((h,a,Some(m))::tmtpl,kl),imported)
   | SignaKnown(p)::dr ->
-      let (tmtpl,kl) = check_signaspec gvtp gvkn th thy str dr in
+      let ((tmtpl,kl),imported) = check_signaspec_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p p) then raise NonNormalTerm;
       check_metaprop thy (tmtpl,kl) 0 p;
       let k = tm_hashroot p in
@@ -1640,39 +1643,43 @@ let rec check_signaspec gvtp gvkn th thy (str:stree option) dl : gsigna =
 	match thy with
 	| (_,akl) ->
 	    if List.mem k akl then (*** check if its the hash of an axiom ***)
-	      (tmtpl,(k,p)::kl)
+	      ((tmtpl,(k,p)::kl),imported)
 	    else if known_p gvkn (tmtpl,kl) th k then (*** check if it's either in the signature or globally known ***)
-	      (tmtpl,(k,p)::kl)
+	      ((tmtpl,(k,p)::kl),imported)
 	    else
 	      raise (NotKnown(th,k)) (*** otherwise it cannot be declared as a known ***)
       end
-  | [] -> ([],[])
+  | [] -> (([],[]),[])
+
+let check_signaspec gvtp gvkn th thy (str:stree option) dl : gsigna =
+  let (sg,_) = check_signaspec_rec gvtp gvkn th thy (str:stree option) dl in
+  sg
 
 (*** return gsigna (summarizing the document as a signature) or raise CheckingFailure ***)
-let rec check_doc gvtp gvkn th (thy:theory) (str:stree option) dl =
+let rec check_doc_rec gvtp gvkn th (thy:theory) (str:stree option) dl =
   match dl with
   | DocSigna(h)::dr ->
       begin
-	let sg = check_doc gvtp gvkn th thy str dr in
+	let (sg,imported) = check_doc_rec gvtp gvkn th thy str dr in
 	match str with
-	| Some(str) -> import_signatures th str [h] sg
+	| Some(str) -> import_signatures th str [h] sg imported
 	| None -> raise (UnknownSigna(h))
       end
   | DocParam(h,a)::dr ->
-      let (tmtpl,kl) = check_doc gvtp gvkn th thy str dr in
+      let ((tmtpl,kl),imported) = check_doc_rec gvtp gvkn th thy str dr in
       check_ptp 0 a;
       if tm_tp_p gvtp (tmtpl,kl) th h a then
-	((h,a,None)::tmtpl,kl)
+	(((h,a,None)::tmtpl,kl),imported)
       else
 	raise (UnknownTerm(th,h,a))
   | DocDef(a,m)::dr ->
-      let (tmtpl,kl) = check_doc gvtp gvkn th thy str dr in
+      let ((tmtpl,kl),imported) = check_doc_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p m) then raise NonNormalTerm;
       check_tpoftm thy (tmtpl,kl) 0 [] m a;
       let h = tm_hashroot m in
-      ((h,a,Some(m))::tmtpl,kl)
+      (((h,a,Some(m))::tmtpl,kl),imported)
   | DocKnown(p)::dr ->
-      let (tmtpl,kl) = check_doc gvtp gvkn th thy str dr in
+      let ((tmtpl,kl),imported) = check_doc_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p p) then raise NonNormalTerm;
       check_metaprop thy (tmtpl,kl) 0 p;
       let k = tm_hashroot p in
@@ -1680,24 +1687,28 @@ let rec check_doc gvtp gvkn th (thy:theory) (str:stree option) dl =
 	match thy with
 	| (_,akl) ->
 	    if List.mem k akl then (*** check if its the hash of an axiom ***)
-	      (tmtpl,(k,p)::kl)
+	      ((tmtpl,(k,p)::kl),imported)
 	    else if known_p gvkn (tmtpl,kl) th k then (*** check if it's either in the signature or globally known ***)
-	      (tmtpl,(k,p)::kl)
+	      ((tmtpl,(k,p)::kl),imported)
 	    else
 	      raise (NotKnown(th,k)) (*** otherwise it cannot be declared as a known ***)
       end
   | DocConj(p)::dr ->
-      let (tmtpl,kl) = check_doc gvtp gvkn th thy str dr in
+      let ((tmtpl,kl),imported) = check_doc_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p p) then raise NonNormalTerm;
       check_metaprop thy (tmtpl,kl) 0 p;
       (*** We do not check that the conjecture really hasn't yet been proven. ***)
       (*** Note also that conjectures are not put onto the signature. This means a conjecture cannot be used in the rest of the document. ***)
-      (tmtpl,kl)
+      ((tmtpl,kl),imported)
   | DocPfOf(p,d)::dr ->
-      let (tmtpl,kl) = check_doc gvtp gvkn th thy str dr in
+      let ((tmtpl,kl),imported) = check_doc_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p p) then raise NonNormalTerm;
       check_metaprop thy (tmtpl,kl) 0 p;
       let _ = check_propofpf thy (tmtpl,kl) 0 [] [] d p [] in (** returns list of defns expanded, but not currently using it **)
       let k = tm_hashroot p in
-      (tmtpl,(k,p)::kl)
-  | [] -> ([],[])
+      ((tmtpl,(k,p)::kl),imported)
+  | [] -> (([],[]),[])
+
+let rec check_doc gvtp gvkn th (thy:theory) (str:stree option) dl =
+  let (sg,_) = check_doc_rec gvtp gvkn th (thy:theory) (str:stree option) dl in
+  sg
