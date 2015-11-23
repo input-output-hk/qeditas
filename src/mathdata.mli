@@ -144,10 +144,10 @@ val doc_known_markers : hashval option -> doc -> hashval list
 
 (** * htrees to hold theories and signatures **)
 type ttree = theory htree
-type stree = (hashval option * signa) htree
+type stree = signa htree
 
 val ottree_insert : ttree option -> bool list -> theory -> ttree
-val ostree_insert : stree option -> bool list -> hashval option -> signa -> stree
+val ostree_insert : stree option -> bool list -> signa -> stree
 
 val ottree_hashroot : ttree option -> hashval option
 val ostree_hashroot : stree option -> hashval option
@@ -163,7 +163,6 @@ exception CheckingFailure
 exception NotKnown of hashval option * hashval
 exception UnknownTerm of hashval option * hashval * tp
 exception UnknownSigna of hashval
-exception SignaTheoryMismatch of hashval option * hashval option * hashval
 exception NonNormalTerm
 exception BetaLimit
 exception TermLimit

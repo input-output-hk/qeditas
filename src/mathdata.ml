@@ -894,21 +894,21 @@ let doc_known_markers th dl : hashval list =
 
 (** * htrees to hold theories and signatures **)
 type ttree = theory htree
-type stree = (hashval option * signa) htree
+type stree = signa htree
 
 let ottree_insert t bl thy =
   match t with
   | Some(t) -> htree_insert t bl thy
   | None -> htree_create bl thy
 
-let ostree_insert t bl th s =
+let ostree_insert t bl s =
   match t with
-  | Some(t) -> htree_insert t bl (th,s)
-  | None -> htree_create bl (th,s)
+  | Some(t) -> htree_insert t bl s
+  | None -> htree_create bl s
 
 let ottree_hashroot t = ohtree_hashroot hashtheory 160 t
 
-let ostree_hashroot t = ohtree_hashroot (fun (th,s) -> Some(hashopair2 th (hashsigna s))) 160 t
+let ostree_hashroot t = ohtree_hashroot (fun s -> Some(hashsigna s)) 160 t
 
 let ottree_lookup t h =
   match t,h with
@@ -1164,7 +1164,6 @@ exception CheckingFailure
 exception NotKnown of hashval option * hashval
 exception UnknownTerm of hashval option * hashval * tp
 exception UnknownSigna of hashval
-exception SignaTheoryMismatch of hashval option * hashval option * hashval
 
 let tp_of_prim thy i =
   match thy with
@@ -1589,13 +1588,10 @@ let rec import_signatures th (str:stree) hl sg =
   match hl with
   | [] -> sg
   | (h::hr) ->
-      match htree_lookup (hashval_bitseq h) str with
-      | Some(th2,(sl,(tptml2,kl2))) ->
-	  if th = th2 then
-	    let (tptml3,kl3) = import_signatures th str sl sg in
-	    (tptml3 @ tptml2,kl3 @ kl2)
-	  else
-	    raise (SignaTheoryMismatch(th,th2,h))
+      match htree_lookup (hashval_bitseq (hashopair2 th h)) str with (*** the theory is committed to oly at the last moment ***)
+      | Some(sl,(tptml2,kl2)) ->
+	  let (tptml3,kl3) = import_signatures th str sl sg in
+	  (tptml3 @ tptml2,kl3 @ kl2)
       | None ->
 	  raise (UnknownSigna(h))
 

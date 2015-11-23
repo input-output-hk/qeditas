@@ -162,8 +162,8 @@ let rec txout_update_ostree outpl sigt =
   | [] -> sigt
   | (alpha,(obl,SignaPublication(gamma,nonce,th,d)))::outpr ->
       let sg = signaspec_signa d in
-      let sgh = hashopair2 th (hashsigna sg) in
-      txout_update_ostree outpr (Some(ostree_insert sigt (hashval_bitseq sgh) th sg))
+      let thsgh = hashopair2 th (hashsigna sg) in
+      txout_update_ostree outpr (Some(ostree_insert sigt (hashval_bitseq thsgh) sg))
   | _::outpr -> txout_update_ostree outpr sigt
 
 let tx_update_ostree tau sigt = txout_update_ostree (tx_outputs tau) sigt
