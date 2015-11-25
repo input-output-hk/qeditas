@@ -209,6 +209,7 @@ $$
 $$
 Here $n$ ranges over non-negative integers
 and $h$ ranges over hash values.
+We sometimes simply say ``proofs'' instead of ``proof terms.''
 
 The proof term $\gpa{h}$
 is an abbreviation for a proof term which has hash root $h$
@@ -671,6 +672,243 @@ Note that there is no {\func{ostree\_lookup}}.
 The internal function {\func{import\_signatures}} looks up signatures
 as they are required.
 
+\section{Substitution and Normalization}
+
+Type checking and proof checking depend on substitution and $\beta\eta$-normalization.
+The functions implementing substitution and $\beta\eta$-normalization are not exposed in the
+interface, but it is of fundamental importance that they are bug-free.
+Substitutions and normalization can also be defined for proof terms,
+but this is not necessary for Qeditas.
+
+Defining substitution requires further auxiliary functions to shift
+de Bruijn indices.
+For example, suppose we wish to substitute a term
+$x_0\to x_1$ for the de Bruijn index $x_0$ in the term
+$$x_0\to\forall_o x_1\to x_0$$
+-- i.e., $x_0\to (\forall_o (x_1\to x_0))$.
+Naively one might expect the result to be
+$$(x_0\to x_1)\to\forall_o x_1\to (x_0 \to x_1)$$
+but this is incorrect.
+The first occurrence of $x_0$ is ``free'' and should be replaced
+by $x_0\to x_1$.
+However, the second occurrence of $x_0$ corresponds to the $\forall_o$ binder
+and so is not ``free.'' On the other hand, $x_1$ inside the scope of the $\forall_o$ binder
+corresponds to $x_0$ outside the scope of the $\forall_o$ binder.
+This might lead one to believe the resulting term should be
+$$(x_0\to x_1)\to\forall_o (x_0\to x_1)\to x_0.$$
+This is, however, also incorrect as the new $x_0$ and $x_1$ instead the scope of the $\forall_o$ binder
+no longer correspond to $x_0$ and $x_1$ outside the scope of the $\forall_o$ binder.
+The correct result would be
+$$(x_0\to x_1)\to\forall_o (x_1\to x_2)\to x_0.$$
+That is, shifting of de Bruijn indices is required when the substitution procedure
+passes through a binder.
+
+We say an occurrence $\delta_n$ of a type variable (in a term or type) is {\defin{locally bound for $i$}}
+if it is beneath $j$ type level binders ($\Pi$, $\Lambda$ or $\tforall$) where $n < i+j$.
+Likewise we say an occurrence of $x_n$ of a term variable (in a term) is {\defin{locally bound for $i$}}
+if it is beneath $j$ term level binders ($\lambda_\alpha$ or $\forall_\alpha$) where $n < i+j$.
+We will simply say ``locally bound'' when the intended $i$ is clear.
+
+We write $\dbtpsh{i}{j}{T}$ as notation for the term or type 
+where each $\delta_n$ is shifted to $\delta_{n+j}$ unless it is locally bound for $i$.
+We write $\dbsh{i}{j}{t}$ as notation for the term $t$
+where each $x_n$ are shifted to $x_{n+j}$ unless it is locally bound for $i$.
+We write $\dbsub{i}{S}{T}$ as notation for the result of substituting a
+type or term $S$ for the variable $\delta_i$ or $x_i$ in the type or term $T$.
+
+Returning to the example above, we can outline the necessary calculations
+in order to compute
+$$\dbsub{0}{x_0\to x_1}{(x_0\to\forall_o x_1\to x_0)}$$
+as follows:
+\begin{eqnarray*}
+\dbsub{0}{x_0\to x_1}{(x_0\to\forall_o x_1\to x_0)} \\
+ = (\dbsub{0}{x_0\to x_1}{x_0})\to(\dbsub{0}{x_0\to x_1}{(\forall_o x_1\to x_0)}) \\
+ = 
+(x_0\to x_1)\to\forall_o (\dbsub{1}{x_0\to x_1}{(x_1\to x_0)}) \\
+ = 
+(x_0\to x_1)\to\forall_o ((\dbsub{1}{x_0\to x_1}{x_1}) \to (\dbsub{1}{x_0\to x_1}{x_0})) \\
+ = 
+(x_0\to x_1)\to\forall_o (\dbsh{0}{1}{(x_0\to x_1)}) \to x_0 \\
+ = 
+(x_0\to x_1)\to\forall_o (x_1\to x_2) \to x_0 \\
+\end{eqnarray*}
+
+Since we have de Bruijn indices at three levels (types, terms and proofs)
+there are many functions for shifting and substituting.
+We briefly describe the internal functions for shifting and performing substitutions at the various levels.
+For these functions to behave as mathematically intended, we
+need to assume that for each occurrence of $\tmh{h}$ 
+$h$ is the hash root of a term where every occurrence of a variable is locally bound (also called a {\defin{closed}} term).
+\begin{itemize}
+\item {\func{tpshift}} defines $\dbtpsh{i}{j}{\alpha}$ for shifting type variables in a type $\alpha$.
+The defining cases are:
+\begin{itemize}
+\item $\dbtpsh{i}{j}{\delta_k} = \delta_k$ if $k<i$. In particular, locally bound type variables are not shifted.
+\item $\dbtpsh{i}{j}{\delta_k} = \delta_{k+j}$ if $k\geq i$.
+\item $\dbtpsh{i}{j}{(\alpha\to\beta)} = (\dbtpsh{i}{j}{\alpha} \to\dbtpsh{i}{j}{\beta})$.
+\item $\dbtpsh{i}{j}{(\Pi\alpha)} = \Pi (\dbtpsh{i+1}{j}{\alpha})$. The idea in this case is that passing
+through the $\Pi$ binder means one more type variable is considered locally bound.
+\item $\dbtpsh{i}{j}{\alpha} = \alpha$ otherwise.
+\end{itemize}
+\item {\func{tmtpshift}} defines $\dbtpsh{i}{j}{t}$ for shifting type variables in a term $t$.
+The defining cases are:
+\begin{itemize}
+\item $\dbtpsh{i}{j}{(st)} = (\dbtpsh{i}{j}{s}) (\dbtpsh{i}{j}{t})$.
+\item $\dbtpsh{i}{j}{(\lambda_\alpha t)} = \lambda_{\dbtpsh{i}{j}{\alpha}} (\dbtpsh{i}{j}{t})$. The term level $\lambda_\alpha$ binder does not affect which type variables are locally bound.
+\item $\dbtpsh{i}{j}{(s\to t)} = (\dbtpsh{i}{j}{s}) \to (\dbtpsh{i}{j}{t})$.
+\item $\dbtpsh{i}{j}{(\forall_\alpha t)} = \forall_{\dbtpsh{i}{j}\alpha} (\dbtpsh{i}{j}{t})$. The term level $\forall_\alpha$ binder does not affect which type variables are locally bound.
+\item $\dbtpsh{i}{j}{(s\alpha)} = (\dbtpsh{i}{j}{s}) (\dbtpsh{i}{j}\alpha)$.
+\item $\dbtpsh{i}{j}{(\Lambda t)} = \Lambda (\dbtpsh{i+1}{j}{t})$. The type level $\Lambda$ binder means one more type variable is locally bound.
+\item $\dbtpsh{i}{j}{(\tforall t)} = \Lambda (\dbtpsh{i+1}{j}{t})$. The type level $\tforall$ binder means one more type variable is locally bound.
+\item $\dbtpsh{i}{j}{t} = t$ otherwise. In particular, $\dbtpsh{i}{j}{\tmh{h}} = \tmh{h}$.
+Assuming $h$ is the hash root of a term $s$ where every type variable is locally bound,
+then $\dbtpsh{i}{j}{s} = s$
+and $h$ is still the term root of $\dbtpsh{i}{j}{s}$.
+\end{itemize}
+\item {\func{tmshift}} defines $\dbsh{i}{j}{t}$ for shifting term variables in a term $t$.
+The defining cases are:
+\begin{itemize}
+\item $\dbsh{i}{j}{x_k} = x_k$ if $k<i$.
+\item $\dbsh{i}{j}{x_k} = x_{k+j}$ if $k\geq i$.
+\item $\dbsh{i}{j}{(st)} = (\dbsh{i}{j}{s}) (\dbsh{i}{j}{t})$.
+\item $\dbsh{i}{j}{(\lambda_\alpha t)} = \lambda_\alpha (\dbsh{i+1}{j}{t})$. The term level $\lambda_\alpha$ binder makes one more term variable locally bound.
+\item $\dbsh{i}{j}{(s\to t)} = (\dbsh{i}{j}{s}) \to (\dbsh{i}{j}{t})$.
+\item $\dbsh{i}{j}{(\forall_\alpha t)} = \forall_\alpha (\dbsh{i+1}{j}{t})$. The term level $\forall_\alpha$ binder makes one more term variable locally bound.
+\item $\dbsh{i}{j}{(s\alpha)} = (\dbsh{i}{j}{s}) \alpha$.
+\item $\dbsh{i}{j}{(\Lambda t)} = \Lambda (\dbsh{i}{j}{t})$. The type level $\Lambda$ binder does not change which term level variables are locally bound.
+\item $\dbsh{i}{j}{(\tforall t)} = \Lambda (\dbsh{i}{j}{t})$. The type level $\tforall$ binder does not change which term level variables are locally bound.
+\item $\dbsh{i}{j}{t} = t$ otherwise. In particular, $\dbsh{i}{j}{\tmh{h}} = \tmh{h}$.
+Assuming $h$ is the hash root of a term $s$ where every term variable is locally bound,
+then $\dbsh{i}{j}{s} = s$
+and $h$ is still the term root of $\dbsh{i}{j}{s}$.
+\end{itemize}
+\item {\func{tpsubst}} defines $\dbsub{j}{\beta}{\alpha}$ for types $\alpha$ and $\beta$.
+The defining cases are:
+\begin{itemize}
+\item $\dbsub{j}{\beta}{\delta_j} = \dbtpsh{0}{j}{\beta}$.
+In the special case where $j=0$ we know $\dbtpsh{0}{j}{\beta} = \beta$
+and so we can simply take $\dbsub{0}{\beta}{\delta_0} = \beta$.
+\item $\dbsub{j}{\beta}{\delta_i} = \delta_{i-1}$ if $i>j$. This corresponds to the ``removal'' of the variable $\delta_j$ during the substitution.
+\item $\dbsub{j}{\beta}{(\alpha_1\to\alpha_2)} = (\dbsub{j}{\beta}{\alpha_1})\to (\dbsub{j}{\beta}{\alpha_2})$
+\item $\dbsub{j}{\beta}{(\Pi \alpha)} = (\Pi (\dbsub{j+1}{\beta}{\alpha}))$
+\item $\dbsub{j}{\beta}{\alpha} = \alpha$ otherwise.
+\end{itemize}
+\item {\func{tmtpsubst}} defines $\dbsub{j}{\beta}{s}$ for terms $s$ and types $\beta$.
+The defining cases are:
+\begin{itemize}
+\item $\dbsub{j}{\beta}{(st)} = (\dbsub{j}{\beta}{s}) (\dbsub{j}{\beta}{t})$.
+\item $\dbsub{j}{\beta}{(\lambda_\alpha t)} = \lambda_{\dbsub{j}{\beta}{\alpha}} (\dbsub{j}{\beta}{t})$. The term level $\lambda_\alpha$ binder does not affect which type variables are locally bound.
+\item $\dbsub{j}{\beta}{(s\to t)} = (\dbsub{j}{\beta}{s}) \to (\dbsub{j}{\beta}{t})$.
+\item $\dbsub{j}{\beta}{(\forall_\alpha t)} = \forall_{\dbsub{j}{\beta}\alpha} (\dbsub{j}{\beta}{t})$. The term level $\forall_\alpha$ binder does not affect which type variables are locally bound.
+\item $\dbsub{j}{\beta}{(s\alpha)} = (\dbsub{j}{\beta}{s}) \alpha$.
+\item $\dbsub{j}{\beta}{(\Lambda t)} = \Lambda (\dbsub{j+1}{\beta}{t})$. The type level $\Lambda$ binder means one more type variable is locally bound.
+\item $\dbsub{j}{\beta}{(\tforall t)} = \Lambda (\dbsub{j+1}{\beta}{t})$. The type level $\tforall$ binder means one more type variable is locally bound.
+\item $\dbsub{j}{\beta}{t} = t$ otherwise. In particular, $\dbsub{j}{\beta}{\tmh{h}} = \tmh{h}$.
+Assuming $h$ is the hash root of a term $s$ where every type variable is locally bound,
+then $\dbsub{j}{\beta}{s} = s$
+and $h$ is still the term root of $\dbsub{j}{\beta}{s}$.
+\end{itemize}
+\item {\func{tmsubst}} defines $\dbsub{j}{u}{s}$ for terms $s$ and $u$.
+The defining cases are:
+\begin{itemize}
+\item $\dbsub{j}{u}{x_j} = \dbsh{0}{j}{u}$.
+In the special case where $j=0$ we know $\dbsh{0}{j}{u} = u$
+and so we can simply take $\dbsub{0}{u}{x_0} = u$.
+\item $\dbsub{j}{u}{x_i} = x_{i-1}$ if $i>j$. This corresponds to the ``removal'' of the variable $x_j$ during the substitution.
+\item $\dbsub{j}{u}{(st)} = (\dbsub{j}{u}{s}) (\dbsub{j}{u}{t})$.
+\item $\dbsub{j}{u}{(\lambda_\alpha t)} = \lambda_\alpha (\dbsub{j+1}{u}{t})$. The term level $\lambda_\alpha$ binder makes one more term variable locally bound.
+\item $\dbsub{j}{u}{(s\to t)} = (\dbsub{j}{u}{s}) \to (\dbsub{j}{u}{t})$.
+\item $\dbsub{j}{u}{(\forall_\alpha t)} = \forall_\alpha (\dbsub{j+1}{u}{t})$. The term level $\forall_\alpha$ binder makes one more term variable locally bound.
+\item $\dbsub{j}{u}{(s\alpha)} = (\dbsub{j}{u}{s}) \alpha$.
+\item $\dbsub{j}{u}{(\Lambda t)} = \Lambda (\dbsub{j}{u}{t})$. The type level $\Lambda$ binder does not change which term level variables are locally bound.
+\item $\dbsub{j}{u}{(\tforall t)} = \Lambda (\dbsub{j}{u}{t})$. The type level $\tforall$ binder does not change which term level variables are locally bound.
+\item $\dbsub{j}{u}{t} = t$ otherwise. In particular, $\dbsub{j}{u}{\tmh{h}} = \tmh{h}$.
+Assuming $h$ is the hash root of a term $s$ where every term variable is locally bound,
+then $\dbsub{j}{u}{s} = s$
+and $h$ is still the term root of $\dbsub{j}{u}{s}$.
+\end{itemize}
+\end{itemize}
+
+Next we need to say what it means for a type variable $\delta_j$ to be {\defin{free}}
+in a type or term, and what it means for a term variable $x_j$ to be {\defin{free}}
+in a term.
+There are three relevant definitions:
+\begin{itemize}
+\item The function {\func{free\_tpvar\_in\_tp\_p}} determines if a type variable $\delta_j$
+is {\defin{free}} in a type $\alpha$. The definition is by recursion on $\alpha$ and the $j$ must be
+increased by 1 in the $\Pi$ binder case to account for the new locally bound variable.
+\item The function {\func{free\_tpvar\_in\_tm\_p}} determines if a type variable $\delta_j$
+is {\defin{free}} in a term $t$. The definition is by recursion on $t$ and the $j$ must be
+increased by 1 in the $\Lambda$ and $\tforall$ binder cases.
+\item The function {\func{free\_in\_tm\_p}} determines if a term variable $x_j$
+is {\defin{free}} in a term $t$. The definition is by recursion on $t$ and the $j$ must be
+increased by 1 in the $\lambda_\alpha$ and $\forall_\alpha$ binder cases.
+\end{itemize}
+
+We can now turn to $\beta\eta$-normalization.
+We begin by considering four kinds of {\defin{redexes}} and their corresponding
+{\defin{reducts}}. Normalization is performed by reducing redexes to their reducts
+until no more redexes remain.
+A theorem of various type theories is that normalization terminates in a
+unique normal form for well-typed terms, and that is true for the type theory
+under consideration here.
+\begin{itemize}
+\item A term of the form $(\lambda_\alpha s)t$
+is a {\defin{term level $\beta$-redex}}
+with reduct $\dbsub{0}{t}{s}$.
+\item A term of the form $(\Lambda s)\alpha$
+is a {\defin{type level $\beta$-redex}}
+with reduct $\dbsub{0}{\alpha}{s}$.
+\item A term of the form $\lambda_\alpha (s x_0)$ where $x_0$ is not free in $s$
+is a {\defin{term level $\eta$-redex}}
+with reduct $s$.
+\item A term of the form $\Lambda (s \delta_0)$ where $\delta_0$ is not free in $s$
+is a {\defin{type level $\eta$-redex}}
+with reduct $s$.
+\end{itemize}
+A term is {\defin{normal}} if it has no redexes.
+The function {\func{tm\_norm\_p}} checks if a term is normal.
+In theory specifications, signature specifications and documents
+all definitions, knowns, conjectures and theorems are required to be normal.
+The exception {\exc{NonNormalTerm}} is raised if this requirement is violated.
+
+The normalization procedure is {\func{tm\_beta\_eta\_norm}}.
+It proceeds by repeatedly calling {\func{tm\_beta\_eta\_norm\_1}}.
+In simple terms, the function {\func{tm\_beta\_eta\_norm\_1}} recursively traverses a term
+reducing each redex it finds and returning the reduced term along with a boolean
+indicating if at least one reduction was performed. If no reductions were performed,
+then the term is normal and the procedure ends.
+
+In certain examples, $\beta$-normalization (and hence $\beta\eta$-normalization)
+leads to large terms and can require
+an unrealistic number of $\beta$-reductions.
+This problem is dealt with by having resource bounds
+represented internally by {\var{beta\_count}}
+and {\var{term\_count}}.
+Before a signature specification or document is checked,
+these resource bounds are reset (by {\func{reset\_resource\_limits}}).
+(Checking a theory specification requires no $\beta$-reductions.)
+There are $200,000$ beta reductions and $10$ million term traversal steps
+are allowed per signature specification or document.
+Each $\beta$-reduction step decrements {\var{beta\_count}} by one.
+If {\var{beta\_count}} reaches $0$, then the exception {\exc{BetaLimit}} is raised.
+For each recursive call of a shift or substitution function
+decrements {\var{term\_count}}.
+If {\var{term\_count}} reaches $0$, then the exception {\exc{TermLimit}} is raised.
+If either of these exceptions are thrown, it essentially means that checking
+the signature specification or document is too resource intensive and
+it cannot be published in its current form.
+If this occurs, a possible solution is to factor the publication into multiple publications.
+
+It is worth noting that some well-known ill-typed terms do not have a normal form.
+For example, $(\lambda_o x_0 x_0) (\lambda_o x_0 x_0)$ is a term level $\beta$-redex
+with itself as a reduct. Without resource bounds, calling {\func{tm\_beta\_eta\_norm}}
+with this term would result in an infinite loop. With the resource bound, {\exc{BetaLimit}}
+would be raised.
+In practice, {\func{tm\_beta\_eta\_norm}} should never be called with such a term
+since during the checking of publications {\func{tm\_beta\_eta\_norm}} is only
+called with terms which are already known to be well-typed.
+
 \section{Type Checking and Proof Checking}
 
 We now turn to the most important functions: those which check that a type
@@ -701,19 +939,13 @@ giving the current assumed hypotheses
 (proof level de Bruijn indices in the proof term).
 
 \begin{itemize}
-\item {\var{beta\_count}}
-\item {\var{term\_count}}
-\end{itemize}
-
-\begin{itemize}
 \item {\exc{CheckingFailure}}
 \item {\exc{NotKnown}}
 \item {\exc{UnknownTerm}}
 \item {\exc{UnknownSigna}}
-\item {\exc{NonNormalTerm}}
-\item {\exc{BetaLimit}}
-\item {\exc{TermLimit}}
 \end{itemize}
+
+\section{Publication Checking}
 
 \begin{itemize}
 \item {\func{check\_theoryspec}}
