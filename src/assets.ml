@@ -156,15 +156,6 @@ let rec output_creates_neg_props (outpl:addr_preasset list) : (hashval option * 
   | _::outpr -> output_creates_neg_props outpr
   | [] -> []
 
-let rec output_markers outpl =
-  match outpl with
-  | (_,(_,SignaPublication(_,_,th,d)))::outpr ->
-      signaspec_stp_markers th d @ signaspec_known_markers th d @ output_markers outpr
-  | (_,(_,DocPublication(_,_,th,d)))::outpr ->
-      doc_stp_markers th d @ doc_known_markers th d @ output_markers outpr
-  | _::outpr -> output_markers outpr
-  | [] -> []
-
 let rec rights_out_obj outpl alpha =
   match outpl with
   | (_,(_,RightsObj(beta,n)))::outpr when alpha = beta -> Int64.add n (rights_out_obj outpr alpha)

@@ -781,7 +781,7 @@ let signa_burncost s =
 
 let signaspec_burncost s = signa_burncost (signaspec_signa s)
 
-(** * extract which objs/props are used/created by signatures and documents, as well as markers needed to globally verify terms have a certain type/knowns are known **)
+(** * extract which objs/props are used/created by signatures and documents, as well as full_needed needed to globally verify terms have a certain type/knowns are known **)
 
 let adj x l = if List.mem x l then l else x::l
 
@@ -855,42 +855,6 @@ let rec doc_creates_neg_props_aux (dl:doc) r : hashval list =
   | [] -> r
 
 let doc_creates_neg_props (dl:doc) : hashval list = doc_creates_neg_props_aux dl []
-
-let rec signaspec_stp_markers_aux th (dl:signaspec) r : hashval list =
-  match dl with
-  | SignaParam(h,a)::dr -> signaspec_stp_markers_aux th dr (adj (hashtag (hashopair2 th (hashpair h (hashtp a))) 32l) r)
-  | _::dr -> signaspec_stp_markers_aux th dr r
-  | [] -> r
-
-let signaspec_stp_markers th (dl:signaspec) : hashval list =
-  signaspec_stp_markers_aux th dl []
-
-let rec signaspec_known_markers_aux (th:hashval option) (dl:signaspec) r : hashval list =
-  match dl with
-  | SignaKnown(p)::dr -> signaspec_known_markers_aux th dr (adj (hashtag (hashopair2 th (tm_hashroot p)) 33l) r)
-  | _::dr -> signaspec_known_markers_aux th dr r
-  | [] -> r
-
-let signaspec_known_markers (th:hashval option) (dl:signaspec) : hashval list =
-  signaspec_known_markers_aux th dl []
-
-let rec doc_stp_markers_aux th (dl:doc) r : hashval list =
-  match dl with
-  | DocParam(h,a)::dr -> doc_stp_markers_aux th dr (adj (hashtag (hashopair2 th (hashpair h (hashtp a))) 32l) r)
-  | _::dr -> doc_stp_markers_aux th dr r
-  | [] -> r
-
-let doc_stp_markers th (dl:doc) : hashval list =
-  doc_stp_markers_aux th dl []
-
-let rec doc_known_markers_aux th dl r : hashval list =
-  match dl with
-  | DocKnown(p)::dr -> doc_known_markers_aux th dr (adj (hashtag (hashopair2 th (tm_hashroot p)) 33l) r)
-  | _::dr -> doc_known_markers_aux th dr r
-  | [] -> r
-
-let doc_known_markers th dl : hashval list =
-  doc_known_markers_aux th dl []
 
 (** * htrees to hold theories and signatures **)
 type ttree = theory htree

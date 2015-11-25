@@ -2134,18 +2134,22 @@ let rec full_needed_1 outpl =
       addr_bitseq beta::full_needed_1 outpr
   | (_,(o,SignaPublication(gamma,nonce,th,sl)))::outpr ->
       let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (hashsigna (signaspec_signa sl))))) in
-      List.map (fun h -> addr_bitseq (hashval_term_addr h)) (signaspec_stp_markers th sl)
-      @ List.map (fun h -> addr_bitseq (hashval_term_addr h)) (signaspec_known_markers th sl)
-      @ addr_bitseq beta::full_needed_1 outpr
+      addr_bitseq beta::full_needed_1 outpr
   | (_,(o,DocPublication(gamma,nonce,th,dl)))::outpr ->
       let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (hashdoc dl)))) in
-      List.map (fun h -> addr_bitseq (hashval_term_addr h)) (doc_stp_markers th dl)
-      @ List.map (fun h -> addr_bitseq (hashval_term_addr h)) (doc_known_markers th dl)
-      @ addr_bitseq beta::full_needed_1 outpr
+      addr_bitseq beta::full_needed_1 outpr
   | _::outpr -> full_needed_1 outpr
 
 let full_needed outpl =
   let r = ref (full_needed_1 outpl) in
+  List.iter
+    (fun (alphapure,alphathy) ->
+	r := addr_bitseq (hashval_term_addr alphapure)::addr_bitseq (hashval_term_addr alphathy)::!r)
+    (output_signaspec_uses_objs outpl);
+  List.iter
+    (fun (alphapure,alphathy) ->
+	r := addr_bitseq (hashval_term_addr alphapure)::addr_bitseq (hashval_term_addr alphathy)::!r)
+    (output_signaspec_uses_props outpl);
   List.iter
     (fun (alphapure,alphathy) ->
 	r := addr_bitseq (hashval_term_addr alphapure)::addr_bitseq (hashval_term_addr alphathy)::!r)
