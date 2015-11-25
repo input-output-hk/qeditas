@@ -922,9 +922,9 @@ let rec tmtpshift i j m =
   term_count_check ();
   match m with
   | Ap(m1,m2) -> Ap(tmtpshift i j m1,tmtpshift i j m2)
-  | Lam(a1,m1) -> Lam(a1,tmtpshift i j m1)
+  | Lam(a1,m1) -> Lam(tpshift i j a1,tmtpshift i j m1)
   | Imp(m1,m2) -> Imp(tmtpshift i j m1,tmtpshift i j m2)
-  | All(a1,m1) -> All(a1,tmtpshift i j m1)
+  | All(a1,m1) -> All(tpshift i j a1,tmtpshift i j m1)
   | TTpAp(m1,a1) -> TTpAp(tmtpshift i j m1,tpshift i j a1)
   | TTpLam(m1) -> TTpLam(tmtpshift (i+1) j m1)
   | TTpAll(m1) -> TTpAll(tmtpshift (i+1) j m1)
