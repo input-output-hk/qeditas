@@ -887,16 +887,12 @@ let ottree_lookup t h =
 
 (** * operations including type checking and proof checking ***)
 
-let rec tpshift i j a =
-  match a with
-  | TpVar(k) when k < i -> TpVar(k)
-  | TpVar(k) -> TpVar(k+j)
-  | Ar(a1,a2) -> Ar(tpshift i j a1,tpshift i j a2)
-  | TpAll(a) -> TpAll(tpshift (i+1) j a)
-  | _ -> a
-
 let beta_count = ref 200000
 let term_count = ref 10000000
+
+let reset_resource_limits () =
+  beta_count := 200000;
+  term_count := 10000000
 
 exception BetaLimit
 exception TermLimit
@@ -912,6 +908,27 @@ let term_count_check () =
     decr term_count
   else
     raise TermLimit
+
+let rec tpshift i j a =
+  term_count_check ();
+  match a with
+  | TpVar(k) when k < i -> TpVar(k)
+  | TpVar(k) -> TpVar(k+j)
+  | Ar(a1,a2) -> Ar(tpshift i j a1,tpshift i j a2)
+  | TpAll(a) -> TpAll(tpshift (i+1) j a)
+  | _ -> a
+
+let rec tmtpshift i j m =
+  term_count_check ();
+  match m with
+  | Ap(m1,m2) -> Ap(tmtpshift i j m1,tmtpshift i j m2)
+  | Lam(a1,m1) -> Lam(a1,tmtpshift i j m1)
+  | Imp(m1,m2) -> Imp(tmtpshift i j m1,tmtpshift i j m2)
+  | All(a1,m1) -> All(a1,tmtpshift i j m1)
+  | TTpAp(m1,a1) -> TTpAp(tmtpshift i j m1,tpshift i j a1)
+  | TTpLam(m1) -> TTpLam(tmtpshift (i+1) j m1)
+  | TTpAll(m1) -> TTpAll(tmtpshift (i+1) j m1)
+  | _ -> m
 
 (*** The shift and substitution operations are only valid if TmH only abbreviates
  closed terms (terms with no DBs and no TpVars).
@@ -929,58 +946,6 @@ let rec tmshift i j m =
   | TTpLam(m1) -> TTpLam(tmshift i j m1)
   | TTpAll(m1) -> TTpAll(tmshift i j m1)
   | _ -> m
-
-let rec tmtpshift i j m =
-  term_count_check ();
-  match m with
-  | DB(k) when k < i -> DB(k)
-  | DB(k) -> DB(k+j)
-  | Ap(m1,m2) -> Ap(tmtpshift i j m1,tmtpshift i j m2)
-  | Lam(a1,m1) -> Lam(a1,tmtpshift i j m1)
-  | Imp(m1,m2) -> Imp(tmtpshift i j m1,tmtpshift i j m2)
-  | All(a1,m1) -> All(a1,tmtpshift i j m1)
-  | TTpAp(m1,a1) -> TTpAp(tmtpshift i j m1,tpshift i j a1)
-  | TTpLam(m1) -> TTpLam(tmtpshift (i+1) j m1)
-  | TTpAll(m1) -> TTpAll(tmtpshift (i+1) j m1)
-  | _ -> m
-
-(*** Similar to the tm case, pf shift and subst operations are only valid when Gpa and TmH
-  abbreviate closed pfs and tms, respectively.
- ***)
-let rec pfshift i j d =
-  term_count_check ();
-  match d with
-  | Hyp(k) when k < i -> Hyp(k)
-  | Hyp(k) -> Hyp(k+j)
-  | PTmAp(d1,m2) -> PTmAp(pfshift i j d1,m2)
-  | PPfAp(d1,d2) -> PPfAp(pfshift i j d1,pfshift i j d2)
-  | PLam(m1,d1) -> PLam(m1,pfshift (i+1) j d1)
-  | TLam(a1,d1) -> TLam(a1,pfshift i j d1)
-  | PTpAp(d1,a1) -> PTpAp(pfshift i j d1,a1)
-  | PTpLam(d1) -> PTpLam(pfshift i j d1)
-  | _ -> d
-
-let rec pftmshift i j d =
-  term_count_check ();
-  match d with
-  | PTmAp(d1,m2) -> PTmAp(pftmshift i j d1,tmshift i j m2)
-  | PPfAp(d1,d2) -> PPfAp(pftmshift i j d1,pftmshift i j d2)
-  | PLam(m1,d1) -> PLam(tmshift i j m1,pftmshift i j d1)
-  | TLam(a1,d1) -> TLam(a1,pftmshift (i+1) j d1)
-  | PTpAp(d1,a1) -> PTpAp(pftmshift i j d1,a1)
-  | PTpLam(d1) -> PTpLam(pftmshift i j d1)
-  | _ -> d
-
-let rec pftpshift i j d =
-  term_count_check ();
-  match d with
-  | PTmAp(d1,m2) -> PTmAp(pftpshift i j d1,tmtpshift i j m2)
-  | PPfAp(d1,d2) -> PPfAp(pftpshift i j d1,pftpshift i j d2)
-  | PLam(m1,d1) -> PLam(tmtpshift i j m1,pftpshift i j d1)
-  | TLam(a1,d1) -> TLam(tpshift i j a1,pftpshift i j d1)
-  | PTpAp(d1,a1) -> PTpAp(pftpshift i j d1,tpshift i j a1)
-  | PTpLam(d1) -> PTpLam(pftpshift (i+1) j d1)
-  | _ -> d
 
 let rec tpsubst a j b =
   term_count_check ();
@@ -1003,17 +968,6 @@ let rec tmtpsubst m j b =
   | TTpLam(m) -> TTpLam(tmtpsubst m (j+1) b)
   | TTpAll(m) -> TTpAll(tmtpsubst m (j+1) b)
   | _ -> m
-
-let rec pftpsubst d j b =
-  term_count_check ();
-  match d with
-  | PTmAp(d1,m1) -> PTmAp(pftpsubst d1 j b,tmtpsubst m1 j b)
-  | PPfAp(d1,d2) -> PPfAp(pftpsubst d1 j b,pftpsubst d2 j b)
-  | PLam(m1,d1) -> PLam(tmtpsubst m1 j b,pftpsubst d1 j b)
-  | TLam(a1,d1) -> TLam(tpsubst a1 j b,pftpsubst d1 j b)
-  | PTpAp(d1,a) -> PTpAp(pftpsubst d1 j b,tpsubst a j b)
-  | PTpLam(d1) -> PTpLam(pftpsubst d1 (j+1) b)
-  | _ -> d
 
 let rec tmsubst m j n =
   term_count_check ();
@@ -1616,6 +1570,7 @@ let rec check_signaspec_rec gvtp gvkn th thy (str:stree option) dl : gsigna * ha
   | [] -> (([],[]),[])
 
 let check_signaspec gvtp gvkn th thy (str:stree option) dl : gsigna =
+  reset_resource_limits();
   let (sg,_) = check_signaspec_rec gvtp gvkn th thy (str:stree option) dl in
   sg
 
@@ -1674,5 +1629,6 @@ let rec check_doc_rec gvtp gvkn th (thy:theory) (str:stree option) dl =
   | [] -> (([],[]),[])
 
 let rec check_doc gvtp gvkn th (thy:theory) (str:stree option) dl =
+  reset_resource_limits();
   let (sg,_) = check_doc_rec gvtp gvkn th (thy:theory) (str:stree option) dl in
   sg
