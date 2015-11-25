@@ -509,16 +509,107 @@ Ownership of an object or proposition allows the control of the right to use
 the object or proposition later.
 Finally, some of the functions compute the hash values used to check the ledger
 tree to see if a term with a given hash root has a given type in a given theory
-or if a proposition with a given hash root is known in a given theroy.
+or if a proposition with a given hash root is known in a given theory.
 
 \begin{itemize}
-\item {\func{signaspec\_uses\_objs}}
-\item {\func{signaspec\_uses\_props}}
-\item {\func{doc\_uses\_objs}}
-\item {\func{doc\_uses\_props}}
-\item {\func{doc\_creates\_objs}}
-\item {\func{doc\_creates\_props}}
-\item {\func{doc\_creates\_neg\_props}}
+\item {\func{signaspec\_uses\_objs}} collects the
+parameters ({\constr{SignaParam}}) imported into a signature
+as pairs $(h,k)$ where $h$ is the hash root of the (omitted) term defining the parameter
+and $k$ is the hash of the type (given by {\func{hashtp}}).
+It is defined via a tail recursive function {\func{signaspec\_uses\_objs\_aux}}
+which also ensures the list is duplicate free.
+This information is needed to check that there is in fact a previously published term
+with hash root $h$ with the type with hash $k$
+in the appropriate theory. It is also needed to check that the publisher has the right
+to make use of the parameter in this way.
+The function is used in {\func{output\_signaspec\_uses\_objs}}
+in the {\module{assets}} module
+where $(h,k)$ is converted into a pair $(h,k')$ where $k'$
+depends on $h$, $k$ and the (optional) hash value identifier of the theory.
+The idea is that $h$ is the identifier of the ``pure'' object (across all theories)
+while $k'$ is the identifier of the object in the specific theory.
+Both $h$ and $k'$ can be owned as objects.
+In order to use an object as a parameter in a signature, both $h$ and $k'$ must be free to use
+as objects (without requiring rights).
+After an object has been published in a signature, every
+signature and document can freely use everything in
+the signature simply by importing it.
+\item {\func{signaspec\_uses\_props}} collects the
+hash roots of the known propositions ({\constr{SignaKnown}}) imported into a signature.
+It is defined via a tail recursive function {\func{signaspec\_uses\_props\_aux}}
+which also ensures the list is duplicate free.
+This information is needed to check that there is in fact a proposition 
+with hash root $h$
+was previously published with a proof
+in the appropriate theory (or that there is a corresponding axiom of the theory).
+It is also needed to check that the publisher has the right
+to make use of the known in this way.
+The function is used in {\func{output\_signaspec\_uses\_props}}
+in the {\module{assets}} module
+where $h$ is converted into a pair $(h,k)$ where $k$
+depends on $h$ and the (optional) hash value identifier of the theory.
+The idea is that $h$ is the identifier of the ``pure'' proposition (across all theories)
+while $k$ is the identifier of the proposition in the specific theory.
+Both $h$ and $k$ can be owned as propositions.
+In order to use a proposition as a known in a signature, both $h$ and $k$ must be free to use
+as propositions (without requiring rights).
+After a proposition has been published in a signature, every 
+signature and document can freely use everything in
+the signature simply by importing it.
+\item {\func{doc\_uses\_objs}} is similar to {\func{signa\_uses\_objs}}
+except it collects parameter declarations in documents ({\constr{DocParam}}).
+It is used in {\func{output\_doc\_uses\_objs}}
+in the {\module{assets}} module
+to collect $(h,k)$ where $h$ is the identifier for the ``pure'' object
+and $k$ is the identifier for the object in the relevant theory.
+In order to use the object in the document as a parameter, the transaction publishing
+the document is required to consume a sufficient number of object rights.
+The cost of obtaining rights (which may range from ``free'' to ``impossible'')
+is determined by the owners of $h$ and $k$ as objects.
+\item {\func{doc\_uses\_props}} is similar to {\func{signa\_uses\_objs}}
+except it collects parameter declarations in documents ({\constr{DocKnown}}).
+It is used in {\func{output\_doc\_uses\_props}}
+in the {\module{assets}} module
+to collect $(h,k)$ where $h$ is the identifier for the ``pure'' proposition
+and $k$ is the identifier for the proposition in the relevant theory.
+In order to use the proposition in the document as a known, the transaction publishing
+the document is required to consume a sufficient number of proposition rights.
+The cost of obtaining rights (which may range from ``free'' to ``impossible'')
+is determined by the owners of $h$ and $k$ as propositions.
+\item {\func{doc\_creates\_objs}} collects definitions ({\constr{DocDef}})
+as pairs $(h,k)$
+where $h$ is the hash root of the term and $k$ is the hash of the type.
+This is modified in {\func{output\_creates\_objs}} in the module {\module{assets}}
+to be $(h,k')$ where $k'$ depends on $h$, $k$ and the (optional) hash value identifier of the theory.
+Again, $h$ is the identifier for the ``pure'' object (across all theories)
+and $k'$ is the identifier for the object in the specific theory.
+If a document creates objects which are not yet owned as objects, then an owner must be declared with
+the transaction publishing the document.
+(The fact that an identifier for an object in a specific theory has an owner as an object
+implies that the term has the type in the theory. Hence it can later be safely imported as a parameter
+of the appropriate type in the theory.)
+\item {\func{doc\_creates\_props}} collects the hash roots of proven propositions ({\constr{DocPfOf}}).
+Each hash root $h$ is modified in {\func{output\_creates\_props}} in the module {\module{assets}}
+to be a pair $(h,k)$ where $k$ depends on the theory.
+Again, $h$ is the identifier for the ``pure'' proposition (across all theories)
+and $k$ is the identifier for the proposition in the theory.
+If a document creates propositions which are not yet owned as propositions, then an
+owner must be declared with the transaction publishing the document.
+(The fact that an identifier for a proposition in a specific theory has an owner as a proposition
+implies that the proposition has been proven in the theory. Hence the proposition can safely
+be imported as something known in the theory.)
+\item {\func{doc\_creates\_neg\_props}} collects the hash roots of propositions $p$
+ where the negation of $p$ is proven in the document.
+ (Here the negation of $p$ is either $p\to\forall_o x_0$, i.e., $p$ implies false,
+ or $\neg p$ where $\neg$ is $\lambda_o x_0\to\forall_o x_0$.)
+ In {\func{output\_creates\_neg\_props}} in the module {\module{assets}} combines the hash
+ root with the theory to obtain an identifier for the proposition in the theory.
+ If a document proves the negation of a proposition, then the {\constr{OwnsNegProp}}
+ preasset must be published into the corresponding identifier.
+ The purpose of {\constr{OwnsNegProp}} is to allow the collection of bounties by
+ proving the negation of a proposition instead of the original proposition.
+ This makes sense as in a consistent theory proving either a proposition or its negation
+ resolves the conjecture.
 \item {\func{signaspec\_stp\_markers}}
 \item {\func{signaspec\_known\_markers}}
 \item {\func{doc\_stp\_markers}}
@@ -623,7 +714,6 @@ giving the current assumed hypotheses
 \item {\exc{NotKnown}}
 \item {\exc{UnknownTerm}}
 \item {\exc{UnknownSigna}}
-\item {\exc{SignaTheoryMismatch}}
 \item {\exc{NonNormalTerm}}
 \item {\exc{BetaLimit}}
 \item {\exc{TermLimit}}
