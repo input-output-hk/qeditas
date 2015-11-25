@@ -981,15 +981,6 @@ let rec tmsubst m j n =
   | All(a,m1) -> All(a,tmsubst m1 (j+1) n)
   | _ -> m
 
-let rec free_in_tm_p m j =
-  match m with
-  | DB(i) when i = j -> true
-  | Ap(m1,m2) -> free_in_tm_p m1 j || free_in_tm_p m2 j
-  | Lam(a,m1) -> free_in_tm_p m1 (j+1)
-  | Imp(m1,m2) -> free_in_tm_p m1 j || free_in_tm_p m2 j
-  | All(a,m1) -> free_in_tm_p m1 (j+1)
-  | _ -> false
-
 let rec free_tpvar_in_tp_p a j =
   match a with
   | TpVar(i) when i = j -> true
@@ -1006,6 +997,15 @@ let rec free_tpvar_in_tm_p m j =
   | TTpAp(m1,a) -> free_tpvar_in_tm_p m1 j || free_tpvar_in_tp_p a j
   | TTpLam(m1) -> free_tpvar_in_tm_p m1 (j+1)
   | TTpAll(m1) -> free_tpvar_in_tm_p m1 (j+1)
+  | _ -> false
+
+let rec free_in_tm_p m j =
+  match m with
+  | DB(i) when i = j -> true
+  | Ap(m1,m2) -> free_in_tm_p m1 j || free_in_tm_p m2 j
+  | Lam(a,m1) -> free_in_tm_p m1 (j+1)
+  | Imp(m1,m2) -> free_in_tm_p m1 j || free_in_tm_p m2 j
+  | All(a,m1) -> free_in_tm_p m1 (j+1)
   | _ -> false
 
 (** check if a term is beta eta normal (not delta; defns can appear) **)
