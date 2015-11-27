@@ -375,14 +375,14 @@ A {\defin{signature item}} is one of the following:
 \end{itemize}
 A {\defin{signature specification}} is a list of signature items.
 
-A {\defin{global signature}} is a pair of lists:
+A {\defin{global signature}} $\Sigma$ is a pair $(\cO,\cK)$ of lists:
 \begin{itemize}
-\item The first is a list of hash roots, types and optionally terms.
+\item The first list $\cO$ is a list of hash roots, types and optionally terms.
       That is, each element is $(h,\alpha,{\mbox{\val{None}}})$ or $(h,\alpha,s)$
       where $h$ is the term hash root of a term of type $\alpha$ (the term $s$ if it is given).
       The intention is that we know the term $\tmh{h}$ abbreviates a term of type $\alpha$.
       If $s$ is given, we also know $\tmh{h}$ can be expanded to be $s$.
-\item The second is a list of hash roots and terms.
+\item The second list $\cK$ is a list of hash roots and terms.
       That is, each element is $(h,s)$ where $s$ has hash root $h$
       and $s$ is either an axiom of the theory or a previously proven theorem.
       (Technically, it is $h$ that is the hash root of an axiom or previously proven theorem.
@@ -915,11 +915,58 @@ We now turn to the most important functions: those which check that a type
 is valid, check that a term has a type, check that a term is a proposition,
 and check that a proof term is a proof of a proposition.
 
+Checking attempts typically either succeed
+(possibly returning some information)
+or raise an exception.
+The exception {\exc{CheckingFailure}} is raised
+if checking fails.
+One of the exceptions {\exc{BetaLimit}} or {\exc{TermLimit}} is raised
+if one of the corresponding resource bounds is reached.
+
 All the properties defined will be relative to a
 {\defin{type context}}.
 Since type variables are represented
 as de Bruijn indices, the {\defin{type context}}
-can be taken to simply be a non-negative integer $n$.
+can be taken to simply be a non-negative integer $v$.
+
+We say a type $\alpha$ is {\defin{valid as a simple type}} in type context $v$
+(and write $v\vdash \alpha \stp$) if
+it contains no occurrence of $\Lambda$ and every type variable $\delta_i$ satisfies $i<v$.
+The function {\func{check\_tp}} performs this check.
+A type $\alpha$ is {\defin{valid as a polymorphic type}} in type context $v$
+(and write $v\vdash \alpha \ptp$) if
+if
+it is of the form
+$$\underbrace{\Lambda\cdots\Lambda}_m\beta$$
+where $\beta$ is valid as a simple type in type context $v+m$.
+The function {\func{check\_ptp}} performs this check.
+
+Properties such as these are often defined
+using rules. One can often understand the functions checking the properties
+better by comparing them to such rules.
+Rules defining $v\vdash \alpha\stp$
+and $v\vdash \alpha\ptp$
+are given in Figure~\ref{fig:tp}.
+
+\begin{figure}
+\begin{center}
+\begin{mathpar}
+\inferrule*{i < v}{v\vdash \delta_i\stp}
+\and
+\inferrule*{v\vdash\alpha\stp \\ v\vdash\beta\stp}{v\vdash \alpha\to\beta\stp}
+\and
+\inferrule*{v\vdash\alpha\stp}{v\vdash\alpha\ptp}
+\and
+\inferrule*{v+1\vdash \alpha\ptp}{v\vdash \Lambda\alpha\ptp}
+\end{mathpar}
+\end{center}
+\caption{Rules for validity of types}\label{fig:tp}
+\end{figure}
+
+The notion of types being valid is independent of the theory or a signature.
+It would make sense to restrict types to only mention base types 
+mentioned in the current theory, but there is no strong reason to do so.
+For simplicity, we ignore the theory when asking if a type is valid.
 
 The property of when a term has a type
 depends on both a type context and a {\defin{term context}}.
@@ -927,6 +974,63 @@ A {\defin{term context}} $\Gamma$ is a list of types
 $\alpha_0,\ldots,\alpha_{m-1}$
 giving the types of the term level de Bruijn indices
 in the current context.
+We write $\dbtpsh{i}{j}\Gamma$ for the term context
+$\dbtpsh{i}{j}{\alpha_0},\ldots,\dbtpsh{i}{j}{\alpha_{m-1}}$
+when $\Gamma$ is $\alpha_0,\ldots,\alpha_{m-1}$.
+
+We now define $\Sigma;v;\Gamma \vdash t : \alpha$ -- i.e.,
+when a term $t$ has type $\alpha$ in a signature $\Sigma$, type context $v$
+and term context $\Gamma$.
+The definition also depends on the current theory, but we will leave this implicit in the notation.
+Suppose the current theory assings the types $\gamma_0,\ldots,\gamma_{n-1}$ to the first $n$ primitives.
+This information is needed to know $c_i:\gamma_i$ for $i<n$.
+(The corresponding function is {\func{tp\_of\_prim}}.)
+Rules defining $\Sigma;v;\Gamma \vdash t : \alpha$ are given in Figure~\ref{fig:tmtp}.
+
+\begin{figure}
+\begin{center}
+\begin{mathpar}
+\inferrule*{\Gamma = \alpha_0,\ldots,\alpha_{m-1}\\ i<m}{\Sigma;v;\Gamma\vdash x_i : \alpha_i}
+\and
+\inferrule*{i<n}{\Sigma;v;\Gamma\vdash c_i : \gamma_i}
+\and
+\inferrule*{\Sigma=(\cO,\cK)\\(h,\alpha,d)\in\cO}{\Sigma;v;\Gamma\vdash \tmh{h} : \alpha}
+\and
+\inferrule*{\Sigma;v;\Gamma\vdash s : \alpha\to\beta\\\Sigma;v;\Gamma\vdash t : \alpha}{\Sigma;v;\Gamma\vdash st : \beta}
+\and
+\inferrule*{\Sigma;v;\alpha,\Gamma\vdash s : \beta}{\Sigma;v;\Gamma\vdash \lambda_\alpha s : \alpha\to\beta}
+\and
+\inferrule*{\Sigma;v;\Gamma\vdash s : o \\\Sigma;v;\Gamma\vdash t : o}{\Sigma;v;\Gamma\vdash s\to t : o}
+\and
+\inferrule*{\Sigma;v;\alpha,\Gamma\vdash s : o}{\Sigma;v;\Gamma\vdash \forall_\alpha s : o}
+\and
+\inferrule*{\Sigma;v;\Gamma\vdash s : \Pi\alpha\\v\vdash \beta \stp}{\Sigma;v;\Gamma\vdash s\beta : \dbsub{0}{\beta}{\alpha}}
+\and
+\inferrule*{\Sigma;v+1;\dbtpsh{0}{1}{\Gamma}\vdash s : \alpha}{\Sigma;v;\Gamma\vdash \Lambda s : \Pi\alpha}
+\end{mathpar}
+\end{center}
+\caption{Rules for typing terms}\label{fig:tmtp}
+\end{figure}
+
+There are two mutually recursive functions
+{\func{extr\_tpoftm}} and {\func{check\_tpoftm}}
+to check
+$\Sigma;v;\Gamma \vdash t : \alpha$.
+The function {\func{extr\_tpoftm}} is not given the type $\alpha$
+and extracts the type $\alpha$, returning it upon success.
+The function {\func{check\_tpoftm}} is given the $\alpha$ and
+ensures it matches the extracted type.
+
+\begin{figure}
+\begin{center}
+\begin{mathpar}
+\inferrule*{\Sigma;v;\cdot\vdash s : o}{\Sigma;v\vdash s \prop}
+\and
+\inferrule*{\Sigma;v+1\vdash s\prop}{\Sigma;v\vdash \tforall s \prop}
+\end{mathpar}
+\end{center}
+\caption{Rules for when terms are propositions}\label{fig:prop}
+\end{figure}
 
 The property of when a proof term is a proof of a given
 proposition depends on a type context, a term context
@@ -938,14 +1042,51 @@ and term context)
 giving the current assumed hypotheses
 (proof level de Bruijn indices in the proof term).
 
+Let $\Phi$ be $\rho_0,\ldots,\rho_{k-1}$.
+We write $\dbtpsh{i}{j}\Phi$ for the hypothesis context
+$\dbtpsh{i}{j}{\rho_0},\ldots,\dbtpsh{i}{j}{\rho_{k-1}}$
+and $\dbsh{i}{j}\Phi$ for the hypothesis context
+$\dbsh{i}{j}{\rho_0},\ldots,\dbtpsh{i}{j}{\rho_{k-1}}$
+when $\Phi$ is $\rho_0,\ldots,\rho_{k-1}$.
+
+$\Sigma\vdash s \conv t$
+
+$\Sigma;v;\Gamma;\Phi\vdash \cD : t$
+
+\begin{figure}
+\begin{center}
+\begin{mathpar}
+\inferrule*{\Phi = \rho_0,\ldots,\rho_{k-1}\\ j<k}{\Sigma;v;\Gamma;\Phi\vdash \hyp{j} : \rho_{j}}
+\and
+\inferrule*{\Sigma=(\cO,\cK)\\ (h,s)\in\cK}{\Sigma;v;\Gamma;\Phi\vdash \known{h} : s}
+\and
+\inferrule*{\Sigma;v;\Gamma;\Phi\vdash \cD : \tforall s\\v\vdash \beta \ptp}{\Sigma;v;\Gamma;\Phi\vdash \cD \beta : \dbsub{0}{\beta}{s}}
+\and
+\inferrule*{\Sigma;v;\Gamma;\Phi\vdash \cD : \forall_\alpha s\\\Sigma;v;\Gamma;\Phi\vdash t : \alpha}{\Sigma;v;\Gamma;\Phi\vdash \cD t : \dbsub{0}{t}{s}}
+\and
+\inferrule*{\Sigma;v;\Gamma;\Phi\vdash \cD : s\to t\\\Sigma;v;\Gamma;\Phi\vdash \cE : s}{\Sigma;v;\Gamma;\Phi\vdash \cD \cE : t}
+\and
+\inferrule*{\Sigma;v+1;\dbtpsh{0}{1}{\Gamma};\dbtpsh{0}{1}{\Phi}\vdash \cD : s}{\Sigma;v;\Gamma;\Phi\vdash \Lambda \cD : \tforall s}
+\and
+\inferrule*{\Sigma;v;\alpha,\Gamma;\dbsh{0}{1}{\Phi}\vdash \cD : s}{\Sigma;v;\Gamma;\Phi\vdash \lambda_\alpha \cD : \forall_\alpha s}
+\and
+\inferrule*{\Sigma;v;\Gamma;s,\Phi\vdash \cD : t}{\Sigma;v;\Gamma;\Phi\vdash \lambda_s \cD : s\to t}
+\and
+\inferrule*{\Sigma;v;\Gamma;\Phi\vdash s : o \\\Sigma;v;\Gamma;\Phi\vdash t : o}{\Sigma;v;\Gamma;\Phi\vdash s\to t : o}
+\and
+\inferrule*{\Sigma;v;\Gamma;\Phi\vdash \forall_\alpha \cD : s \\ \Sigma\vdash s \conv t}{\Sigma;v;\Gamma;\Phi\vdash \forall_\alpha \cD : t}
+\end{mathpar}
+\end{center}
+\caption{Rules for when a proof proves a proposition}\label{fig:pf}
+\end{figure}
+
+\section{Publication Checking}
+
 \begin{itemize}
-\item {\exc{CheckingFailure}}
 \item {\exc{NotKnown}}
 \item {\exc{UnknownTerm}}
 \item {\exc{UnknownSigna}}
 \end{itemize}
-
-\section{Publication Checking}
 
 \begin{itemize}
 \item {\func{check\_theoryspec}}
