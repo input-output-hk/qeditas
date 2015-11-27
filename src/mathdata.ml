@@ -1190,257 +1190,49 @@ let rec check_metaprop thy sg v m =
   | TTpAll(m) -> check_metaprop thy sg (v+1) m
   | _ -> check_tpoftm thy sg v [] m Prop
 
-let rec tm_head_args_r2 m tpargs args =
+(*** expand all definitions ***)
+let rec tm_delta_norm m sg =
   match m with
-  | TTpAp(m1,a2) -> tm_head_args_r2 m1 (a2::tpargs) args
-  | _ -> (m,tpargs,args)
-
-let rec tm_head_args_r m args =
-  match m with
-  | Ap(m1,m2) -> tm_head_args_r m1 (m2::args)
-  | TTpAp(m1,a2) -> tm_head_args_r2 m1 [a2] args
-  | _ -> (m,[],args)
-
-let tm_head_args m =
-  tm_head_args_r m []
-
-(*** assume m is beta eta normal and not a Lam, and args are all beta eta normal ***)
-let rec tm_app_beta_eta_norm3 m args =
-  match args with
-  | (n::argr) -> tm_app_beta_eta_norm3 (Ap(m,n)) argr
+  | TmH(h) ->
+      begin
+	try
+	  let m = def_of_tmh sg h in
+	  tm_delta_norm m sg
+	with Not_found -> m
+      end
+  | Ap(m1,m2) -> Ap(tm_delta_norm m1 sg,tm_delta_norm m2 sg)
+  | Lam(a,m1) -> Lam(a,tm_delta_norm m1 sg)
+  | Imp(m1,m2) -> Imp(tm_delta_norm m1 sg,tm_delta_norm m2 sg)
+  | All(a,m1) -> Lam(a,tm_delta_norm m1 sg)
+  | TTpAp(m1,a) -> TTpAp(tm_delta_norm m1 sg,a)
+  | TTpLam(m1) -> TTpLam(tm_delta_norm m1 sg)
+  | TTpAll(m1) -> TTpAll(tm_delta_norm m1 sg)
   | _ -> m
 
-let rec tm_app_beta_eta_norm2 m tpargs args =
-  match tpargs with
-  | (a::tpargr) -> tm_app_beta_eta_norm2 (TTpAp(m,a)) tpargr args
-  | _ -> tm_app_beta_eta_norm3 m args
+let tm_beta_eta_delta_norm m sg = tm_beta_eta_norm (tm_delta_norm m sg)
 
-(*** assume m is beta eta normal already and args are all beta eta normal ***)
-let rec tm_app_beta_eta_norm m tpargs args =
-  match (m,tpargs,args) with
-  | (TTpLam(m1),a::tpargr,args) ->
-      tm_app_beta_eta_norm (tm_beta_eta_norm (tmtpsubst m1 0 a)) tpargr args
-  | (Lam(_,m1),[],n::argr) ->
-      tm_app_beta_eta_norm (tm_beta_eta_norm (tmsubst m1 0 n)) [] argr
-  | _ ->
-      tm_app_beta_eta_norm2 m tpargs args
-
-(*** assume all defs are beta eta normal ***)
-let delta_exp sg h args =
-  match h with
-  | TmH(c) ->
-      let m = def_of_tmh sg c in
-      tm_app_beta_eta_norm m args
-  | _ -> raise Not_found
-
-let deltap dl h =
-  match h with
-  | TmH(c) -> List.mem c dl
-  | _ -> false
-
-let delta_cons h dl =
-  match h with
-  | TmH(c) -> if List.mem c dl then dl else (c::dl)
-  | _ -> dl
-
-let rec headnorm1 sg m dl =
-  match m with
-  | TTpAll(_) -> (m,dl)
-  | TTpLam(_) -> (m,dl)
-  | Lam(_,_) -> (m,dl)
-  | Imp(_,_) -> (m,dl)
-  | All(_,_) -> (m,dl)
-  | _ ->
-      let (mh,mtpargs,margs) = tm_head_args m in
-      try
-	let m2 = delta_exp sg mh mtpargs margs in
-	headnorm1 sg m2 (delta_cons mh dl)
-      with Not_found ->
-	(m,dl)
-
-let headnorm sg m dl = headnorm1 sg (tm_beta_eta_norm m) dl
-
-(*** conv2 assumes m and n are beta-eta normal ***)
-let rec conv2 m n sg dl =
-  match (m,n) with
-  | (Lam(a1,m1),Lam(b1,n1)) ->
-      if a1 = b1 then
-	conv2 m1 n1 sg dl
-      else
-	None
-  | (All(a1,m1),All(b1,n1)) ->
-      if a1 = b1 then
-	conv2 m1 n1 sg dl
-      else
-	None
-  | (Imp(m1,m2),Imp(n1,n2)) ->
-      convl [m1;m2] [n1;n2] sg dl
-  | (TTpLam(m1),TTpLam(n1)) ->
-      conv2 m1 n1 sg dl
-  | (TTpAll(m1),TTpAll(n1)) ->
-      conv2 m1 n1 sg dl
-  | (Lam(_,_),All(_,_)) -> None
-  | (Lam(_,_),Imp(_,_)) -> None
-  | (Lam(_,_),TTpAll(_)) -> None
-  | (Lam(_,_),TTpLam(_)) -> None
-  | (All(_,_),Lam(_,_)) -> None
-  | (All(_,_),Imp(_,_)) -> None
-  | (All(_,_),TTpAll(_)) -> None
-  | (All(_,_),TTpLam(_)) -> None
-  | (Imp(_,_),All(_,_)) -> None
-  | (Imp(_,_),Lam(_,_)) -> None
-  | (Imp(_,_),TTpAll(_)) -> None
-  | (Imp(_,_),TTpLam(_)) -> None
-  | (TTpAll(_),Lam(_,_)) -> None
-  | (TTpAll(_),All(_,_)) -> None
-  | (TTpAll(_),Imp(_,_)) -> None
-  | (TTpAll(_),TTpLam(_)) -> None
-  | (TTpLam(_),Lam(_,_)) -> None
-  | (TTpLam(_),All(_,_)) -> None
-  | (TTpLam(_),Imp(_,_)) -> None
-  | (TTpLam(_),TTpAll(_)) -> None
-  | (_,Lam(_,_)) ->
-      let (mh,mtpargs,margs) = tm_head_args m in
-      begin
-	try
-	  conv2 (delta_exp sg mh mtpargs margs) n sg (delta_cons mh dl)
-	with Not_found -> None
-      end
-  | (_,All(_,_)) ->
-      let (mh,mtpargs,margs) = tm_head_args m in
-      begin
-	try
-	  conv2 (delta_exp sg mh mtpargs margs) n sg (delta_cons mh dl)
-	with Not_found -> None
-      end
-  | (_,Imp(_,_)) ->
-      let (mh,mtpargs,margs) = tm_head_args m in
-      begin
-	try
-	  conv2 (delta_exp sg mh mtpargs margs) n sg (delta_cons mh dl)
-	with Not_found -> None
-      end
-  | (Lam(_,_),_) ->
-      let (nh,ntpargs,nargs) = tm_head_args n in
-      begin
-	try
-	  conv2 m (delta_exp sg nh ntpargs nargs) sg (delta_cons nh dl)
-	with Not_found -> None
-      end
-  | (All(_,_),_) ->
-      let (nh,ntpargs,nargs) = tm_head_args n in
-      begin
-	try
-	  conv2 m (delta_exp sg nh ntpargs nargs) sg (delta_cons nh dl)
-	with Not_found -> None
-      end
-  | (Imp(_,_),_) ->
-      let (nh,ntpargs,nargs) = tm_head_args n in
-      begin
-	try
-	  conv2 m (delta_exp sg nh ntpargs nargs) sg (delta_cons nh dl)
-	with Not_found -> None
-      end
-  | (_,TTpAll(_)) ->
-      let (mh,mtpargs,margs) = tm_head_args m in
-      begin
-	try
-	  conv2 (delta_exp sg mh mtpargs margs) n sg (delta_cons mh dl)
-	with Not_found -> None
-      end
-  | (_,TTpLam(_)) ->
-      let (mh,mtpargs,margs) = tm_head_args m in
-      begin
-	try
-	  conv2 (delta_exp sg mh mtpargs margs) n sg (delta_cons mh dl)
-	with Not_found -> None
-      end
-  | (TTpAll(_),_) ->
-      let (nh,ntpargs,nargs) = tm_head_args n in
-      begin
-	try
-	  conv2 m (delta_exp sg nh ntpargs nargs) sg (delta_cons nh dl)
-	with Not_found -> None
-      end
-  | (TTpLam(_),_) ->
-      let (nh,ntpargs,nargs) = tm_head_args n in
-      begin
-	try
-	  conv2 m (delta_exp sg nh ntpargs nargs) sg (delta_cons nh dl)
-	with Not_found -> None
-      end
-  | _ ->
-      let (mh,mtpargs,margs) = tm_head_args m in
-      begin
-	try
-	  if deltap dl mh then
-	    conv2 (delta_exp sg mh mtpargs margs) n sg dl
-	  else
-	    begin
-	      match convrigid1 mh mtpargs margs n sg dl with
-	      | Some(dl) -> Some(dl)
-	      | None -> (*** try delta expanding mh ***)
-		  conv2 (delta_exp sg mh mtpargs margs) n sg (delta_cons mh dl)
-	    end
-	with Not_found -> convrigid1 mh mtpargs margs n sg dl
-      end
-and convrigid1 mh mtpargs margs n sg dl =
-  let (nh,ntpargs,nargs) = tm_head_args n in
-  begin
-    try
-      if deltap dl nh then
-	convrigid1 mh mtpargs margs (delta_exp sg nh ntpargs nargs) sg dl
-      else
-	begin
-	  match convrigid2 mh mtpargs margs nh ntpargs nargs sg dl with
-	  | Some(dl) -> Some(dl)
-	  | None -> (*** try delta expanding nh ***)
-	      convrigid1 mh mtpargs margs (delta_exp sg nh ntpargs nargs) sg (delta_cons nh dl)
-	end
-    with Not_found -> convrigid2 mh mtpargs margs nh ntpargs nargs sg dl
-  end
-and convrigid2 mh mtpargs margs nh ntpargs nargs sg dl =
-  if mh = nh && mtpargs = ntpargs then
-    convl margs nargs sg dl
-  else
-    None
-and convl ml nl sg dl =
-  match (ml,nl) with
-  | ([],[]) -> Some(dl)
-  | (m::mr,n::nr) ->
-      begin
-	match conv2 m n sg dl with
-	| Some(dl) -> convl mr nr sg dl
-	| None -> None
-      end
-  | _ -> None
-
-let conv m n sg dl =
-  conv2 (tm_beta_eta_norm m) (tm_beta_eta_norm n) sg dl
-
-let rec extr_propofpf (thy:theory) sg v cxtm cxpf d dl =
+(*** return a beta eta normal prop proven by d or raise CheckingFailure ***)
+let rec extr_propofpf (thy:theory) sg v cxtm cxpf d =
   match d with
   | Hyp j ->
       begin
 	try
-	  (List.nth cxpf j,dl)
+	  List.nth cxpf j
 	with Failure "nth" -> raise CheckingFailure
       end
   | Known(h) ->
       begin
 	try
-	  let p = prop_of_known sg h in
-	  (p,dl)
+	  tm_beta_eta_delta_norm (prop_of_known sg h) sg
 	with Not_found ->
 	  raise CheckingFailure
       end
   | PTmAp(d1,m) ->
       begin
-	let (q,dl) = extr_propofpf thy sg v cxtm cxpf d1 dl in
-	match headnorm sg q dl with
-	| (All(a,p),dl) ->
+	match extr_propofpf thy sg v cxtm cxpf d1 with
+	| All(a,p) ->
 	    if extr_tpoftm thy sg v cxtm m = a then
-	      (tmsubst p 0 m,dl)
+	      tm_beta_eta_norm (tmsubst p 0 (tm_delta_norm m sg))
 	    else
 	      raise CheckingFailure
 	| _ ->
@@ -1448,37 +1240,35 @@ let rec extr_propofpf (thy:theory) sg v cxtm cxpf d dl =
       end
   | PPfAp(d1,d2) ->
       begin
-	let (q,dl) = extr_propofpf thy sg v cxtm cxpf d1 dl in
-	match headnorm sg q dl with
-	| (Imp(p1,p2),dl) ->
-	    let dl = check_propofpf thy sg v cxtm cxpf d2 p1 dl in
-	    (p2,dl)
+	match extr_propofpf thy sg v cxtm cxpf d1 with
+	| Imp(p1,p2) ->
+	    check_propofpf thy sg v cxtm cxpf d2 p1;
+	    p2
 	| _ ->
 	    raise CheckingFailure
       end
   | TLam(a,d1) ->
-      let (q,dl) = extr_propofpf thy sg v (a::cxtm) (List.map (fun q -> tmshift 0 1 q) cxpf) d1 dl in
-      (All(a,q),dl)
+      All(a,extr_propofpf thy sg v (a::cxtm) (List.map (fun q -> tmshift 0 1 q) cxpf) d1)
   | PLam(p,d1) ->
-      let (q,dl) = extr_propofpf thy sg v cxtm (p::cxpf) d1 dl in
-      (Imp(p,q),dl)
+      let p = tm_beta_eta_delta_norm p sg in
+      let q = extr_propofpf thy sg v cxtm (p::cxpf) d1 in
+      Imp(p,q)
   | PTpAp(d1,a) ->
       begin
-	let (q,dl) = extr_propofpf thy sg v cxtm cxpf d1 dl in
-	match headnorm sg q dl with
-	| (TTpAll(p),dl) -> (tmtpsubst p 0 a,dl)
+	let q = extr_propofpf thy sg v cxtm cxpf d1 in
+	match q with
+	| TTpAll(p) -> tmtpsubst p 0 a
 	| _ ->
 	    raise CheckingFailure
       end
   | PTpLam(d1) ->
-      let (q,dl) = extr_propofpf thy sg (v+1) cxtm cxpf d1 dl in
-      (TTpAll(q),dl)
+      let q = extr_propofpf thy sg (v+1) cxtm cxpf d1 in
+      TTpAll(q)
   | _ -> raise (Failure("Ill-formed Proof Term"))
-and check_propofpf (thy:theory) sg v cxtm cxpf d p dl =
-  let (q,dl) = extr_propofpf thy sg v cxtm cxpf d dl in
-  match conv q p sg dl with
-  | Some(dl) -> dl
-  | None -> raise CheckingFailure
+and check_propofpf (thy:theory) sg v cxtm cxpf d p = (** assume p is beta eta delta normal ***)
+  let q = extr_propofpf thy sg v cxtm cxpf d in
+  if not (q = p) then
+    raise CheckingFailure
 
 (*** return a theory and a gsigna or raise CheckingFailure ***)
 let rec check_theoryspec dl : theory * gsigna  =
@@ -1623,7 +1413,7 @@ let rec check_doc_rec gvtp gvkn th (thy:theory) (str:stree option) dl =
       let ((tmtpl,kl),imported) = check_doc_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p p) then raise NonNormalTerm;
       check_metaprop thy (tmtpl,kl) 0 p;
-      let _ = check_propofpf thy (tmtpl,kl) 0 [] [] d p [] in (** returns list of defns expanded, but not currently using it **)
+      check_propofpf thy (tmtpl,kl) 0 [] [] d (tm_beta_eta_delta_norm p (tmtpl,kl));
       let k = tm_hashroot p in
       ((tmtpl,(k,p)::kl),imported)
   | [] -> (([],[]),[])
