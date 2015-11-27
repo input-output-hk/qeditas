@@ -680,7 +680,7 @@ interface, but it is of fundamental importance that they are bug-free.
 Substitutions and normalization can also be defined for proof terms,
 but this is not necessary for Qeditas.
 
-Defining substitution requires further auxiliary functions to shift
+Defining substitution requires auxiliary functions to shift
 de Bruijn indices.
 For example, suppose we wish to substitute a term
 $x_0\to x_1$ for the de Bruijn index $x_0$ in the term
@@ -733,9 +733,7 @@ as follows:
 (x_0\to x_1)\to\forall_o (x_1\to x_2) \to x_0 \\
 \end{eqnarray*}
 
-Since we have de Bruijn indices at three levels (types, terms and proofs)
-there are many functions for shifting and substituting.
-We briefly describe the internal functions for shifting and performing substitutions at the various levels.
+We briefly describe the internal functions for shifting and performing substitutions at the different levels.
 For these functions to behave as mathematically intended, we
 need to assume that for each occurrence of $\tmh{h}$ 
 $h$ is the hash root of a term where every occurrence of a variable is locally bound (also called a {\defin{closed}} term).
@@ -759,7 +757,7 @@ The defining cases are:
 \item $\dbtpsh{i}{j}{(\forall_\alpha t)} = \forall_{\dbtpsh{i}{j}\alpha} (\dbtpsh{i}{j}{t})$. The term level $\forall_\alpha$ binder does not affect which type variables are locally bound.
 \item $\dbtpsh{i}{j}{(s\alpha)} = (\dbtpsh{i}{j}{s}) (\dbtpsh{i}{j}\alpha)$.
 \item $\dbtpsh{i}{j}{(\Lambda t)} = \Lambda (\dbtpsh{i+1}{j}{t})$. The type level $\Lambda$ binder means one more type variable is locally bound.
-\item $\dbtpsh{i}{j}{(\tforall t)} = \Lambda (\dbtpsh{i+1}{j}{t})$. The type level $\tforall$ binder means one more type variable is locally bound.
+\item $\dbtpsh{i}{j}{(\tforall t)} = \tforall (\dbtpsh{i+1}{j}{t})$. The type level $\tforall$ binder means one more type variable is locally bound.
 \item $\dbtpsh{i}{j}{t} = t$ otherwise. In particular, $\dbtpsh{i}{j}{\tmh{h}} = \tmh{h}$.
 Assuming $h$ is the hash root of a term $s$ where every type variable is locally bound,
 then $\dbtpsh{i}{j}{s} = s$
@@ -776,7 +774,7 @@ The defining cases are:
 \item $\dbsh{i}{j}{(\forall_\alpha t)} = \forall_\alpha (\dbsh{i+1}{j}{t})$. The term level $\forall_\alpha$ binder makes one more term variable locally bound.
 \item $\dbsh{i}{j}{(s\alpha)} = (\dbsh{i}{j}{s}) \alpha$.
 \item $\dbsh{i}{j}{(\Lambda t)} = \Lambda (\dbsh{i}{j}{t})$. The type level $\Lambda$ binder does not change which term level variables are locally bound.
-\item $\dbsh{i}{j}{(\tforall t)} = \Lambda (\dbsh{i}{j}{t})$. The type level $\tforall$ binder does not change which term level variables are locally bound.
+\item $\dbsh{i}{j}{(\tforall t)} = \tforall (\dbsh{i}{j}{t})$. The type level $\tforall$ binder does not change which term level variables are locally bound.
 \item $\dbsh{i}{j}{t} = t$ otherwise. In particular, $\dbsh{i}{j}{\tmh{h}} = \tmh{h}$.
 Assuming $h$ is the hash root of a term $s$ where every term variable is locally bound,
 then $\dbsh{i}{j}{s} = s$
@@ -802,7 +800,7 @@ The defining cases are:
 \item $\dbsub{j}{\beta}{(\forall_\alpha t)} = \forall_{\dbsub{j}{\beta}\alpha} (\dbsub{j}{\beta}{t})$. The term level $\forall_\alpha$ binder does not affect which type variables are locally bound.
 \item $\dbsub{j}{\beta}{(s\alpha)} = (\dbsub{j}{\beta}{s}) \alpha$.
 \item $\dbsub{j}{\beta}{(\Lambda t)} = \Lambda (\dbsub{j+1}{\beta}{t})$. The type level $\Lambda$ binder means one more type variable is locally bound.
-\item $\dbsub{j}{\beta}{(\tforall t)} = \Lambda (\dbsub{j+1}{\beta}{t})$. The type level $\tforall$ binder means one more type variable is locally bound.
+\item $\dbsub{j}{\beta}{(\tforall t)} = \tforall (\dbsub{j+1}{\beta}{t})$. The type level $\tforall$ binder means one more type variable is locally bound.
 \item $\dbsub{j}{\beta}{t} = t$ otherwise. In particular, $\dbsub{j}{\beta}{\tmh{h}} = \tmh{h}$.
 Assuming $h$ is the hash root of a term $s$ where every type variable is locally bound,
 then $\dbsub{j}{\beta}{s} = s$
@@ -821,7 +819,7 @@ and so we can simply take $\dbsub{0}{u}{x_0} = u$.
 \item $\dbsub{j}{u}{(\forall_\alpha t)} = \forall_\alpha (\dbsub{j+1}{u}{t})$. The term level $\forall_\alpha$ binder makes one more term variable locally bound.
 \item $\dbsub{j}{u}{(s\alpha)} = (\dbsub{j}{u}{s}) \alpha$.
 \item $\dbsub{j}{u}{(\Lambda t)} = \Lambda (\dbsub{j}{u}{t})$. The type level $\Lambda$ binder does not change which term level variables are locally bound.
-\item $\dbsub{j}{u}{(\tforall t)} = \Lambda (\dbsub{j}{u}{t})$. The type level $\tforall$ binder does not change which term level variables are locally bound.
+\item $\dbsub{j}{u}{(\tforall t)} = \tforall (\dbsub{j}{u}{t})$. The type level $\tforall$ binder does not change which term level variables are locally bound.
 \item $\dbsub{j}{u}{t} = t$ otherwise. In particular, $\dbsub{j}{u}{\tmh{h}} = \tmh{h}$.
 Assuming $h$ is the hash root of a term $s$ where every term variable is locally bound,
 then $\dbsub{j}{u}{s} = s$
@@ -861,10 +859,12 @@ is a {\defin{type level $\beta$-redex}}
 with reduct $\dbsub{0}{\alpha}{s}$.
 \item A term of the form $\lambda_\alpha (s x_0)$ where $x_0$ is not free in $s$
 is a {\defin{term level $\eta$-redex}}
-with reduct $s$.
+with reduct $\dbsh{0}{-1}{s}$. (The shift of term variables by $-1$ is required
+since $s$ was in the scope of one term level binder $\lambda_\alpha$ which is removed from the reduct.)
 \item A term of the form $\Lambda (s \delta_0)$ where $\delta_0$ is not free in $s$
 is a {\defin{type level $\eta$-redex}}
-with reduct $s$.
+with reduct $\dbtpsh{0}{-1}{s}$. (The shift of type variables by $-1$ is required
+since $s$ was in the scope of one type level binder $\Lambda$ which is removed from the reduct.)
 \end{itemize}
 A term is {\defin{normal}} if it has no redexes.
 The function {\func{tm\_norm\_p}} checks if a term is normal.
@@ -889,7 +889,7 @@ Before a signature specification or document is checked,
 these resource bounds are reset (by {\func{reset\_resource\_limits}}).
 (Checking a theory specification requires no $\beta$-reductions.)
 There are $200,000$ beta reductions and $10$ million term traversal steps
-are allowed per signature specification or document.
+allowed per signature specification or document.
 Each $\beta$-reduction step decrements {\var{beta\_count}} by one.
 If {\var{beta\_count}} reaches $0$, then the exception {\exc{BetaLimit}} is raised.
 For each recursive call of a shift or substitution function
