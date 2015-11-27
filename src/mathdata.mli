@@ -155,6 +155,8 @@ val ottree_lookup : ttree option -> hashval option -> theory
 val beta_count : int ref
 val term_count : int ref
 
+val reset_resource_limits : unit -> unit
+
 exception CheckingFailure
 exception NotKnown of hashval option * hashval
 exception UnknownTerm of hashval option * hashval * tp

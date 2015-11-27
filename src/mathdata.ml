@@ -1570,7 +1570,6 @@ let rec check_signaspec_rec gvtp gvkn th thy (str:stree option) dl : gsigna * ha
   | [] -> (([],[]),[])
 
 let check_signaspec gvtp gvkn th thy (str:stree option) dl : gsigna =
-  reset_resource_limits();
   let (sg,_) = check_signaspec_rec gvtp gvkn th thy (str:stree option) dl in
   sg
 
@@ -1630,6 +1629,5 @@ let rec check_doc_rec gvtp gvkn th (thy:theory) (str:stree option) dl =
   | [] -> (([],[]),[])
 
 let rec check_doc gvtp gvkn th (thy:theory) (str:stree option) dl =
-  reset_resource_limits();
   let (sg,_) = check_doc_rec gvtp gvkn th (thy:theory) (str:stree option) dl in
   sg

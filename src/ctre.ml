@@ -1646,6 +1646,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	  begin
 	    ensure_addr_empty alpha; (*** make sure the publication is new because otherwise publishing it is pointless ***)
 	    try
+	      reset_resource_limits();
 	      ignore (check_theoryspec thy);
 	      match hashtheory (theoryspec_theory thy) with
 	      | Some(thyh) ->
@@ -1682,6 +1683,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 		| None -> false
 	      in
 	      let thy = ottree_lookup tht th in
+	      reset_resource_limits();
 	      ignore (check_signaspec gvtp gvkn th thy sigt sl);
 	      let slh = hashsigna (signaspec_signa sl) in
 	      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th slh))) in
@@ -1716,6 +1718,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 		| None -> false
 	      in
 	      let thy = ottree_lookup tht th in
+	      reset_resource_limits();
 	      ignore (check_doc gvtp gvkn th thy sigt dl);
 	      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (hashdoc dl)))) in
 	      ignore (List.find
