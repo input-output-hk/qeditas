@@ -1137,7 +1137,7 @@ let rec check_tp v a =
 
 let rec check_ptp v a =
   match a with
-  | TpAll(a1) -> check_tp (v+1) a1
+  | TpAll(a1) -> check_ptp (v+1) a1
   | _ -> check_tp v a
 
 let rec extr_tpoftm thy sg v cxtm m =
@@ -1594,6 +1594,7 @@ let rec check_doc_rec gvtp gvkn th (thy:theory) (str:stree option) dl =
   | DocDef(a,m)::dr ->
       let ((tmtpl,kl),imported) = check_doc_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p m) then raise NonNormalTerm;
+      check_ptp 0 a;
       check_tpoftm thy (tmtpl,kl) 0 [] m a;
       let h = tm_hashroot m in
       (((h,a,Some(m))::tmtpl,kl),imported)
