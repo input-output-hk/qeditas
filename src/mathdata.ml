@@ -1254,6 +1254,7 @@ let rec extr_propofpf (thy:theory) sg v cxtm cxpf d =
 	    raise CheckingFailure
       end
   | TLam(a,d1) ->
+      check_tp v a;
       All(a,extr_propofpf thy sg v (a::cxtm) (List.map (fun q -> tmshift 0 1 q) cxpf) d1)
   | PLam(p,d1) ->
       let p = tm_beta_eta_delta_norm p sg in
