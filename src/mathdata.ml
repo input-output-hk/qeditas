@@ -1190,12 +1190,11 @@ let rec check_polyprop thy sg v m =
   | TTpAll(m) -> check_polyprop thy sg (v+1) m
   | _ -> check_tpoftm thy sg v [] m Prop
 
-(*** either there's no context and prefix type-foralls are allowed, or it must already be of type Prop ***)
+(*** either cxtm isn't needed prefix type-foralls are allowed, or it must already be of type Prop ***)
 let check_prop thy sg v cxtm m =
-  if cxtm = [] then
-    check_polyprop thy sg v m
-  else
-    check_tpoftm thy sg v cxtm m Prop
+  match m with
+  | TTpAll(m) -> check_polyprop thy sg (v+1) m (*** drop the cxtm context ***)
+  | _ -> check_tpoftm thy sg v cxtm m Prop
 
 (*** expand all definitions ***)
 let rec tm_delta_norm m sg =
