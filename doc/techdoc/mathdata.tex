@@ -1,20 +1,30 @@
-The \module{mathdata} contains the code for representing types,
+The {\module{mathdata}} module contains the code for representing types,
 terms and proofs
 and the code for type checking and proof checking.
 This is arguably the most important module in Qeditas.
 A bug in this module could lead to non-theorems being accepted as theorems
 undermining the primary purpose of the Qeditas system.
-Fortunately the \file{mathdata.ml} file is not long (currently less than 2000 lines of code)
-and thus can be manually audited.
+Fortunately the {\file{mathdata.ml}} file is not long (currently less than 1500 lines of code)
+and depends very little on the rest of Qeditas (using only
+code for serialization and cryptographic hashing).
+It is intended to satisfy the {\defin{de Bruijn criterion}}
+in that the code can be manually audited to determine its correctness.
 We attempt to give enough information in this chapter for someone who wishes to undertake such an audit.
 
-Much of the code in this module was taken from the code for Egal~\cite{Brown2014} system.
-The main difference in the syntax is Qeditas provides explicit support for type variables.
-Support for theories and signatures have also been added, and the type of documents has been modified.
+The original version of the code for this module was taken from the code for the
+Egal system~\cite{Brown2014},
+but has undergone extensive changes.
+One major difference in the syntax is Qeditas provides explicit support for type variables.
+Support for theories and signatures have also been added, and the type of documents has been modified
+(adding support for importing signatures and declaring conjectures but removing all presentation level items).
 Additionally, the checking functions are parameterized by functions to verify a term
 identified only by its hash root has a type in a theory
 and to verify a proposition identified only by its hash root is known to be a theorem in a theory.
 Such information will be looked up in the ledger tree (see Chapter~\ref{chap:ctre}) by checking what is held at corresponding term addresses.
+Finally, a significant portion of the Egal proof checking code was apparently
+intended to avoid expanding definitions unnecessarily.
+This code has been deleted and replaced by
+simpler code to expand all definitions during proof checking.
 
 One might argue that it would be safer to use an older, established proof checker for this purpose.
 However, experience has shown that even established systems can be vulnerable to ``tricks''
@@ -32,7 +42,9 @@ it is hoped that such apparent inconsistencies can be avoided.
 The underlying logic is a form of simple type theory~\cite{Church40}
 with support for prefix polymorphism.
 The basic proof calculus is natural deduction~\cite{gent36,praw65}
-and proof terms Curry-Howard style $\lambda$-terms~\cite{howa80}.
+with Curry-Howard style $\lambda$-terms proof terms~\cite{howa80}.
+This leads the type checker and proof checker in {\module{mathdata}}
+to be very similar to the oldest proof checker, AUTOMATH~\cite{DeBruijn80}.
 The logic is designed to allow for multiple theories to be
 declared and for signatures to be used to import previous
 typed terms and proven propositions.
@@ -312,8 +324,9 @@ A {\defin{theory item}} is one of the following:
 \end{itemize}
 A {\defin{theory specification}} is a list of theory items.
 
-A {\defin{theory}} is a list of simple types $\alpha_0,\ldots,\alpha_{n-1}$
-and a list of hash values $\overline{h}$.
+A {\defin{theory}} $\cT$ is a pair $(\cP,\cA)$
+of a list $\cP$ of simple types $\alpha_0,\ldots,\alpha_{n-1}$
+and a list $\cA$ of hash values $\overline{h}$.
 The idea is that the primitive $c_i$ has the type $\alpha_i$ for $i<n$
 and that $s$ is an axiom of the theory if $\tmhr{s}$ is in the list $\overline{h}$.
 
@@ -909,6 +922,8 @@ In practice, {\func{tm\_beta\_eta\_norm}} should never be called with such a ter
 since during the checking of publications {\func{tm\_beta\_eta\_norm}} is only
 called with terms which are already known to be well-typed.
 
+We write $\benorm{s}$ for the $\beta\eta$-normal form of $s$, assuming it exists.
+
 \section{Type Checking and Proof Checking}
 
 We now turn to the most important functions: those which check that a type
@@ -957,7 +972,7 @@ are given in Figure~\ref{fig:tp}.
 \and
 \inferrule*{v\vdash\alpha\stp}{v\vdash\alpha\ptp}
 \and
-\inferrule*{v+1\vdash \alpha\ptp}{v\vdash \Lambda\alpha\ptp}
+\inferrule*{v+1\vdash \alpha\ptp}{v\vdash \Pi\alpha\ptp}
 \end{mathpar}
 \end{center}
 \caption{Rules for validity of types}\label{fig:tp}
@@ -1021,75 +1036,257 @@ and extracts the type $\alpha$, returning it upon success.
 The function {\func{check\_tpoftm}} is given the $\alpha$ and
 ensures it matches the extracted type.
 
+In simple type theory a term is often called a ``proposition'' in a given context
+when it has type $o$
+This will be true here, but
+we will have additional polymorphic propositions of the form
+$$\underbrace{\tforall\cdots\tforall}_ms$$
+where $s$ has type $o$ in the empty context.
+The restriction considering such propositions in the empty context is to ensure
+that all $\tforall$ type binders occur before term level binders.
+We can define $\Sigma;v\vdash s \pprop$ meaning $s$ is a {\defin{polymorphic proposition}}
+(under the signature $\Sigma$ and type context $v$)
+by the rules in Figure~\ref{fig:pprop}.
+We then define $\Sigma;v;\Gamma \vdash s \prop$ meaning $s$ is a {\defin{proposition}}
+(under the signature $\Sigma$, type context $v$ and term context $\Gamma$)
+to mean $\Sigma;v\vdash s \pprop$
+or $\Sigma;v;\Gamma \vdash s:o$.
+
+The function {\func{check\_polyprop}} implements the check for polymorphic propositionhood
+and {\func{check\_prop}} implements the check for propositionhood.
+
 \begin{figure}
 \begin{center}
 \begin{mathpar}
-\inferrule*{\Sigma;v;\cdot\vdash s : o}{\Sigma;v\vdash s \prop}
+\inferrule*{\Sigma;v;\cdot\vdash s : o}{\Sigma;v\vdash s \pprop}
 \and
-\inferrule*{\Sigma;v+1\vdash s\prop}{\Sigma;v\vdash \tforall s \prop}
+\inferrule*{\Sigma;v+1\vdash s\pprop}{\Sigma;v\vdash \tforall s \pprop}
 \end{mathpar}
 \end{center}
-\caption{Rules for when terms are propositions}\label{fig:prop}
+\caption{Rules for when terms are polymorphic propositions}\label{fig:pprop}
 \end{figure}
+
+In order to determine if a proof term proves a given
+proposition, it is necessary to consider the proposition
+up to $\beta\eta$-reductions and expansion of definitions in $\Sigma$.
+Expansion of definitions is sometimes called $\delta$-reduction.
+That is, if $\Sigma=(\cO,\cK)$ is a global signature
+and $(h,\alpha,s)\in\cO$, then $\tmh{h}$ is a $\delta$-redex
+with $\delta$-reduct $s$.
+We write $\dnorm{\Sigma}{s}$ for the $\delta$-normal form of $s$, assuming it exists.
+(If there were cycles in the definitions in $\Sigma$, then $\delta$-reduction would not terminate.
+In practice, signatures will not have such cycles.)
+Note that $\delta$-reduction may (and often will) introduce new $\beta$-redexes.
+However, $\beta\eta$-reduction never introduces new $\delta$-redexes.
+Hence we can compute the $\beta\eta\delta$-normal form of $s$ by
+first computing $\dnorm\Sigma{s}$
+and then computing the $\beta\eta$-normal form.
+We denote this $\beta\eta\delta$-normal form by $\bednorm\Sigma{s}$.
+In the special case where we know $s$ is $\delta$-normal already,
+then $\bednorm\Sigma{s}$ is the same as $\benorm{s}$ (the $\beta\eta$-normal form of $s$).
+
+An easy way to consider terms up to $\beta\eta\delta$-reduction is to simply
+always normalize the terms. This is what the code does when trying to determine
+if a proof term proves a proposition.
+
+The function {\func{tm\_delta\_norm}} computes $\dnorm\Sigma{s}$
+and the function {\func{tm\_beta\_eta\_delta\_norm}} computes $\bednorm\Sigma{s}$.
 
 The property of when a proof term is a proof of a given
 proposition depends on a type context, a term context
 and a {\defin{hypothesis context}}.
 A {\defin{hypothesis context}} $\Phi$ is a list
 $\rho_0,\ldots,\rho_{k-1}$
-of terms (of type $o$ in the current type context
-and term context)
+of terms
 giving the current assumed hypotheses
 (proof level de Bruijn indices in the proof term).
+We will only work with hypothesis contexts where each hypothesis $\rho$
+is $\beta\eta\delta$-normal.
+We will also ensure that the terms are of type $o$ (and not, for example,
+more general polymorphic propositions).
 
 Let $\Phi$ be $\rho_0,\ldots,\rho_{k-1}$.
-We write $\dbtpsh{i}{j}\Phi$ for the hypothesis context
-$\dbtpsh{i}{j}{\rho_0},\ldots,\dbtpsh{i}{j}{\rho_{k-1}}$
-and $\dbsh{i}{j}\Phi$ for the hypothesis context
-$\dbsh{i}{j}{\rho_0},\ldots,\dbtpsh{i}{j}{\rho_{k-1}}$
+We write $\dbsh{i}{j}\Phi$ for the hypothesis context
+$\dbsh{i}{j}{\rho_0},\ldots,\dbsh{i}{j}{\rho_{k-1}}$
 when $\Phi$ is $\rho_0,\ldots,\rho_{k-1}$.
 
-$\Sigma\vdash s \conv t$
-
+We now define when a proof term proves a proposition,
+given a signature and appropriate contexts.
+We denote this relation by
 $\Sigma;v;\Gamma;\Phi\vdash \cD : t$
+and define it by the rules in Figure~\ref{fig:pf}.
+Note that in each rule, we ensure that the proposition $t$ is $\beta\eta\delta$-normal
+(assuming every proposition in $\Phi$ is $\beta\eta\delta$-normal).
+Also note that proof terms for polymorphic propositions which are not of type $o$
+(i.e., have at least one $\tforall$ binder) must either be known $\known{h}$
+or must be proven in the empty term and hypothesis contexts.
 
 \begin{figure}
 \begin{center}
 \begin{mathpar}
 \inferrule*{\Phi = \rho_0,\ldots,\rho_{k-1}\\ j<k}{\Sigma;v;\Gamma;\Phi\vdash \hyp{j} : \rho_{j}}
 \and
-\inferrule*{\Sigma=(\cO,\cK)\\ (h,s)\in\cK}{\Sigma;v;\Gamma;\Phi\vdash \known{h} : s}
+\inferrule*{\Sigma=(\cO,\cK)\\ (h,s)\in\cK}{\Sigma;v;\Gamma;\Phi\vdash \known{h} : \bednorm\Sigma{s}}
 \and
-\inferrule*{\Sigma;v;\Gamma;\Phi\vdash \cD : \tforall s\\v\vdash \beta \ptp}{\Sigma;v;\Gamma;\Phi\vdash \cD \beta : \dbsub{0}{\beta}{s}}
-\and
-\inferrule*{\Sigma;v;\Gamma;\Phi\vdash \cD : \forall_\alpha s\\\Sigma;v;\Gamma;\Phi\vdash t : \alpha}{\Sigma;v;\Gamma;\Phi\vdash \cD t : \dbsub{0}{t}{s}}
+\inferrule*{\Sigma;v;\Gamma;\Phi\vdash \cD : \forall_\alpha s\\\Sigma;v;\Gamma;\Phi\vdash t : \alpha}{\Sigma;v;\Gamma;\Phi\vdash \cD t : \benorm{\dbsub{0}{\dnorm\Sigma{t}}{s}}}
 \and
 \inferrule*{\Sigma;v;\Gamma;\Phi\vdash \cD : s\to t\\\Sigma;v;\Gamma;\Phi\vdash \cE : s}{\Sigma;v;\Gamma;\Phi\vdash \cD \cE : t}
 \and
-\inferrule*{\Sigma;v+1;\dbtpsh{0}{1}{\Gamma};\dbtpsh{0}{1}{\Phi}\vdash \cD : s}{\Sigma;v;\Gamma;\Phi\vdash \Lambda \cD : \tforall s}
-\and
 \inferrule*{\Sigma;v;\alpha,\Gamma;\dbsh{0}{1}{\Phi}\vdash \cD : s}{\Sigma;v;\Gamma;\Phi\vdash \lambda_\alpha \cD : \forall_\alpha s}
 \and
-\inferrule*{\Sigma;v;\Gamma;s,\Phi\vdash \cD : t}{\Sigma;v;\Gamma;\Phi\vdash \lambda_s \cD : s\to t}
+\inferrule*{\Sigma;v;\Gamma\vdash s : o\\ \Sigma;v;\Gamma;\bednorm\Sigma{s},\Phi\vdash \cD : t}{\Sigma;v;\Gamma;\Phi\vdash \lambda_s \cD : \bednorm\Sigma{s}\to t}
 \and
-\inferrule*{\Sigma;v;\Gamma;\Phi\vdash s : o \\\Sigma;v;\Gamma;\Phi\vdash t : o}{\Sigma;v;\Gamma;\Phi\vdash s\to t : o}
+\inferrule*{\Sigma;v;\Gamma;\Phi\vdash \cD : \tforall s\\v\vdash \beta \stp}{\Sigma;v;\Gamma;\Phi\vdash \cD \beta : \dbsub{0}{\beta}{s}}
 \and
-\inferrule*{\Sigma;v;\Gamma;\Phi\vdash \forall_\alpha \cD : s \\ \Sigma\vdash s \conv t}{\Sigma;v;\Gamma;\Phi\vdash \forall_\alpha \cD : t}
+\inferrule*{\Sigma;v+1;\cdot;\cdot\vdash \cD : s}{\Sigma;v;\cdot;\cdot\vdash \Lambda \cD : \tforall s}
+%\and
+%\inferrule*{\Sigma;v;\Gamma;\Phi\vdash \cD : s \\ \bednorm{\Sigma}{s} = \bednorm{\Sigma}{t}}{\Sigma;v;\Gamma;\Phi\vdash \cD : t}
 \end{mathpar}
 \end{center}
 \caption{Rules for when a proof proves a proposition}\label{fig:pf}
 \end{figure}
 
+Like with type checking, there are two mutually recursive functions
+{\func{extr\_propofpf}} and {\func{check\_propofpf}}
+to check
+$\Sigma;v;\Gamma;\Phi\vdash \cD : t$.
+In the case of {\func{extr\_propofpf}} no proposition $t$ is given.
+If the given proof term does prove a proposition $t$, this $\beta\eta\delta$-normal $t$ is
+returned. Otherwise, the exception $\exc{CheckingFailure}$ (or one of the resource bound exceptions) is raised.
+In the case of {\func{check\_propofpf}} a $\beta\eta\delta$-normal proposition $t$ is given
+and is checked to be equal to the result returned by {\func{extr\_propofpf}}.
+If the two are not equal, $\exc{CheckingFailure}$ is raised.
+
 \section{Publication Checking}
 
+We can now turn to the main functions exported by the {\module{mathdata}} module:
+the functions for checking theory specifications, signature specifications
+and documents.
+In each case, if the publication is checked to be correct, a global signature
+is returned.
+If a theory specification is checked to be correct, then a theory is also returned.
+If a publication is determined not to be correct, an exception is raised.
+Some of these exceptions have been mentioned above:
+{\exc{BetaLimit}} (too many $\beta$-reductions),
+{\exc{TermLimit}} (too many large terms),
+{\exc{NonNormalTerm}} (a term in a publication was not $\beta\eta$-normal)
+and
+{\exc{CheckingFailure}} (either type checking or proof checking failed).
+In addition, there are three more exceptions:
 \begin{itemize}
-\item {\exc{NotKnown}}
-\item {\exc{UnknownTerm}}
-\item {\exc{UnknownSigna}}
+\item {\exc{NotKnown}} is an exception indicating an attempt to import proposition 
+as previously known failed.
+\item {\exc{UnknownTerm}} is an exception indicating an attempt to import an object
+by the hash root of the term failed.
+\item {\exc{UnknownSigna}} is an exception indicating that an attempt was made
+to import an unknown signature.
 \end{itemize}
 
+Signature specifications and documents may import previous signatures and this 
+is handled by {\func{import\_signatures}}.
+An extra value {\val{imported}} prevents importing of signatures multiple times.
+
+There are three functions for checking publications:
 \begin{itemize}
-\item {\func{check\_theoryspec}}
-\item {\func{check\_signaspec}}
-\item {\func{check\_doc}}
+\item {\func{check\_theoryspec}} checks a theory specification
+and (upon success) returns a theory and a global signature.
+The empty theory specification returns the empty theory and the empty global signature.
+Suppose the theory specification is nonempty. 
+We recursively call the procedure on the rest of the specification to obtain a theory
+$\cT = (\cP,\cA)$
+and global signature
+$\Sigma = (\cO,\cK)$.
+The head of the specification is then handled as follows:
+\begin{itemize}
+\item $\mbox{\constr{ThyPrim}}(\alpha)$: check that $0\vdash \alpha\ptp$ ($\alpha$ is valid
+as a polymorphic type in type context $0$)
+and return the theory $(\cP',\cA)$ where $\cP'$ is $\cP,\alpha$
+and global signature $\Sigma$.
+This declares the type of the next primitive $c_n$.
+\item $\mbox{\constr{ThyDef}}(\alpha,s)$: check that $s$ is $\beta\eta$-normal,
+$0\vdash \alpha\ptp$ ($\alpha$ is valid
+as a polymorphic type in type context $0$)
+and that $\Sigma;0;\cdot\vdash s:\alpha$ ($s$ has type $\alpha$)
+and return the theory $\cT$ and the global signature
+$(\cO',\cK)$ where $\cO'$ is $\cO$ with the additional entry $(\tmhr{s},\alpha,s)$.
+That is, the global signature has enough information to recover the type of $s$
+and the term $s$ from the hash root $\tmhr{s}$.
+\item $\mbox{\constr{ThyAxiom}}(t)$ check that $t$ is a $\beta\eta$-normal
+proposition (in the type context $0$ and empty term context).
+Let $k$ be the hash root $\tmhr{t}$.
+Let $\cA'$ be $\cA$ with the additional entry $k$ (to record the new axiom of the theory).
+Let $\cK'$ be $\cK$ with the additional entry $(k,t)$ (to record that $\known{k}$ is a proof of $t$).
+Return the theory $(\cP,\cA')$ and global signature $(\cO,\cK')$.
 \end{itemize}
+\item {\func{check\_signaspec}} checks a signature specification
+and (upon success) returns a global signature.
+This is performed within a fixed theory $\cT = (\cP,\cA)$.
+The work is done by an auxiliary function {\func{check\_signaspec\_rec}}
+which keeps up with which signatures have been imported.
+We can define the recursive procedure as follows:
+The empty signature specification returns the empty global signature.
+Otherwise, we recursively call the procedure on the rest of the document
+to obtain a global signature $\Sigma = (\cO,\cK)$.
+Then we handle each of the signature item cases as follows:
+\begin{itemize}
+\item $\mbox{\constr{SignaSigna}}(h)$: import the signature identified by $h$.
+If no signature identified by $h$ is found, then raise {\exc{UnknownSigna}}.
+Otherwise, the result is a signature $\Sigma'=(\cO',\cK')$ where $\cO \subseteq \cO'$
+and $\cK \subseteq \cK'$. (Here $\subseteq$ means each entry in the first list is an entry in the second.)
+\item $\mbox{\constr{SignaParam}}(h,\alpha)$: check that $0\vdash \alpha\ptp$
+and that the term with hash root $h$ is known to have type $\alpha$.
+This second check is performed by calling {\func{tm\_tp\_p}} with a generic test {\var{gvtp}},
+the signature, the theory identifier, $h$ and $\alpha$.
+The test can succeed by noting $h$ is already declared in the signature to have type $\alpha$
+or by verifying {\var{gvtp}} when called on the theory identifier, $h$ and $\alpha$.
+Later when {\func{check\_signaspec}} is used, {\var{gvtp}}
+is instantiated by a test to determine if a certain term address (formed from the theory identifier,
+$h$ and $\alpha$) is owned as an object.
+Assuming these checks succeed, return the signature $(\cO',\cK)$
+where $\cO'$ is $\cO$ with the additional entry $(h,\alpha,\val{None})$.
+\item $\mbox{\constr{SignaDef}}(\alpha,s)$: check $s$ is $\beta\eta$-normal,
+$0\vdash \alpha\ptp$
+and $\Sigma;0;\cdot\vdash s:\alpha$.
+Let $h$ be the hash root $\tmhr{s}$.
+If $s$ is $\tmh{h}$, then return $\Sigma$ (since recording $h$ as defined by $\tmh{h}$ would be cyclic).
+If $s$ is not $\tmh{h}$, then return 
+$(\cO',\cK)$
+where $\cO'$ is $\cO$ with the additional entry $(h,\alpha,s)$.
+\item $\mbox{\constr{SignaKnown}}(t)$: check $t$ is $\beta\eta$-normal
+and that $\Sigma;0;\cdot\vdash t \prop$.
+Let $k$ be the hash root $\tmhr{t}$.
+Assuming $k$ is a the hash root of a known proposition, return $(\cO,\cK')$ where $\cK'$ is $\cK$
+with the additional entry $(k,t)$.
+In order for $k$ to be the hash root of a known proposition, we check that 
+either $k\in \cA$ (so $k$ is the hash root of an axiom of the theory)
+or the test {\func{known\_p}} passes using a generic test {\var{gvkn}} of the signature, theory identifier and $k$ holds.
+The test {\func{known\_p}} passes if either $(k,s)\in\cK$ for some $s$ (so $k$ known in the signature)
+or {\var{gvkn}} holds for the theory identifier and $k$.
+Later when {\func{check\_signaspec}} is used, {\var{gvkn}}
+is instantiated by a test to determine if a certain term address (formed from the theory identifier
+and $k$) is owned as a proposition.
+\end{itemize}
+\item {\func{check\_doc}} checks a document
+and (upon success) returns a global signature.
+The work is done by an auxiliary function {\func{check\_doc\_rec}}
+which keeps up with which signatures have been imported.
+We can define the recursive procedure as follows:
+The empty document returns the empty global signature.
+Otherwise, we recursively call the procedure on the rest of the document
+to obtain a global signature $\Sigma = (\cO,\cK)$.
+Then we handle each of the document item cases as follows:
+\begin{itemize}
+\item $\mbox{\constr{DocSigna}}(h)$ is handled like ${\mbox{\constr{SignaSigna}}}$ in the case of signature specifications.
+\item $\mbox{\constr{DocParam}}(h,\alpha)$ is handled like ${\mbox{\constr{DocParam}}}$ in the case of signature specifications.
+\item $\mbox{\constr{DocDef}}(\alpha,s)$ is handled like ${\mbox{\constr{DocDef}}}$ in the case of signature specifications.
+\item $\mbox{\constr{DocKnown}}(t)$ is handled like ${\mbox{\constr{DocKnown}}}$ in the case of signature specifications.
+\item $\mbox{\constr{DocConj}}(t)$: check that $\Sigma;0;\cdot\vdash t \prop$
+and return the same global signature $\Sigma$.
+Conjectures do not change the signature and cannot be used in the rest of the document.
+\item $\mbox{\constr{DocPfOf}}(t,\cD)$: check that $\Sigma;0;\cdot\vdash t \prop$
+and $\Sigma;0;\cdot\vdash \cD : \bednorm\Sigma{t}$.
+Return $(\cO,\cK')$ where $\cK'$ is $\cK$ with $(\tmhr{t},t)$. That is, $t$ (identified by its hash root)
+is added to the list of known propositions.
+\end{itemize}
+\end{itemize}
+
