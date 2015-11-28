@@ -1257,6 +1257,7 @@ let rec extr_propofpf (thy:theory) sg v cxtm cxpf d =
       check_tp v a;
       All(a,extr_propofpf thy sg v (a::cxtm) (List.map (fun q -> tmshift 0 1 q) cxpf) d1)
   | PLam(p,d1) ->
+      check_tpoftm thy sg v cxtm p Prop;
       let p = tm_beta_eta_delta_norm p sg in
       let q = extr_propofpf thy sg v cxtm (p::cxpf) d1 in
       Imp(p,q)
