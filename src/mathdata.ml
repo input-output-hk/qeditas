@@ -1185,10 +1185,17 @@ and check_tpoftm thy sg v cxtm m a =
   else
     raise CheckingFailure
 
-let rec check_metaprop thy sg v m =
+let rec check_polyprop thy sg v m =
   match m with
-  | TTpAll(m) -> check_metaprop thy sg (v+1) m
+  | TTpAll(m) -> check_polyprop thy sg (v+1) m
   | _ -> check_tpoftm thy sg v [] m Prop
+
+(*** either there's no context and prefix type-foralls are allowed, or it must already be of type Prop ***)
+let check_prop thy sg v cxtm m =
+  if cxtm = [] then
+    check_polyprop thy sg v m
+  else
+    check_tpoftm thy sg v cxtm m Prop
 
 (*** expand all definitions ***)
 let rec tm_delta_norm m sg =
@@ -1261,9 +1268,12 @@ let rec extr_propofpf (thy:theory) sg v cxtm cxpf d =
 	| _ ->
 	    raise CheckingFailure
       end
-  | PTpLam(d1) ->
-      let q = extr_propofpf thy sg (v+1) cxtm cxpf d1 in
-      TTpAll(q)
+  | PTpLam(d1) -> (*** limit this to the case with empty term and hypothesis contexts ***)
+      if cxtm = [] && cxpf = [] then
+	let q = extr_propofpf thy sg (v+1) [] [] d1 in
+	TTpAll(q)
+      else
+	raise CheckingFailure
   | _ -> raise (Failure("Ill-formed Proof Term"))
 and check_propofpf (thy:theory) sg v cxtm cxpf d p = (** assume p is beta eta delta normal ***)
   let q = extr_propofpf thy sg v cxtm cxpf d in
@@ -1287,7 +1297,7 @@ let rec check_theoryspec dl : theory * gsigna  =
   | (ThyAxiom(p)::dr) ->
       let ((tpl,kl1),(defl,kl2)) = check_theoryspec dr in
       if not (tm_norm_p p) then raise NonNormalTerm;
-      check_metaprop (tpl,kl1) (defl,kl2) 0 p; (*** check it in the theory with the prims so far and corresponding signature so far ***)
+      check_prop (tpl,kl1) (defl,kl2) 0 [] p; (*** check it in the theory with the prims so far and corresponding signature so far ***)
       let k = tm_hashroot p in
       ((tpl,k::kl1),(defl,(k,p)::kl2))
   | [] -> (([],[]),([],[]))
@@ -1349,7 +1359,7 @@ let rec check_signaspec_rec gvtp gvkn th thy (str:stree option) dl : gsigna * ha
   | SignaKnown(p)::dr ->
       let ((tmtpl,kl),imported) = check_signaspec_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p p) then raise NonNormalTerm;
-      check_metaprop thy (tmtpl,kl) 0 p;
+      check_prop thy (tmtpl,kl) 0 [] p;
       let k = tm_hashroot p in
       begin
 	match thy with
@@ -1398,7 +1408,7 @@ let rec check_doc_rec gvtp gvkn th (thy:theory) (str:stree option) dl =
   | DocKnown(p)::dr ->
       let ((tmtpl,kl),imported) = check_doc_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p p) then raise NonNormalTerm;
-      check_metaprop thy (tmtpl,kl) 0 p;
+      check_prop thy (tmtpl,kl) 0 [] p;
       let k = tm_hashroot p in
       begin
 	match thy with
@@ -1413,14 +1423,14 @@ let rec check_doc_rec gvtp gvkn th (thy:theory) (str:stree option) dl =
   | DocConj(p)::dr ->
       let ((tmtpl,kl),imported) = check_doc_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p p) then raise NonNormalTerm;
-      check_metaprop thy (tmtpl,kl) 0 p;
+      check_prop thy (tmtpl,kl) 0 [] p;
       (*** We do not check that the conjecture really hasn't yet been proven. ***)
       (*** Note also that conjectures are not put onto the signature. This means a conjecture cannot be used in the rest of the document. ***)
       ((tmtpl,kl),imported)
   | DocPfOf(p,d)::dr ->
       let ((tmtpl,kl),imported) = check_doc_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p p) then raise NonNormalTerm;
-      check_metaprop thy (tmtpl,kl) 0 p;
+      check_prop thy (tmtpl,kl) 0 [] p;
       check_propofpf thy (tmtpl,kl) 0 [] [] d (tm_beta_eta_delta_norm p (tmtpl,kl));
       let k = tm_hashroot p in
       ((tmtpl,(k,p)::kl),imported)
