@@ -13,8 +13,8 @@ We attempt to give enough information in this chapter for someone who wishes to 
 
 The original version of the code for this module was taken from the code for the
 Egal system~\cite{Brown2014},
-but has undergone extensive changes.
-One major difference in the syntax is Qeditas provides explicit support for type variables.
+but has since undergone extensive changes.
+One major difference in the syntax is the explicit support for type variables in Qeditas.
 Support for theories and signatures have also been added, and the type of documents has been modified
 (adding support for importing signatures and declaring conjectures but removing all presentation level items).
 Additionally, the checking functions are parameterized by functions to verify a term
@@ -26,7 +26,7 @@ intended to avoid expanding definitions unnecessarily.
 This code has been deleted and replaced by
 simpler code to expand all definitions during proof checking.
 
-One might argue that it would be safer to use an older, established proof checker for this purpose.
+One might argue that it would be safer to use an older, established proof checker.
 However, experience has shown that even established systems can be vulnerable to ``tricks''
 which can be used to prove what should be a non-theorem.
 For example, on {\tt{proofmarket.org}}~\cite{ProofMarket}
@@ -93,8 +93,8 @@ and returns a term of type $\alpha$.
 a theory. In fact, so far only theories using one base type
 $\iota_0$ have been considered, but the support for multiple
 base types is included in case it is needed later.
-\item ${\mbox{\constr{TpAll}}} \alpha$ means $\Pi \alpha$, binding a type variable. Only types of the form $\Pi\cdots\Pi\alpha$
-where $\alpha$ has no occurrence of a $\Pi$.
+\item ${\mbox{\constr{TpAll}}}(\alpha)$ means $\Pi \alpha$, binding a type variable. Only types of the form $\Pi\cdots\Pi\alpha$
+where $\alpha$ has no occurrence of a $\Pi$ will be used in practice.
 \end{itemize}
 
 The functions {\serfunc{seo\_tp}} and {\serfunc{sei\_tp}} serialize and deserialize types.
@@ -1132,7 +1132,7 @@ or must be proven in the empty term and hypothesis contexts.
 \and
 \inferrule*{\Sigma;v;\Gamma;\Phi\vdash \cD : s\to t\\\Sigma;v;\Gamma;\Phi\vdash \cE : s}{\Sigma;v;\Gamma;\Phi\vdash \cD \cE : t}
 \and
-\inferrule*{\Sigma;v;\alpha,\Gamma;\dbsh{0}{1}{\Phi}\vdash \cD : s}{\Sigma;v;\Gamma;\Phi\vdash \lambda_\alpha \cD : \forall_\alpha s}
+\inferrule*{v\vdash s\stp\\\Sigma;v;\alpha,\Gamma;\dbsh{0}{1}{\Phi}\vdash \cD : s}{\Sigma;v;\Gamma;\Phi\vdash \lambda_\alpha \cD : \forall_\alpha s}
 \and
 \inferrule*{\Sigma;v;\Gamma\vdash s : o\\ \Sigma;v;\Gamma;\bednorm\Sigma{s},\Phi\vdash \cD : t}{\Sigma;v;\Gamma;\Phi\vdash \lambda_s \cD : \bednorm\Sigma{s}\to t}
 \and
