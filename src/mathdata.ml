@@ -1203,7 +1203,7 @@ let rec tm_delta_norm m sg =
   | Ap(m1,m2) -> Ap(tm_delta_norm m1 sg,tm_delta_norm m2 sg)
   | Lam(a,m1) -> Lam(a,tm_delta_norm m1 sg)
   | Imp(m1,m2) -> Imp(tm_delta_norm m1 sg,tm_delta_norm m2 sg)
-  | All(a,m1) -> Lam(a,tm_delta_norm m1 sg)
+  | All(a,m1) -> All(a,tm_delta_norm m1 sg)
   | TTpAp(m1,a) -> TTpAp(tm_delta_norm m1 sg,a)
   | TTpLam(m1) -> TTpLam(tm_delta_norm m1 sg)
   | TTpAll(m1) -> TTpAll(tm_delta_norm m1 sg)
@@ -1341,7 +1341,11 @@ let rec check_signaspec_rec gvtp gvkn th thy (str:stree option) dl : gsigna * ha
       check_ptp 0 a;
       check_tpoftm thy (tmtpl,kl) 0 [] m a;
       let h = tm_hashroot m in
-      (((h,a,Some(m))::tmtpl,kl),imported)
+      begin
+	match m with
+	| TmH(_) -> ((tmtpl,kl),imported) (*** in this case it is not really a definition, skip it ***)
+	| _ -> (((h,a,Some(m))::tmtpl,kl),imported)
+      end
   | SignaKnown(p)::dr ->
       let ((tmtpl,kl),imported) = check_signaspec_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p p) then raise NonNormalTerm;
@@ -1386,7 +1390,11 @@ let rec check_doc_rec gvtp gvkn th (thy:theory) (str:stree option) dl =
       check_ptp 0 a;
       check_tpoftm thy (tmtpl,kl) 0 [] m a;
       let h = tm_hashroot m in
-      (((h,a,Some(m))::tmtpl,kl),imported)
+      begin
+	match m with
+	| TmH(_) -> ((tmtpl,kl),imported) (*** in this case it is not really a definition, skip it ***)
+	| _ -> (((h,a,Some(m))::tmtpl,kl),imported)
+      end
   | DocKnown(p)::dr ->
       let ((tmtpl,kl),imported) = check_doc_rec gvtp gvkn th thy str dr in
       if not (tm_norm_p p) then raise NonNormalTerm;
