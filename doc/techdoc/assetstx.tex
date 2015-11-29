@@ -51,7 +51,12 @@ tree where the asset is stored).
 In case an obligation is not empty, it consists of a triple $(\alpha,n,r)$.
 Here $\alpha$ is a pay address (a p2pkh address or p2sh address) which must
 sign in order to spend the asset.
+(The holder of the asset is the one who can use the asset to stake.
+Hence obligations can be used to ``loan'' an asset to a staker
+without giving the staker the ability to ``spend'' the asset.)
 The integer $n$ is the earliest block height at which the asset can be spent.
+(The intention here is to ``lock'' an asset for a period of time. Such ``locked''
+assets are given preference when staking.)
 The boolean $r$ indicates if the asset is a reward for staking a block.\footnote{Philosophically, this should not be part of the ``obligation,'' but the reward indicator was added late and this was a simple way to include it.}
 Rewards are considered special in the sense that they can be forfeited in the first 6 blocks
 after the reward is issued, if the issuer provably double signs within the next 6 blocks.
