@@ -1,0 +1,9 @@
+The file {\file{qeditasstk.ml}} has code to execute a staking process.
+It creates an executable which is started by {\module{qeditasd}}
+and runs in an independent process. It is sent the block height, target information
+and stake modifier through standard input. It is also sent a list of assets
+which can be used for staking
+and storage assets which can be used to enhance staking.
+The process then keeps checking to see if one of the
+assets leads to a ``hit.'' When it finds a ``hit'' it reports this to
+the parent via standard out.
