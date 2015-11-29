@@ -1,73 +1,144 @@
-\module{net}
-
 {\bf{Warning:}} The networking code is only partially written and may possibly be rewritten completely.
 The information is this chapter is subject to changes in the near future.
 
+The intention of the {\module{net}} module is to create and handle connections
+to remote nodes.
+We briefly describe what exists, but the code is unusable in its current form.
+The networking code should be rethought, redesigned and rewritten from scratch.
+
 \section{State}
 
-{\func{myaddr}}
-{\var{recentledgerroots}}
-{\var{recentblockheaders}}
-{\var{recentcommitments}}
-{\var{recentblockdeltahs}}
-{\var{recentblockdeltas}}
-{\var{recentstxs}}
-{\var{waitingblock}}
+There are a number of variables to keep up with the state of the system.
+It is not clear these variables belong in this module.
+\begin{itemize}
+\item {\var{recentblockheaders}} is a list of recent block headers sorted according to cumulative stake.
+This ensures the head of the list is the recent block header with the most cumulative stake.
+\item {\var{recentledgerroots}} associates ledger roots (hash values) with abbreviations giving where the corresponding {\type{ctre}} has been saved. This is needed to restore the ledger tree into memory when it is needed.
+\item {\var{recentcommitments}} is intended to store what commitments have been made by staking blocks to avoid double signing (signing blocks on two branches stemming from a recent fork).
+\item {\var{recentblockdeltahs}} lists a skeleton form of recent block deltas, where the transactions in the block delta are refered to by their hash.
+\item {\var{recentblockdeltas}} lists recent block deltas.
+\item {\var{recentstxs}} lists recent transactions which may be included in a block.
+\item {\var{waitingblock}} lists block headers which are not considered ``valid,'' but may be valid later (e.g., the time stamp is in the future).
+\item {\var{preconns}} lists connections in the handshake phase before other messages can be exchanged.
+\item {\var{conns}} lists active connections.
+\item {\var{this\_nodes\_nonce}} is a random nonce to prevent nodes from connecting to themselves.
+\end{itemize}
 
-{\var{conns}}
-{\var{preconns}}
-{\var{this\_nodes\_nonce}}
-
-{\func{insertnewblockheader}}
-
-{\exc{Hung}}
-{\exc{RequestRejected}}
-{\exc{IllformedMsg}}
+The function {\func{insertnewblockheader}} inserts a new block header into the sorted
+list {\var{recentblockheaders}}.
+This makes the ``valid'' block header with the most cumulative stake at the head of the
+list. The intention is that blocks should be staked on top of this ``best'' block.
 
 \section{Making Connections}
 
-{\func{extract\_ip\_and\_port}}
-{\func{sethungsignalhandler}}
-{\func{accept\_nohang}}
-{\func{input\_byte\_nohang}}
-{\func{openlistener}}
-{\func{connectpeer}}
-{\func{connectpeer\_socks4}}
+The function {\func{myaddr}} returns the address to optionally listen for connections on.
+This must be specified in the configuration or the node will not listen for connections.
 
-{\func{getfallbacknodes}}
-{\func{initialize\_conn\_accept}}
-{\func{tryconnectpeer}}
-{\func{addknownpeer}}
-{\func{getknownpeers}}
-{\func{loadknownpeers}}
+The function {\func{openlistener}} starts a listener socket to wait for incoming connections.
+
+The function {\func{accept\_nohang}} checks if a node is attempting to make a connection
+without waiting for a connection (i.e., with a timeout).
+
+The exception {\exc{EnoughConnections}} is raised if a connection is being rejected
+because there are enough connections already.
+The exception {\exc{RequestRejected}} may be raised if the connection fails, e.g.,
+if the SOCKS4 protocol indicates a rejection.
+
+The functions {\func{connectpeer}} and {\func{connectpeer\_socks4}}
+try to initiate a connection to a listening peer.
+The function {\func{tryconnectpeer}} searches for a known peer to try to connect to.
+The function {\func{getfallbacknodes}} lists fallback nodes to try if no other connection works.
+
+The function {\func{initialize\_conn\_accept}} is called after the listener finds
+a node trying to connect.
+Both put the initial connection onto {\var{preconns}}
+and attempt to perform the initial handshake. Only after the initial handshake
+succeeds does the connection become a legitimate connection listed
+in {\var{conns}}.
+
+The functions
+{\func{addknownpeer}},
+{\func{getknownpeers}},
+{\func{loadknownpeers}} and
 {\func{saveknownpeers}}
+are to keep up with information about peers in the recent past.
 
-\section{Messages}
+The function {\func{extract\_ip\_and\_port}} extracts an ip-address and a port number
+from a string, with a boolean to indicate if the address is ipv6.
 
-{\type{msg}}
+The function {\func{sethungsignalhandler}} sets the timeout handler to raise the exception {\exc{Hung}}
+upon timeout. It is not clear why this should be exported.
 
-internal serialization and deserialization functions {\serfunc{seo\_msg}} and {\serfunc{sei\_msg}}
+\section{Messages and Communication}
 
-{\type{pendingcallback}}
+Messages are elements of type {\type{msg}}.
+The kinds of messages largely follow Bitcoin's messages, except there
+are additional messages:
+\begin{itemize}
+\item ${\constr{GetFramedCTree}}(v,b,t,f)$
+gives a block height $b$, a compact tree $t$ (of type {\type{ctre}})
+and a remote frame $f$ (of type {\type{rframe}}).
+The intention is to claim that $t$ is the approximation of the compact tree at height $b$
+where $f$ outlines the approximation.
+The 32-bit integer $v$ is a ``version number'' which is only included in case it's needed later.
+(Bitcoin messages often have such a version number.)
+\item ${\constr{MCTree}}(v,t)$ is the compact tree $t$ (of type {\type{ctre}}).
+The 32-bit integer $v$ is a ``version number'' which is only included in case it's needed later.
+\item ${\constr{Checkpoint}}(b,h)$ a ``checkpoint'' that the block at height $b$ has hash $h$.
+\item ${\constr{AntiCheckpoint}}(b,h)$ an ``anticheckpoint'' that the block at height $b$ does not have hash $h$.
+\end{itemize}
 
+The exception {\exc{IllformedMsg}} is raised if something is wrong with the format of a message.
+
+The function {\func{send\_msg}} sends a message through a channel to another node.
+The function {\func{send\_reply}} sends a message through a channel to another node
+and marks it as a reply to a previous message.
+
+The function {\func{input\_byte\_nohang}} listens for a byte with a timeout (returning
+{\val{None}} if no byte is available to be read).
+The function {\func{rec\_msg\_nohang}} tried to receive a message with two timeouts.
+The first timeout indicates how long to wait before a message begins
+and the second timeout indicates how long to try to read a message after
+it begins but until it ends.
+
+The recursive {\type{pendingcallback}} type gives a way of specifying
+what should happen if a reply is received.
+
+The funciton {\func{broadcast\_inv}} broadcasts an inventory message to every connection.
+
+The function {\func{handle\_msg}} is intended to handle messages received,
+but most cases are unwritten.
+
+The function {\func{try\_requests}} searches through the current connections
+to try to find one from which it can request some data.
+
+The functions {\func{handle\_orphans}} and {\func{handle\_delayed}}
+are intended to look back at orphan block headers and block headers which
+were delayed for some reason (e.g., if the time stamp was too far in the future).
+These were written because in testing sometimes a branch with the most cumulative stake
+would not be communicated because an earlier block header had been delayed or rejected.
+
+% {\type{msg}}
+
+% internal serialization and deserialization functions {\serfunc{seo\_msg}} and {\serfunc{sei\_msg}}
+The function {\func{send\_initial\_inv}} is called when a connection is established (after the handshake)
+to send the inventory.
 
 \section{Connection State}
 
-{\type{connstate}}
-
-{\exc{EnoughConnections}}
-
-\section{Communication}
-
-{\func{broadcast\_inv}}
-{\func{send\_msg}}
-{\func{send\_reply}}
-{\func{send\_initial\_inv}}
-{\func{rec\_msg\_nohang}}
-{\func{handle\_msg}}
-{\func{try\_requests}}
-{\func{handle\_orphans}}
-{\func{handle\_delayed}}
+The type {\type{connstate}} consists of a number of mutable fields
+which represent the state of a connection.
+This includes whether the node is alive,
+when the last message was received,
+what requests are pending,
+the known inventory of the remote node
+and what inventory has been sent, what inventory has been requested.
+It also has the infrastructure to remember the remote frame of the other node
+(indicating which parts of the ledger tree is being followed)
+as well as the joins of remote frames one or two hops away. This was
+intended to help find a node from which a certain part of the tree could be requested.
+Other fields keep up with how much of the history of the block chain the remote node
+has, and how up to date the remote node is.
 
 
 
