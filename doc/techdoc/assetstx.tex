@@ -1,28 +1,14 @@
-The module \module{assets} defines a type {\type{asset}} of assets,
-along with code to support the inputs and outputs of transactions.
+The module \module{assets} defines a type {\type{asset}}.
+It also contains code to support the inputs and outputs of transactions.
 The module \module{tx} defines a type {\type{tx}} of transactions
 and a type {\type{stx}} of signed transactions,
 as well as code for checking the validity of transactions
 and their signatures.
+``Validity'' of a transaction is a weak form of correctness
+that a transaction must satisfy before asking if it is supported by the current ledger.
 
 \section{Assets}
 
-{\bf{Note:}} Unit tests for the {\module{assets}} module are in {\file{assetsunittests.ml}}
-in the {\file{src/unittests}}
-directory in the {\branch{testing}} branch.
-These unit tests give a number of examples demonstrating how the functions described below should behave.
-
-{\bf{Note:}} The Coq module {\coqmod{Assets}} is intended to correspond to {\module{assets}}.
-There are Coq types {\coqtype{preasset}}, {\coqtype{obligation}} and {\coqtype{asset}}
-corresponding to the types with the same names defined in OCaml.
-One difference is that in the OCaml code an obligation also keeps a boolean indicating if the
-asset is a reward since this was needed to implement forfeiture of rewards in case a staker
-double signs.
-Readers can examine the formal properties proven in {\coqmod{Assets}} to have a better
-idea of what properties corresponding OCaml functions should satisfy.
-For more information, see~\cite{White2015b}, although preassets in the version described there are restricted to currency units.
-
-The {\module{assets}} module defines the type {\type{asset}} of assets.
 An asset consists of four pieces of information:
 a hash value (the {\defin{asset id}}),
 a 64-bit integer giving the block in which the asset was published (the {\defin{birthday}}),
@@ -39,6 +25,21 @@ Assets in the initial distribution are given birthday $0$
 and the first block will be considered to have block height $1$.
 Obligations and preassets are described below.
 
+{\bf{Note:}} Unit tests for the {\module{assets}} module are in {\file{assetsunittests.ml}}
+in the {\file{src/unittests}}
+directory in the {\branch{testing}} branch.
+These unit tests give a number of examples demonstrating how the functions described below should behave.
+
+{\bf{Note:}} The Coq module {\coqmod{Assets}} is intended to correspond to {\module{assets}}.
+There are Coq types {\coqtype{preasset}}, {\coqtype{obligation}} and {\coqtype{asset}}
+corresponding to the types with the same names defined in OCaml.
+One difference is that in the OCaml code an obligation also keeps a boolean indicating if the
+asset is a reward since this was needed to implement forfeiture of rewards in case a staker
+double signs.
+Readers can examine the formal properties proven in {\coqmod{Assets}} to have a better
+idea of what properties corresponding OCaml functions should satisfy.
+For more information, see~\cite{White2015b}, although preassets in the version described there are restricted to currency units.
+
 We first consider the type {\type{obligation}}:
 \begin{verbatim}
 type obligation = (payaddr * int64 * bool) option
@@ -51,7 +52,7 @@ In case an obligation is not empty, it consists of a triple $(\alpha,n,r)$.
 Here $\alpha$ is a pay address (a p2pkh address or p2sh address) which must
 sign in order to spend the asset.
 The integer $n$ is the earliest block height at which the asset can be spent.
-The boolean $r$ indicates if the asset is a reward for staking a block.\footnote{Philosphically, this should not be part of the ``obligation,'' but the reward indicator was added late and this was a simple way to include it.}
+The boolean $r$ indicates if the asset is a reward for staking a block.\footnote{Philosophically, this should not be part of the ``obligation,'' but the reward indicator was added late and this was a simple way to include it.}
 Rewards are considered special in the sense that they can be forfeited in the first 6 blocks
 after the reward is issued, if the issuer provably double signs within the next 6 blocks.
 
@@ -73,7 +74,7 @@ A bounty can be spent (and transformed into currency) by the proposition owner
 or negated proposition owner.
 Typically neither the proposition nor its negation have been proven in the theory
 (and so it has neither a proposition owner nor a negated proposition owner)
-when the bounty is placed.\footnote{The ``proposition owner'' is determined by the (nonempty) obligation at the proposition ownership asset held at the term address, if there is one. Likewise, the ``negated proposition owner'' is determined by the obligation at the negated proposition ownership asset held at the term address, if there is one.}
+when the bounty is placed.\footnote{The ``proposition owner'' is determined by the (nonempty) obligation at the proposition ownership asset held at the term address, if there is such an asset. Likewise, the ``negated proposition owner'' is determined by the obligation at the negated proposition ownership asset held at the term address, if there is such an asset.}
 If someone publishes a document in which the proposition is proven,
 the publisher declares the proposition owner.
 Likewise, if someone publishes a document in which the negation of the proposition is proven,
@@ -107,15 +108,15 @@ in a theory.
 Again, the ``owner'' is determined by the corresponding obligation.
 This kind of asset is only to facilitate the collection of a bounty by disproving a conjecture
 with a bounty.
-\item ${\constr{RightsObj}}(\alpha,n)$ corresponds to $n$ assets to use the object
-with term address $\alpha$.
+\item ${\constr{RightsObj}}(\alpha,n)$ corresponds to the right to use
+the object with term address $n$ times.
 Some or all of these rights will be consumed when publishing a document which imports the object
 as a parameter (omitting the definition).
 Note that to use objects within a theory, rights may be required for the
 pure object (independent of the theory) and for the object within the theory.
 These are two different term addresses.
-\item ${\constr{RightsProp}}(\alpha,n)$ corresponds to $n$ assets to use the proposition
-with term address $\alpha$.
+\item ${\constr{RightsProp}}(\alpha,n)$ corresponds to the right to use the proposition
+with term address $\alpha$ $n$ times.
 Some or all of these rights will be consumed when publishing a document which imports the proposition
 as a known (without proof).
 Note that to use propositions within a theory, rights may be required for the
@@ -125,7 +126,7 @@ These are two different term addresses.
 A publication address is determined by the (privately known) publication with a (privately known) nonce.
 A marker must be at the publication address (as an {\defin{intention to publish}})
 for 144 blocks (see {\var{intention\_minage}}) before the actual publication can be published.
-The idea is that the true publisher of the document publishes the marker roughly a day before
+The idea is that the true author of the document publishes the marker roughly a day before
 revealing the publication itself. The publication is revealed in the transaction publishing it.
 At that point, a plagiarist could take the publication, compute a new nonce, publish a new marker
 and then try to publish their copy. However, they would need to wait at least 144 blocks before their
@@ -134,13 +135,14 @@ The order of publication is important since this may determine ownership of
 newly defined objects and newly proven propositions.
 \item ${\constr{TheoryPublication}}(\alpha,\nu,\tau)$ is a preasset
 for publishing a theory specification ({\type{theoryspec}}) $\tau$.
-The pay address $\alpha$ identifies the publisher and the corresponding transaction
+The pay address $\alpha$ identifies the author (possibly ``publisher'' is more accurate)
+and the corresponding transaction
 creating such an asset must be signed by $\alpha$.
 The hash value $\nu$ is a nonce to determine the publication address for the marker
 which must be published 144 blocks before the publication can be published.
 \item ${\constr{SignaPublication}}(\alpha,\nu,h,\Sigma)$ is a preasset
 for publishing a signature specification ({\type{signaspec}}) $\Sigma$.
-The pay address $\alpha$ identifies the publisher and the corresponding transaction
+The pay address $\alpha$ identifies the author and the corresponding transaction
 creating such an asset must be signed by $\alpha$.
 The hash value $\nu$ is a nonce to determine the publication address for the marker
 which must be published 144 blocks before the publication can be published.
@@ -150,7 +152,7 @@ to use the object or proposition.
 (The empty theory is identified by giving {\val{None}} for $h$.)
 \item ${\constr{DocPublication}}(\alpha,\nu,h,\Delta)$ is a preasset
 for publishing a document ({\type{doc}}) $\Delta$.
-The pay address $\alpha$ identifies the publisher and the corresponding transaction
+The pay address $\alpha$ identifies the author and the corresponding transaction
 creating such an asset must be signed by $\alpha$.
 The hash value $\nu$ is a nonce to determine the publication address for the marker
 which must be published 144 blocks before the publication can be published.
@@ -179,9 +181,15 @@ The type {\type{addr\_preasset}} plays the role of a transaction output and is d
 \begin{verbatim}
 type addr_preasset = addr * (obligation * preasset)
 \end{verbatim}
-While checking a transaction is valid the input assets are looked up from the ledger tree
-using the asset identifier. This expands the inputs to be of addresses and assets
-and the type {\type{addr\_asset}} is included to represent such an expanded input:
+The inputs and outputs of a transaction can be elaborated into a pair of an address with an asset
+in certain situations.
+While checking a transaction is supported the input assets are looked up from the ledger tree
+using the asset identifier. 
+A transaction output gives the obligation and preasset.
+When a transaction is being included in a block at a given height,
+we know the birthday and can use this (along with the asset identifier which 
+is derived from the transaction) to form the asset.
+The type {\type{addr\_asset}} is included to represent such an elaborated input or output.
 \begin{verbatim}
 type addr_asset = addr * asset
 \end{verbatim}
@@ -212,36 +220,189 @@ and
 
 The purpose of the remaining functions exported by the {\module{assets}} module are as follows:
 \begin{itemize}
-\item {\func{new\_assets}}
-\item {\func{remove\_assets}}
-\item {\func{get\_spent}}
-\item {\func{add\_vout}}
-\item {\func{preasset\_value}}
-\item {\func{asset\_value}}
-\item {\func{asset\_value\_sum}}
-\item {\func{output\_signaspec\_uses\_objs}}
-\item {\func{output\_signaspec\_uses\_props}}
-\item {\func{output\_doc\_uses\_objs}}
-\item {\func{output\_doc\_uses\_props}}
-\item {\func{output\_creates\_objs}}
-\item {\func{output\_creates\_props}}
-\item {\func{output\_creates\_neg\_props}}
-\item {\func{output\_markers}}
-\item {\func{rights\_out\_obj}}
-\item {\func{rights\_out\_prop}}
-\item {\func{count\_obj\_rights}}
-\item {\func{count\_prop\_rights}}
-\item {\func{count\_rights\_used}}
-\item {\func{obj\_rights\_mentioned}}
-\item {\func{prop\_rights\_mentioned}}
-\item {\func{rights\_mentioned}}
-\item {\func{units\_sent\_to\_addr}}
-\item {\func{out\_cost}}
+\item {\func{new\_assets}} takes a birthday $b$, an address $\alpha$,
+an {\type{addr\_preasset}} list (transaction outputs), a hash value (which should
+be the hash of the transaction)
+and an output index (which should be $0$ in the initial call)
+and returns a list of assets which would be put into address $\alpha$
+if the transaction is published at block height $b$.
+The transaction hash and output index are used to compute the asset ids.
+\item {\func{remove\_assets}} takes an asset list and a list of asset identifiers (the ``spent list'') and
+returns the asset list after removing the assets with ids in the spent list.
+\item {\func{get\_spent}} takes an address $\alpha$ and an {\type{addr\_assetid}} list (transaction inputs)
+and returns a list of asset ids being spent from the given address.
+\item {\func{add\_vout}} is similar to {\func{new\_assets}} except it is not specific to an address.\footnote{It might make sense to delete one of these functions in favor of the other.}
+It takes a birthday $b$, a hash value (which should be the hash of the transaction),
+an {\type{addr\_preasset}} list (transaction outputs)
+and an output index (which should be $0$ in the initial call),
+and returns an {\type{addr\_asset}} list consisting of the fully elaborated output assets
+(assuming the transaction is published at block height $b$).
+\item {\func{preasset\_value}} returns the optional number of cants that a preasset is worth.
+Only currency units and bounties are worth cants. For other preassets, {\val{None}} is returned.
+\item {\func{asset\_value}} returns the value of the underlying preasset.
+\item {\func{asset\_value\_sum}} returns the sum of the value of a list of assets (where {\val{None}} is counted as $0$).
+\item {\func{output\_signaspec\_uses\_objs}} takes
+an {\type{addr\_preasset}} list (transaction outputs)
+and returns a list of pairs of term addresses.
+For each object imported as a parameter by a signature specification being published as one of the outputs,
+$(\alpha,\beta)$ will be on the output list
+where $\alpha$ is the term address given by the hash root $h$\footnote{Recall that term addresses are actually hash values, so $\alpha = h$.}
+of the term which was used to define the object
+and $\beta$ is the term address given by hashing $h$ with the type of the object and with the identifier of the current theory
+(and then tagging this with $32$ to avoid accidental collision).
+If an object is imported by multiple
+different signatures being published, then the pair will be on the list multiple times.
+The information is obtained by calling {\func{signaspec\_uses\_objs}} on appropriate preassets.
+\item {\func{output\_signaspec\_uses\_props}} takes
+an {\type{addr\_preasset}} list (transaction outputs)
+and returns a list of pairs of term addresses.
+For each proposition imported as a known by a signature specification being published as one of the outputs,
+$(\alpha,\beta)$ will be on the output list
+where $\alpha$ is the term address given by the hash root $h$
+of the proposition
+and $\beta$ is the term address given by hashing $h$ with the identifier of the current theory
+(and then tagging this with $33$ to avoid accidental collision).
+If a proposition is imported by multiple
+different signatures being published, then the pair will be on the list multiple times.
+The information is obtained by calling {\func{signaspec\_uses\_props}} on appropriate preassets.
+\item {\func{output\_doc\_uses\_objs}} takes
+an {\type{addr\_preasset}} list (transaction outputs)
+and returns a list of pairs of term addresses.
+For each object imported as a parameter by a document being published as one of the outputs,
+$(\alpha,\beta)$ will be on the output list
+where $\alpha$ is the term address given by the hash root $h$
+of the term which was used to define the object
+and $\beta$ is the term address given by hashing $h$ with the type of the object and with the identifier of the current theory
+(and then tagging this with $32$ to avoid accidental collision).
+If an object is imported by multiple
+different documents being published, then the pair will be on the list multiple times.
+The information is obtained by calling {\func{doc\_uses\_objs}} on appropriate preassets.
+\item {\func{output\_doc\_uses\_props}} takes
+an {\type{addr\_preasset}} list (transaction outputs)
+and returns a list of pairs of term addresses.
+For each proposition imported as a known by a document being published as one of the outputs,
+$(\alpha,\beta)$ will be on the output list
+where $\alpha$ is the term address given by the hash root $h$
+of the proposition
+and $\beta$ is the term address given by hashing $h$ with the identifier of the current theory
+(and then tagging this with $33$ to avoid accidental collision).
+If a proposition is imported by multiple
+different document being published, then the pair will be on the list multiple times.
+The information is obtained by calling {\func{doc\_uses\_props}} on appropriate preassets.
+\item {\func{output\_creates\_objs}} takes
+an {\type{addr\_preasset}} list (transaction outputs)
+and returns a list of triples $(t,h,k)$
+identifying objects defined in a document being published as one of the outputs.
+Here $t$ is the (optional) hash value identifier of the theory in which the document lives,
+$h$ is hash root of the term defining the object
+and $k$ is the hash of the type of the object.
+(The term address of the pure object will be $h$
+and the term address of the object in the theory will be the hash of
+$h$ with $t$, $k$ and the tag $32$.)
+If an object is created by multiple
+different documents being published, then the triple will be on the list multiple times.
+The information is obtained by calling {\func{doc\_creates\_objs}} on appropriate preassets.
+If the pure term address for a created object is unowned,
+then it is new and must be given an owner (both as a pure object
+and as an object within the theory) with the same transaction
+publishing the document.
+If the pure term address for a created object is owned,
+but the term address within the theory is unowned, then
+the object is new for the theory and the term address within the theory
+must be given an owner (as an object) with the same transaction
+publishing the document.
+\item {\func{output\_creates\_props}} takes
+an {\type{addr\_preasset}} list (transaction outputs)
+and returns a list of pairs $(t,h)$
+identifying propositions which are known as the result of a publication in the outputs.
+Usually, this will mean $t$ is the (optional) hash value identifier of the theory in which the document lives
+and $h$ is the hash root of a proposition proven in a document being published.
+Alternatively, a pair $(t,h)$ can be included due to an axiom being assumed in a newly published theory
+specification. In this case, $t$ is the hash value identifier of the theory derived from the
+new theory specification and $h$ is the hash root of one of the propositions given as an axiom of the theory.
+Again, multiple publications may result in $(t,h)$ being included multiple times.
+The function uses {\func{doc\_creates\_props}}.
+If the pure term address for a created proposition is unowned,
+then it is new and must be given an owner (both as a pure proposition
+and as a proposition within the theory) with the same transaction
+publishing the document.
+If the pure term address for a created proposition is owned,
+but the term address within the theory is unowned, then
+the proposition is new for the theory and the term address within the theory
+must be given an owner (as a proposition) with the same transaction
+publishing the document.
+\item {\func{output\_creates\_neg\_props}} takes
+an {\type{addr\_preasset}} list (transaction outputs)
+and returns a list of pairs $(t,h)$
+identifying propositions whose negations are proven in a document published in the outputs.
+Here this means there is a document being published in the theory identified by the
+(optional) hash value $t$
+and a proposition $\neg s$\footnote{Here $\neg s$ actually means literally negation ($\lambda_o x_0\to\bot$) applied to $s$ or $s\to\bot$ where $\bot$ is $\forall_o x_0$.}
+is proven in the document and $h$ is the hash root of $s$.
+The information is obtained by calling {\func{doc\_creates\_neg\_props}} on appropriate preassets.
+There is no requirement to declare an owner for a created negated proposition.
+Negated propositions cannot be ``used'' in the sense that an object or proposition can
+be used. The only purpose for declaring ownership of a negated proposition is to collect a bounty.
+\item {\func{rights\_out\_obj}} takes an {\type{addr\_preasset}} list (transaction outputs)
+and a term address $\alpha$ and sums the number of rights to use $\alpha$ as an object
+created by the outputs.
+\item {\func{rights\_out\_prop}} takes an {\type{addr\_preasset}} list (transaction outputs)
+and a term address $\alpha$ and sums the number of rights to use $\alpha$ as a proposition
+created by the outputs.
+\item {\func{count\_obj\_rights}} takes a list of assets and a term address $\alpha$
+and sums the number of rights to use $\alpha$ as an object contained in the asset list.
+\item {\func{count\_prop\_rights}} takes a list of assets and a term address $\alpha$
+and sums the number of rights to use $\alpha$ as a proposition contained in the asset list.
+\item {\func{count\_rights\_used}} takes list of pairs of term addresses and a term address $\alpha$
+and counts the number of times $\alpha$ occurs as one of the pairs. (Technically it counts
+how many times $\alpha$ is at least one of the pairs, but in practice $(\alpha,\alpha)$ will
+never occur.)
+The purpose is to determine how many times $\alpha$ is ``used'' by publications
+given in outputs of a transaction.
+\item {\func{obj\_rights\_mentioned}} takes an {\type{addr\_preasset}} list (transaction outputs)
+and returns a list of term addresses.
+A term address is included in the output if
+object rights for it are being explicitly output
+(as {\constr{RightsObj}} preassets)
+or if the object is being used in a document being published.
+(We do not count uses in signature specification publications since
+a signature specifications will only be allowed if rights are not required.)
+\item {\func{prop\_rights\_mentioned}} takes an {\type{addr\_preasset}} list (transaction outputs)
+and returns a list of term addresses.
+A term address is included in the output if
+proposition rights for it are being explicitly output
+(as {\constr{RightsProp}} preassets)
+or if the proposition is being used in a document being published.
+(We do not count uses in signature specification publications since
+a signature specifications will only be allowed if rights are not required.)
+\item {\func{rights\_mentioned}} combines the results of {\func{obj\_rights\_mentioned}}
+and {\func{prop\_rights\_mentioned}} to give a list of all term addresses
+where rights are either being output or may be consumed to publish a document.
+\item {\func{units\_sent\_to\_addr}} takes an address $\beta$
+and an {\type{addr\_preasset}} list (transaction outputs)
+and sums the value of the currency units being sent to $\beta$.
+The purpose of this is to facilitate the purchase of rights by paying $\beta$.
+\item {\func{out\_cost}} takes an {\type{addr\_preasset}} list (transaction outputs)
+and sums the total cost of publishing the transaction.
+This includes the value of all currency and bounty assets created by the output
+as well as the burn cost required to publish theory specifications
+and signature specifications.
 \end{itemize}
 
 \section{Transactions}
 
-\module{tx}
+The module \module{tx} defines a type {\type{tx}} for transactions,
+a type {\type{stx}} for signated transactions
+and functions for testing the validity of transactions and signed transactions.
+Here {\defin{validity}} of a transaction refers only to properties that
+can be checked without reference to the state of the ledger.
+For properties that require the ledger state, we will speak of {\defin{support}}
+for a transaction (see Chapter~\ref{chap:ctre}).
+There is a slight exception, however. We check validity of input signatures 
+({\func{check\_tx\_in\_signatures}}) of
+a transaction relative to a list of assets being spent.
+These assets would need to be looked up in the ledger
+since the transaction only mentions the asset identifiers.
 
 {\bf{Note:}} Unit tests for the {\module{tx}} module are in {\file{txunittests.ml}}
 in the {\file{src/unittests}}
@@ -254,8 +415,24 @@ Readers can examine the formal properties proven in {\coqmod{Transactions}} to h
 idea of what properties corresponding OCaml functions should satisfy.
 For more information, see~\cite{White2015b}.
 
-{\type{tx}}
-{\type{stx}}
+The type {\type{tx}} of transactions is simply defined as a pair of
+an {\type{addr\_assetid}} list (a list of pairs of addresses and hash value asset ids)
+and an {\type{addr\_preasset}} list (a list of addresses associated with an obligation and a preasset).
+\begin{verbatim}
+type tx = addr_assetid list * addr_preasset list
+\end{verbatim}
+
+The type {\type{stx}} of signed transactions is a transaction associated
+with two lists of generalized signatures ({\type{gensignat}}).
+\begin{verbatim}
+type stx = tx * (gensignat list * gensignat list)
+\end{verbatim}
+The first list gives ``input'' signatures and the second list gives the ``output'' signatures.
+The ``input'' signatures are required to spend or move the assets in the input.
+The ``output'' signatures are for the authors of publications.
+(Without these ``output'' signatures, a plagiarist could create his own transaction
+with someone elses publications and use his transaction to assign ownership of
+new objects and propositions.)
 
 The serialization and deserialization functions are
 {\serfunc{seo\_tx}},
@@ -264,16 +441,53 @@ The serialization and deserialization functions are
 and
 {\serfunc{sei\_stx}}.
 
+We briefly describe the following exported functions:
 \begin{itemize}
-\item {\func{hashtx}}
-\item {\func{tx\_inputs}}
-\item {\func{tx\_outputs}}
-\item {\func{no\_dups}}
-\item {\func{tx\_inputs\_valid}}
-\item {\func{tx\_outputs\_valid}}
-\item {\func{tx\_valid}}
-\item {\func{tx\_signatures\_valid}}
-\item {\func{txout\_update\_ottree}}
-\item {\func{txout\_update\_ostree}}
+\item {\func{hashtx}} hashes a transaction, giving the identifier for the transaction.
+Note that this does not depend on signatures, and so transaction malleability is not an issue.
+\item {\func{tx\_inputs}} is a projection function giving the input list of a transaction.
+\item {\func{tx\_outputs}} is a projection function giving the output list of a transaction.
+\item {\func{no\_dups}} is simply a helper function to ensure a list is duplicate free.\footnote{This is simply exported because the same function is required in the {\module{block}} module to ensure that no transaction is listed more than once in a block. As it has nothing to do with transactions, it should be moved to a more generic module imported by both {\module{tx}} and {\module{block}}.}
+\item {\func{tx\_inputs\_valid}} takes a transaction input list
+and checks that there is at least one input and there are no duplicate inputs.
+\item {\func{tx\_outputs\_valid}} takes a transaction output list
+and checks that it is valid in that the following conditions hold:
+\begin{enumerate}
+\item At most one owner (as an object or proposition) is declared for each term address.\footnote{Note that it is legal for one term address to obtain an owner as an object and another owner as a proposition. In fact, this should be common for pure terms. For example, the term $\forall_o x_0\to x_0$ (or $\top$) will have
+a hash root $h_\top$. This can be both defined and owned as an object as well as proven and owned as a proposition.}
+\item Each preasset is sent to an appropriate kind of address.
+Ownership preassets are sent to term addresses
+and publications and markers are sent to publication addresses.\footnote{This should probably be extended to ensure currency units and rights are only sent to pay addresses and bounties are only sent to term addresses.}
+\end{enumerate}
+\item {\func{tx\_valid}} checks that both the inputs and outputs are valid in the sense above.
+\item {\func{tx\_signatures\_valid}} takes a block height $b$, an asset list
+and a signed transaction and checks that the input signatures and output signatures
+are valid.
+The work is partitioned in {\func{check\_tx\_in\_signatures}}
+to check the input signatures
+and {\func{check\_tx\_out\_signatures}}
+to check the output signatures.
+\begin{itemize}
+\item {\func{check\_tx\_in\_signatures}} ensures that for each input
+there is an appropriate input signature. Here there are two possibilities.
+There could be a signature permitting the spending of the asset ({\func{check\_spend\_obligation}})
+or a signature permitting the movement of the asset ({\func{check\_move\_obligation}}).
+A signature permitting the spending of the asset is either a signature
+by the pay address in the obligation (assuming the appropriate block height has been reached)
+or by the address where the asset is held if there is no obligation.\footnote{The obligation {\val{None}} defaults
+to being the address where the asset is held with no block height requirement.}
+A signature permitting the movement of the asset is by the address where the asset is held (assuming it is
+a pay address) and is only allowed if there an output with exactly the same obligation and preasset
+as the asset in question.
+Essentially this allows the ``movement'' of an asset out of an address to a new address.\footnote{This could mitigate the effect of someone ``spamming'' someone else's address with unwanted and unowned assets.}
+\item {\func{check\_tx\_out\_signatures}} ensures the authors of all publications
+have signed the transaction. Note that the asset list is not required here.
+\end{itemize}
+\item {\func{txout\_update\_ottree}} takes a transaction output list
+and uses it to update the current (possibly empty) {\type{ttree}} by including any new
+theories created by publishing theory specifications.
+\item {\func{txout\_update\_ostree}} takes a transaction output list
+and uses it to update the current (possibly empty) {\type{stree}} by including any new
+signatures created by publishing signature specifications.
 \end{itemize}
 
