@@ -128,8 +128,9 @@ and returns a hash value (known to not be $\bot$).
 
 In addition, various types of addresses are defined.
 Fundamentally there are four kinds of addresses:
-{\type{p2pkhaddr}} (pay to public key hash addresses), {\type{p2shaddr}} (pay to script hash addresses),
-{\type{termaddr}} (term addresses) and {\type{pubaddr}} (publication addresses).
+{\type{p2pkhaddr}} (pay to public key hash addresses, a.k.a., {\defin{p2pkh addresses}}),
+{\type{p2shaddr}} (pay to script hash addresses, a.k.a., {\defin{p2sh addresses}}),
+{\type{termaddr}} ({\defin{term addresses}}) and {\type{pubaddr}} ({\defin{publication addresses}}).
 Each of these types is defined the same way as hash values (as 5 32-bit integers)
 and so an object of one of these types can be used as an object of another.
 \begin{itemize}
@@ -171,7 +172,7 @@ A publication address corresponds to the hash root of a published document, theo
 In addition to the four basic kinds of addresses, there are two other types of addresses:
 \begin{itemize}
 \item {\type{payaddr}}
-The type {\type{payaddr}} (of pay addresses) is the disjoint sum of the types {\type{p2pkhaddr}} and {\type{p2shaddr}}.
+The type {\type{payaddr}} (of {\defin{pay addresses}}) is the disjoint sum of the types {\type{p2pkhaddr}} and {\type{p2shaddr}}.
 This is implemented by taking a boolean along with 8 32-bit integers.
 The 8 32-bit integers is a hash value representing either a {\type{p2pkhaddr}}
 or a {\type{p2pkhaddr}}.

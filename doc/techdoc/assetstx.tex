@@ -1,10 +1,11 @@
-\module{assets}
-\module{tx}
-
+The module \module{assets} defines a type {\type{asset}} of assets,
+along with code to support the inputs and outputs of transactions.
+The module \module{tx} defines a type {\type{tx}} of transactions
+and a type {\type{stx}} of signed transactions,
+as well as code for checking the validity of transactions
+and their signatures.
 
 \section{Assets}
-
-\module{assets}
 
 {\bf{Note:}} Unit tests for the {\module{assets}} module are in {\file{assetsunittests.ml}}
 in the {\file{src/unittests}}
@@ -21,14 +22,178 @@ Readers can examine the formal properties proven in {\coqmod{Assets}} to have a 
 idea of what properties corresponding OCaml functions should satisfy.
 For more information, see~\cite{White2015b}, although preassets in the version described there are restricted to currency units.
 
+The {\module{assets}} module defines the type {\type{asset}} of assets.
+An asset consists of four pieces of information:
+a hash value (the {\defin{asset id}}),
+a 64-bit integer giving the block in which the asset was published (the {\defin{birthday}}),
+an {\type{obligation}} (indicating who controls the asset)
+and a {\type{preasset}} (determining the kind of asset).
+In the case of an asset in the initial distribution,
+the asset id is the 160-bit hash value corresponding to the p2pkh or p2sh address.
+(Since no p2pkh or p2sh addresses in the snapshot had the same 160-bit address,
+these asset ids are unique.)
+In the case of an asset created as the output of a transaction,
+the asset id is formed from hashing the transaction id paired with the index of the output
+creating the identifier.
+Assets in the initial distribution are given birthday $0$
+and the first block will be considered to have block height $1$.
+Obligations and preassets are described below.
+
+We first consider the type {\type{obligation}}:
+\begin{verbatim}
+type obligation = (payaddr * int64 * bool) option
+\end{verbatim}
+Note that an
+obligation may be empty, which usually means the address that {\defin{holds}}
+the asset can spend it (here {\defin{holds}} refers to the address in the ledger
+tree where the asset is stored).
+In case an obligation is not empty, it consists of a triple $(\alpha,n,r)$.
+Here $\alpha$ is a pay address (a p2pkh address or p2sh address) which must
+sign in order to spend the asset.
+The integer $n$ is the earliest block height at which the asset can be spent.
+The boolean $r$ indicates if the asset is a reward for staking a block.\footnote{Philosphically, this should not be part of the ``obligation,'' but the reward indicator was added late and this was a simple way to include it.}
+Rewards are considered special in the sense that they can be forfeited in the first 6 blocks
+after the reward is issued, if the issuer provably double signs within the next 6 blocks.
+
+There are 11 kinds of {\defin{assets}}, as determined
+by the corresponding {\defin{preasset}}: currency units, bounties, object ownership,
+proposition ownership, negated proposition ownership,
+object rights, proposition rights, markers,
+theory publications, signature publications and document publications.
+The type {\type{preasset}} consists of the following 11 corresponding constructors:
 \begin{itemize}
-\item {\type{obligation}}
-\item {\type{preasset}}
-\item {\type{asset}}
-\item {\type{asset\_assetid}}
-\item {\type{asset\_preasset}}
-\item {\type{addr\_asset}}
+\item ${\constr{Currency}}(n)$ represents $n$ cants of currency units, where $n$ is a 64-bit integer.
+A {\defin{cant}} is the smallest currency unit considered in Qeditas.\footnote{The word ``cants'' is pronounced with a hard c as it is derived from the name Cantor.}
+Currency units can be transfered by fulfilling the appropriate obligation (which usually simply
+means signing the transaction spending the asset with an appropriate private key).
+% Currency units are always held at pay addresses. % I no longer remember if this is true.
+\item ${\constr{Bounty}}(n)$ represents $n$ cants as a bounty on a proposition.
+Bounties are held at term addresses, specifically at the term address of a proposition in a theory.
+A bounty can be spent (and transformed into currency) by the proposition owner 
+or negated proposition owner.
+Typically neither the proposition nor its negation have been proven in the theory
+(and so it has neither a proposition owner nor a negated proposition owner)
+when the bounty is placed.\footnote{The ``proposition owner'' is determined by the (nonempty) obligation at the proposition ownership asset held at the term address, if there is one. Likewise, the ``negated proposition owner'' is determined by the obligation at the negated proposition ownership asset held at the term address, if there is one.}
+If someone publishes a document in which the proposition is proven,
+the publisher declares the proposition owner.
+Likewise, if someone publishes a document in which the negation of the proposition is proven,
+the publisher declares the negated proposition owner.
+In either case, the new owner (presumably the publisher) can then collect the bounty.
+\item ${\constr{OwnsObj}}(\alpha,p)$ corresponds to a declaration of object ownership of a term (either
+a pure term or a term in a theory).
+The $\alpha$ is a pay address and the $p$ is an optional 64 bit integer.
+The actual object owner is determined by the obligation of the corresponding asset (and so may
+or may not be $\alpha$).
+The address $\alpha$ is intended as an address others can pay in order to purchase rights
+to use the object (as an imported parameter) in future documents.
+The optional value $p$ gives the price (in cants) to purchase one right.
+If $p$ is $0$, then the object can be freely used (without a need to purchase rights).
+If $p$ is {\val{None}}, then the object cannot be used
+in this way at all (and rights cannot be purchased).
+(The object can always be used in a new document by repeating the definition.)
+\item ${\constr{OwnsProp}}(\alpha,p)$ corresponds to a declaration of proposition ownership of a term (either
+a pure term or a term in a theory).
+The $\alpha$ is a pay address and the $p$ is an optional 64 bit integer.
+The actual proposition owner is determined by the obligation of the corresponding asset (and so may
+or may not be $\alpha$).
+The address $\alpha$ is intended as an address others can pay in order to purchase rights
+to use the proposition (as an imported known) in future documents.
+The optional value $p$ gives the price (in cants) to purchase one right.
+If $p$ is $0$, then the proposition can be freely used (without a need to purchase rights).
+If $p$ is {\val{None}}, then the proposition cannot be used at all (and rights cannot be purchased).
+(The proposition can always be used in a new document by reproving it.)
+\item ${\constr{OwnsNegProp}}$ corresponds to a declaration of a negated proposition ownership of a term
+in a theory.
+Again, the ``owner'' is determined by the corresponding obligation.
+This kind of asset is only to facilitate the collection of a bounty by disproving a conjecture
+with a bounty.
+\item ${\constr{RightsObj}}(\alpha,n)$ corresponds to $n$ assets to use the object
+with term address $\alpha$.
+Some or all of these rights will be consumed when publishing a document which imports the object
+as a parameter (omitting the definition).
+Note that to use objects within a theory, rights may be required for the
+pure object (independent of the theory) and for the object within the theory.
+These are two different term addresses.
+\item ${\constr{RightsProp}}(\alpha,n)$ corresponds to $n$ assets to use the proposition
+with term address $\alpha$.
+Some or all of these rights will be consumed when publishing a document which imports the proposition
+as a known (without proof).
+Note that to use propositions within a theory, rights may be required for the
+pure proposition (independent of the theory) and for the proposition within the theory.
+These are two different term addresses.
+\item ${\constr{Marker}}$ is for part of the protocol for publishing a document.
+A publication address is determined by the (privately known) publication with a (privately known) nonce.
+A marker must be at the publication address (as an {\defin{intention to publish}})
+for 144 blocks (see {\var{intention\_minage}}) before the actual publication can be published.
+The idea is that the true publisher of the document publishes the marker roughly a day before
+revealing the publication itself. The publication is revealed in the transaction publishing it.
+At that point, a plagiarist could take the publication, compute a new nonce, publish a new marker
+and then try to publish their copy. However, they would need to wait at least 144 blocks before their
+copied version could be published. By that time, the original publication should already be published.
+The order of publication is important since this may determine ownership of
+newly defined objects and newly proven propositions.
+\item ${\constr{TheoryPublication}}(\alpha,\nu,\tau)$ is a preasset
+for publishing a theory specification ({\type{theoryspec}}) $\tau$.
+The pay address $\alpha$ identifies the publisher and the corresponding transaction
+creating such an asset must be signed by $\alpha$.
+The hash value $\nu$ is a nonce to determine the publication address for the marker
+which must be published 144 blocks before the publication can be published.
+\item ${\constr{SignaPublication}}(\alpha,\nu,h,\Sigma)$ is a preasset
+for publishing a signature specification ({\type{signaspec}}) $\Sigma$.
+The pay address $\alpha$ identifies the publisher and the corresponding transaction
+creating such an asset must be signed by $\alpha$.
+The hash value $\nu$ is a nonce to determine the publication address for the marker
+which must be published 144 blocks before the publication can be published.
+The optional hash value $h$ identifies the theory in which the signature belongs.
+An object or proposition can only be included in a signature if no rights are required
+to use the object or proposition.
+(The empty theory is identified by giving {\val{None}} for $h$.)
+\item ${\constr{DocPublication}}(\alpha,\nu,h,\Delta)$ is a preasset
+for publishing a document ({\type{doc}}) $\Delta$.
+The pay address $\alpha$ identifies the publisher and the corresponding transaction
+creating such an asset must be signed by $\alpha$.
+The hash value $\nu$ is a nonce to determine the publication address for the marker
+which must be published 144 blocks before the publication can be published.
+The optional hash value $h$ identifies the theory in which the signature belongs.
+(The empty theory is identified by giving {\val{None}} for $h$.)
 \end{itemize}
+
+The type {\type{asset}} of assets is now simply defined as a product.
+\begin{verbatim}
+type asset = hashval * int64 * obligation * preasset
+\end{verbatim}
+The functions {\func{assetid}}, {\func{assetbday}},
+{\func{assetobl}} and {\func{assetpre}}
+extract the components from the asset.
+
+The inputs of transactions will be pairs of addresses and asset identifiers (hash values)
+of assets held at these addresses. The type {\type{addr\_assetid}}
+plays the role of a transaction input and is defined as follows:
+\begin{verbatim}
+type addr_assetid = addr * hashval
+\end{verbatim}
+The outputs of transactions are triples of addresses, obligations and preassets.
+(The asset identifier is determined by the transaction itself and the birthday
+is determined by the block height in which the transaction is included.)
+The type {\type{addr\_preasset}} plays the role of a transaction output and is defined as follows:
+\begin{verbatim}
+type addr_preasset = addr * (obligation * preasset)
+\end{verbatim}
+While checking a transaction is valid the input assets are looked up from the ledger tree
+using the asset identifier. This expands the inputs to be of addresses and assets
+and the type {\type{addr\_asset}} is included to represent such an expanded input:
+\begin{verbatim}
+type addr_asset = addr * asset
+\end{verbatim}
+
+The functions {\func{hashobligation}} hashes an obligation (returning {\val{None}}
+for the {\val{None}} obligation).
+The functions {\func{hashpreasset}},
+{\func{hashasset}},
+{\func{hash\_addr\_assetid}},
+{\func{hash\_addr\_preasset}} and
+{\func{hash\_addr\_asset}}
+hash the corresponding types.
 
 As usual, there are functions for serializing and deserializing elements of these types:
 {\serfunc{seo\_obligation}},
@@ -45,17 +210,8 @@ As usual, there are functions for serializing and deserializing elements of thes
 and
 {\serfunc{sei\_addr\_asset}}.
 
-
+The purpose of the remaining functions exported by the {\module{assets}} module are as follows:
 \begin{itemize}
-\item {\func{assetid}}
-\item {\func{assetobl}}
-\item {\func{assetpre}}
-\item {\func{hashobligation}}
-\item {\func{hashpreasset}}
-\item {\func{hashasset}}
-\item {\func{hash\_addr\_assetid}}
-\item {\func{hash\_addr\_preasset}}
-\item {\func{hash\_addr\_asset}}
 \item {\func{new\_assets}}
 \item {\func{remove\_assets}}
 \item {\func{get\_spent}}
