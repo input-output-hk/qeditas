@@ -24,6 +24,7 @@ type preasset =
 type asset = hashval * int64 * obligation * preasset
 
 val assetid : asset -> hashval
+val assetbday : asset -> int64
 val assetobl : asset -> obligation
 val assetpre : asset -> preasset
 

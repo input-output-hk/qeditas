@@ -27,9 +27,10 @@ type preasset =
 (*** asset is (assetid,birthday,obligation,preasset) ***)
 type asset = hashval * int64 * obligation * preasset
 
-let assetid ((h,bh,obl,u):asset) : hashval = h
-let assetobl ((h,bh,obl,u):asset) : obligation = obl
-let assetpre ((h,bh,obl,u):asset) : preasset = u
+let assetid ((h,bd,obl,u):asset) : hashval = h
+let assetbday ((h,bd,obl,u):asset) : int64 = bd
+let assetobl ((h,bd,obl,u):asset) : obligation = obl
+let assetpre ((h,bd,obl,u):asset) : preasset = u
 
 let hashpreasset u =
   match u with
@@ -53,8 +54,8 @@ let hashobligation (x:obligation) : hashval option =
   | Some(a,n,r) -> Some(hashpair (hashpayaddr a) (hashtag (hashint64 n) (if r then 1025l else 1024l)))
 
 let hashasset a =
-  let (h,bh,obl,u) = a in
-  hashopair1 (hashpair h (hashpair (hashint64 bh) (hashpreasset u))) (hashobligation obl)
+  let (h,bd,obl,u) = a in
+  hashopair1 (hashpair h (hashpair (hashint64 bd) (hashpreasset u))) (hashobligation obl)
 
 type addr_assetid = addr * hashval
 type addr_preasset = addr * (obligation * preasset)
