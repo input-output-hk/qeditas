@@ -1,45 +1,278 @@
 {\bf{Warning:}} The top level code is only partially written and may possibly be rewritten completely.
 The information is this chapter is subject to changes in the near future.
 
-\module{commands}
-\module{qeditascli}
-\module{qeditasd}
+The files
+{\file{qeditascli.ml}} and {\file{qeditasd.ml}}
+are used to create executables
+{\exec{qeditasd}} and {\exec{qeditascli}}.
+These executables are intended to provide a basic user interface.
+In particular {\exec{qeditasd}} starts a ``daemon''
+which connects to other nodes, interacts with other nodes,
+handles a staking process (if staking is enabled)
+and tries to publish transactions and blocks.
+The executable {\exec{qeditascli}} provides a command line interface
+which may (or may not) interact with {\exec{qeditasd}}.
+The module {\module{commands}} handles commands and wallet information
+that is used by both {\file{qeditascli.ml}} and {\file{qeditasd.ml}}.
+
+\section{Files Instead of Sockets}
+
+Originally the
+two executables {\exec{qeditasd}} and {\exec{qeditascli}}
+were intended to mimic the Bitcoin daemon and command line interface.
+However, one of the goals was to have Qeditas run on the Tails Live CD (Debian) operating system.
+It seems that (apparently) Tails does not allow local sockets to be opened.
+As a consequence, files were used to handle some interaction between {\exec{qeditascli}}
+and {\exec{qeditasd}}. For example, {\exec{qeditascli}} can be used to create transactions
+which are then ``sent'' by placing them into a file where {\exec{qeditasd}} would read
+and publish them. This is unlikely to be a good choice for how the processes should interact,
+and it's possible there should simply not be two separate processes.
+Another choice would be to have a single {\exec{qeditas}}
+which handles the networking and staking in the background while providing a top level
+(similar to the Bitcoin Core debug console) for user interaction.
+Such a single executable would presumably work within Tails without requiring local sockets.
+For other operating systems, perhaps a daemon/command line interface set-up communicating via
+local sockets would still be appropriate.
 
 \section{Commands}
 
-\module{commands}
-
+The module {\module{commands}} is intended to support a variety of commands a user may need.
+At the moment it only supports limited wallet and transaction creation commands.
+Some state information is held in this module (although it likely should be moved elsewhere).
 \begin{itemize}
-\item {\var{walletkeys}}
-\item {\var{walletendorsements}}
+\item {\var{walletkeys}} contains the private keys in the wallet.
+More specifically it is a list of values of the form $(k,b,(x,y),w,h,a)$
+where $k$ is the private key, $b$ is a boolean indicating if it is for the compressed public key,
+$(x,y)$ is the public key, $w$ is the string base-58 WIF format, $h$ is the 20-byte hash value
+corresponding to the p2pkh address and $a$ is the string base-58 Qeditas p2pkh address.
+\item {\var{walletp2shs}} contains entries of the form $(h,a,\overline{b})$
+where $h$ is the 20-byte hash value of a p2sh address, $a$ is the base-58 Qeditas p2sh address
+and $\overline{b}$ is the sequence of bytes giving the script corresponding to $h$.
+Note that this does not directly give a way of ``signing'' for the p2sh address.
+\item {\var{walletendorsements}} contains the endorsements in the wallet.
+In particular it is a list of values of the form $(\alpha,\beta,(x,y),b,\sigma)$
+where $\alpha$ and $\beta$ are pay addresses,\footnote{Actually, in what is implemented we assume they are both p2pkh addresses. In principle endorsements involving p2sh addresses are supported by the code in {\module{sigant}} and {\module{script}}, but support has not been implemented in {\module{commands}}.}
+$(x,y)$ is the public key for $\alpha$,
+$b$ is a boolean indicating if $\alpha$ is the address for the compressed public key
+and $\sigma$ is a signature for a
+Bitcoin message of the form ``endorse $\beta$''
+(or ``testnet:endorse $\beta$'' in the testnet)
+signed with the private key for $\alpha$.
+The private key for $\beta$ should be in {\var{walletkeys}}
+and this private key along with the endorsement means the wallet can sign for $\alpha$.\footnote{The endorsement mechanism gives Bitcoin users a way to claim their part of the initial distribution without revealing their private keys.}
 \item {\var{walletwatchaddrs}}
+contains addresses to ``watch.'' 
 \item {\var{stakingassets}}
+contains a list of assets which the node can stake.
 \item {\var{storagetrmassets}}
+is intended contain a list of assets at term addresses which the node can use as proof-of-storage to improve the chances of staking.
+Currently it is unused.
 \item {\var{storagedocassets}}
-\item {\var{recenttxs}}
-\item {\var{txpool}}
+is intended to contain a list of documents at publication assets which the node can use as proof-of-storage to improve the chances of staking.
+Currently it is unused.
+\item {\var{recenttxs}} is a hash table associating hash values (transaction ids)
+with signed transactions. This is loaded and saved to the file {\file{recenttxs}}.
+The intention is that this holds transactions which have been created but
+are not yet published (and may only be partially signed).
+\item {\var{txpool}} is a hash table associating hash values (transaction ids)
+with signed transactions. This is loaded and saved to the file {\file{txpool}}.
+The intention is that this holds transactions which have been published
+but are not yet included in a block.
 \end{itemize}
 
+The following functions are for loading and saving the state in certain files.
 \begin{itemize}
-\item {\func{load\_currentframe}}
-\item {\func{save\_currentframe}}
-\item {\func{load\_recenttxs}}
-\item {\func{load\_txpool}}
-\item {\func{load\_wallet}}
-\item {\func{save\_wallet}}
-\item {\func{printassets}}
-\item {\func{btctoqedaddr}}
-\item {\func{importprivkey}}
-\item {\func{importbtcprivkey}}
-\item {\func{importendorsement}}
-\item {\func{importwatchaddr}}
-\item {\func{importwatchbtcaddr}}
+\item {\func{load\_currentframe}} loads the current ``frame'' which is used
+to determine how the ledger tree is represented.
+\item {\func{save\_currentframe}} saves the current ``frame.'' Various commands
+could change the frame.
+\item {\func{load\_recenttxs}} sets {\var{recenttxs}} by loading the contents fo {\file{recenttxs}}.
+\item {\func{load\_txpool}} sets {\var{txpool}} by loading the contents fo {\file{txpool}}.
+\item {\func{load\_wallet}} sets {\var{walletkeys}}, {\var{walletp2shs}},
+{\var{walletendorsements}}
+and {\var{walletwatchaddrs}}
+by loading the file {\file{wallet}}.
+\item {\func{save\_wallet}} saves the current wallet contents
+(the values of {\var{walletkeys}}, {\var{walletp2shs}},
+{\var{walletendorsements}}
+and {\var{walletwatchaddrs}})
+in {\file{wallet}}.
+\item {\func{printassets}} prints the assets from the current ledger tree at the addresses
+mentioned in the wallet.
+\item {\func{btctoqedaddr}} parses a Bitcoin address (base-58 representation) and prints the corresponding Qeditas address (base-58 representation).
+\item {\func{importprivkey}} imports a private key given in Qeditas WIF.
+\item {\func{importbtcprivkey}} imports a private key given in Bitcoin WIF.
+\item {\func{importendorsement}} imports an endorsement.
+\item {\func{importwatchaddr}} imports a Qeditas address to watch.
+\item {\func{importwatchbtcaddr}} imports a Bitcoin address in order to watch the corresponding Qeditas address.
 \end{itemize}
 
 \section{Command Line Interface}
 
-\module{qeditascli}
+The file {\file{qeditascli.ml}} has a partial implementation of a command line interface.
+The value {\val{commhelp}} gives a list of some intended Qeditas commands
+along with how many arguments the command may take and help strings.
+The help contents can be viewed via the executable itself as follows:
+\begin{verbatim}
+./bin/qeditascli help
+\end{verbatim}
+(Note: this does not require the daemon to be running.)
+Help for a specific command can be obtained as follows:
+\begin{verbatim}
+./bin/qeditascli help importendorsement
+\end{verbatim}
+Many of the commands implemented call functions from {\module{commands}}.
 
 \section{Daemon}
 
-\module{qeditasd}
+To understand what the daemon executable {\exec{qeditasd}} does,
+see the function {\func{main}} in the file {\file{qeditasd.ml}}.
+We describe the tasks {\exec{qeditasd}} briefly.
+
+\subsection{Initialization}
+
+It begins by checking the command line arguments for an option
+of the form \verb+-datadir=...+
+which would override the default data directory (usually {\dir{.qeditas}}
+in the user's home directory).
+It then reads the config file {\file{qeditas.conf}} in the data directory.
+This may override some default values in the {\module{config}} module.
+It then reads the other command line arguments which may again override
+some values in the {\module{config}} module.
+
+The code then checks if either the {\var{seed}} variable in {\module{config}}
+has been set to a nonempty string. (It should be a 40 character hex string.)
+The current code in {\module{setconfig}} sets {\var{seed}} to
+\begin{verbatim}
+68324ba252550a4cb02b7279cf398b9994c0c39f
+\end{verbatim}
+unless it is specifically set in the configuration file or on the command line.
+The value above is the last 20 bytes of the hash of Bitcoin block 378800,
+and was a value included only for testing purposes.
+The intention was to choose a Bitcoin block height roughly one week in the future
+when the time came for Qeditas to launch. The last 20 bytes of that block hash would
+be the value for {\var{seed}}. The purpose of this value is to initialize the
+current stake modifier and the future stake modifier (see {\func{set\_genesis\_stakemods}}).
+These stake modifiers affect which assets will stake within the first 512 blocks.
+In particular it affects the genesis block (at Qeditas block height).
+For the launch to be fair, these stake modifiers should not be predictable before launch.
+This goal could be accomplished in other ways.
+
+The possibility is left open in the future that {\var{seed}} is not set but
+that a checkpoint has been set so that a node can begin following the block chain
+from that checkpoint. (The full history is not required. Each ledger tree contains
+the full information required to continue.)
+
+If the {\var{testnet}} configuration variable is set, then the difficulty is decreased significantly
+(setting {\var{genesistarget}} $2^{248}$ so that finding a hit to stake is not difficult
+and setting {\var{max\_target}} $2^{255}$, practically as high as possible).
+The ``current frame'' is loaded 
+and {\var{localframe}} is set to it
+and {\var{localframehash}} is set to its hash.
+The frame is needed because a ledger root will, in general, correspond to multiple
+ledger abbreviations since the abbreviation depends on the frame.
+The function {\func{load\_root\_abbrevs\_index}}
+loads the current information about the association of ledger hash roots with
+frame hashes and ledger abbreviation hashes.
+The ledger abbreviation hashes is the name of the file
+in the {\dir{ctrees}} directory
+where the corresponding {\type{ctre}} is stored.
+
+A random seed is generated by reading 512 bits from {\file{/dev/random}} (or {\file{/dev/urandom}} for the testnet)
+and this seed is used to generate random values in the future by hashing the value and taking
+some of the bits when required.
+{\bf{Warning:}} This is (probably) unsafe and should not be used in production.
+Cryptographically safe random values should be obtained when required.
+The code is the way it currently is simply because it was under development and
+being tested.
+
+The random value above is used to set {\var{this\_nodes\_nonce}} which prevents the node
+from connecting to itself.
+
+If {\var{ip}} and {\var{port}} are set, then a listener socket is opened (via {\func{openlistener}})
+to listen for incoming connections.
+
+If {\var{staking}} is set, then the wallet is loaded and the function {\func{start\_staking}}
+starts a {\exec{qeditasstk}} process which independently searches for an asset that can stake.
+This process is stopped when a hit is found and is restarted each time a decision is reached
+to being staking on top of a new block.
+
+The function {\func{sethungsignalhandler}} sets the signal handler for timeouts to raise the exception {\exc{Hung}}.
+This is used to create functions that do not wait indefinitely for input or connections.
+
+The function {\func{loadknownpeers}} loads a file with recent peers.
+Then {\func{search\_for\_conns}} is called which tries to connect to these recent peers,
+and, if no connections succeed, tries to connect to fallback nodes ({\func{getfallbacknodes}}).
+
+Recent transactions and the transaction pool is loaded ({\func{load\_recenttxs}} and {\func{load\_txpool}}.
+
+At this point the daemon is ready to enter the main process loop.
+
+\subsection{Main Process Loop}
+
+Currently the testnet sleeps for 1 second between many of the steps of the main loop.
+This is simply to make the output reasonable while testing.
+
+The next paragraphs are only relevant if {\var{staking}} is set to {\val{true}},
+otherwise they can be skipped.
+
+The process checks to see if a hit has been found (by reading from the
+stdout of the {\exec{qeditasstk}} process). If a hit has been found, it is likely
+for some timestamp some seconds in the future.
+In preparation to stake, a block is created, possibly including transactions from the transaction pool.
+The code checks that the block is valid and, if so, sets {\var{waitingblock}}
+to a value that remembers when the hit will be valid and information about the new block.
+Staking pauses until either a new block is received or until the time is reached
+that the found hit will be valid.
+
+If {\var{waitingblock}} is set and the current time is at least the time the hit is valid,
+then the new block header is inserted into the sorted {\var{recentblockheader}} list
+and the remaining block information is saved.
+An inventory message with the block header, the block delta skeleton and the block delta
+is broadcast to all connections.
+Staking is restarted, presumably on top of this new block.
+
+Assume there is no {\var{waitingblock}}.
+If no staking process is running, then start a staking process.
+If there is a staking process, check if it is staking on top of the block with the most
+cumulative stake. If not, restart staking on top of the current best block.
+
+From this point on in the main process loop, the value of {\var{staking}} is not relevant.
+
+If there is a listener process, {\func{accept\_nohang}} checks (with a timeout of 0.1s)
+if there is a connection to accept. If so, {\func{initialize\_conn\_accept}} begins the
+handshake protocol.
+
+For each preconnection on {\var{preconns}}, progress in the handshaking protocol is attempted.
+The handshake protocol requires one process to send a {\constr{Version}} message,
+with a {\constr{Verack}} sent back followed by a {\constr{Version}} message
+and a final {\constr{Verack}}. This follows the Bitcoin handshake.
+If the handshake fails, the connection is dropped and removed from {\var{preconns}}.
+If the handshake succeeds, the connection is moved from {\var{preconns}} to {\var{conns}}.
+
+We next turn to handling the connections on {\var{conns}}.
+Here the connection state ({\type{connstate}}) plays an important role.
+
+Each connection on {\var{conns}} is checked for incoming messages.
+
+If there is an incoming message, {\func{handle\_msg}} is called to
+perform the appropriate actions.
+Assume there is no incoming message.
+If some request was pending for more than 90s (e.g., a {\constr{Ping}} message
+expecting a {\constr{Pong}} reply), then mark the close connection 
+and mark it as no longer alive. If there have been no messages in 90 minutes,
+send a {\constr{Ping}} and save this in {\var{pending}}.
+
+Each connection that is no longer alive is removed from {\var{conns}}.
+
+At the end of the main loop process, there are some checks to see if more connections should be searched
+for. Also, {\func{handle\_orphans}} and {\func{handle\_delayed}}
+are called in order to double check that the node is not missing a chain with more cumulative stake.
+(Such chains were being missed during testing. It's unclear if 
+{\func{handle\_orphans}} and {\func{handle\_delayed}} fixed the problem or not.)
+
+
+
+
+
+
