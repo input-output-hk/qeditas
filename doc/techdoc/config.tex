@@ -13,8 +13,8 @@ setting default values for the variables exposed in the interface \file{config.m
 \item \var{port} : the port to listen for incoming connections
 \item \var{socks} : None if connections are not routed through SOCKS; Some($v$) if connections are routed through SOCKS protocol $v$ where $v$ is 4 or 5\footnote{At the moment, 5 is not yet supported.}
 \item \var{maxconns} : the maximum number of connections
-\item \var{seed} : the initial seed
-\item \var{lastcheckpoint} : the last checkpoint
+\item \var{seed} : the initial seed which is used to initialized the current stake modifier and future stake modifier.
+\item \var{lastcheckpoint} : the last checkpoint (currently unused)
 \item \var{currledgerroot} : the hashroot of the current ledger tree
 \end{itemize}
 
