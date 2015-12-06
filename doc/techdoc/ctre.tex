@@ -115,32 +115,146 @@ until the coin-age drops to $0$ after block $l-32$, where $l$ is the lock given.
 
 \subsection{Approximating Asset Lists by Hlists}
 
+An asset list can be approximated by an {\defin{hlist}} $\cH$, a value of type {\type{hlist}}.
+The constructors for {\type{hlist}} are as follows:
 \begin{itemize}
-\item {\type{hlist}}
+\item ${\constr{HHash}}(h)$ approximates a nonempty asset list with hash root $h$.\footnote{The hash root of an asset list does not seem to be explicitly defined in the code. However, it could be defined using {\func{ohashlist}} and {\func{hashasset}} and this seems to be the intended hash root.}
+\item ${\constr{HNil}}$ approximates the empty asset list.
+\item ${\constr{HCons}}(a,\cH)$ where $a$ is an asset and $\cH$ is an hlist.
+\end{itemize}
+The idea is that an hlist explicit lists a prefix of the assets ending with a hash root
+summarizing the rest of the asset list. It is also possible for the hlist to list all the assets.
 Elements of this type can be serialized and deserialized using
 {\serfunc{seo\_hlist}}
 and {\serfunc{sei\_hlist}}.
-\item {\type{nehlist}}
+
+The type {\type{nehlist}} represents nonempty hlists and has two constructors:
+\begin{itemize}
+\item ${\constr{NehHash}}(h)$ corresponds to the hlist ${\constr{HHash}}(h)$.
+\item ${\constr{NehCons}}(a,\cH)$ corresponds to the hlist ${\constr{HCons}}(a,\cH)$.
+\end{itemize}
 Elements of this type can be serialized and deserialized using
 {\serfunc{seo\_nehlist}}
 and
 {\serfunc{sei\_nehlist}}.
-\item {\type{frame}}
+
+We briefly relevant functions.
+\begin{itemize}
+\item {\func{nehlist\_hlist}} converts a nonempty hlist to an hlist.
+\item {\func{hlist\_hashroot}} computes an optional hash root for an hlist, with {\val{None}} playing
+the role of the hash root for {\constr{HNil}}.
+\item {\func{nehlist\_hashroot}} computes a hash root for an nehlist,
+the same as the one given by {\func{hlist\_hashroot}}.
+\item {\func{in\_hlist}} and {\func{in\_nehlist}} check if an asset is explicitly listed in
+the hlist or nehlist. Note that this will return {\val{false}} if the asset is not explicitly listed
+but is an asset on the part of the list being summarized by ${\constr{HHash}}$ or ${\constr{NehHash}}$.
+\end{itemize}
+
+\subsection{Compact Trees}
+
+The intention of a compact tree is to provide a binary tree approximation of
+a function from addresses (162-bit sequences) to hlists, where the hlists
+approximate the assets held at the addresses.
+In general, functions on compact trees will be defined by recursion and so we
+usually need to consider compact trees at level $n$ (corresponding to functions
+from $n$-bit sequences to hlists).
+A $0$ bit corresponds to the left child while a $1$ bit corresponds to the right child.
+
+The vast majority of the leaves will be empty, and so compact trees
+only store the nonempty parts explicitly.
+The empty compact tree (with no assets stored at leaves) can be thought of as
+represented by {\val{None}}, and the type {\type{ctree option}}
+is used when the empty compact tree should be considered.
+
+Compact trees $\cC$ are values of type ${\type{ctree}}$, which is defined by the following constructors.
+\begin{itemize}
+\item ${\constr{CLeaf}}(\overline{b},\cH)$ is a compact tree with a single nonempty leaf
+at the location determined by the bit sequence (list of booleans) $\overline{b}$
+and containing the nonempty hlist $\cH$.
+\item ${\constr{CHash}}(h)$ is a compact tree with a hash $h$. This approximates every compact tree with hash root $h$.
+\item ${\constr{CAbbrev}}(h_r,h_a)$ is an abbreviation for a compact tree with hash root $h_r$
+and which hashes to give $h_a$.
+The actual compact tree which hashes to $h_a$
+should be saved in a file which can be loaded into memory as needed.\footnote{In the corresponding Coq code, there is no notion of an abbreviation node. This was added in the implementation because too much memory is consumed if one attempts to keep entire compact trees in memory.}
+\item ${\constr{CLeft}}(\cC)$ is the compact tree with $\cC$ as its left child and the empty tree as its right child.
+\item ${\constr{CRight}}(\cC)$ is the compact tree with the empty tree as its left child and $\cC$ as its right child.
+\item ${\constr{CBin}}(\cC_0,\cC_1)$ is the compact tree with two nonempty children: $\cC_0$ on the left and $\cC_1$ on the right.
+\end{itemize}
+Elements of type ${\type{ctree}}$ can be serialized and deserialized using
+{\serfunc{seo\_ctree}}
+and
+{\serfunc{sei\_ctree}}.
+
+Three hashing functions are important:
+\begin{itemize}
+\item {\func{hashctree}} computes a unique hash value for a compact tree.
+This is used to obtain a unique name identifying a compact tree
+and is used, in particular, to give names to files storing a binary
+representation of the compact tree.
+\item {\func{ctree\_hashroot}} computes a hash root for the compact tree.
+Many different compact trees will give the same hash roots, however they will
+always approximate the same ledger state.
+For example, they can differ in where they include ${\constr{CHash}}$
+and ${\constr{CAbbrev}}$ nodes, as well has the level of detail included in
+hlists at the leaves.
+\item {\func{octree\_hashroot}} takes an optional compact tree and returns an optional hash value.
+It simply returns {\val{None}} for the empty compact tree {\val{None}}
+and returns the result of {\func{ctree\_hashroot}} otherwise.
+\end{itemize}
+
+\subsection{Local Frames and Remote Frames}
+
+There are two types of {\defin{frames}} implemented as the types
+{\type{frame}} (for {\defin{local frames}}) and {\type{rframe}} (for
+{\defin{remote frames}}.
+In both cases the intention is to store information about
+how to represent a compact tree. In particular, where to include
+${\constr{CHash}}$ and ${\constr{CAbbrev}}$ nodes.
+\footnote{In the Coq formalization, there is
+no notion of a frame. Local frames were implemented to have a way of
+saving parts of a compact tree in local files, to be loaded when
+needed. Remote frames were implemented to have a way of communicating
+to remote nodes which part of the compact tree are being explicitly
+stored and modified by a node. Such information would be useful for a
+node that wanted to request a previously unfollowed part of the
+compact tree. At the moment, local frames are used to save parts of
+compact trees in files in the {\dir{ctrees}} directory, while remote
+frames are not used at all.}
+
+Local frames $\cF$ (or simply {\defin{frames}}) are elements of the type {\type{frame}}, which is defined with the
+following constructors:
+\begin{itemize}
+\item ${\constr{FHash}}$ indicates that only the hash root of the corresponding compact tree should be stored.
+\item ${\constr{FAbbrev}}(\cF)$ indicates that the corresponding compact tree $\cC$ should be represented
+as an abbreviated pair of hash values $h_r$ and $h_a$.
+Here $h_r$ is the hash root of the compact tree and $h_a$ is a full hash of the
+compact tree $\cC'$ resulting from representing $\cC$ according to the frame $\cF$.
+\item ${\constr{FAll}}$ indicates that the full compact tree should be included.
+\item ${\constr{FLeaf}}(\overline{b},n)$ indicates that only the indicated leaf should be included, and all other nonempty parts should be approximated by ${\constr{CHash}}$-nodes.\footnote{This is intended to be useful if a node wants to follow specific addresses.}
+The optional value $n$ indicates how long of an asset prefix the nonempty hlist at the leaf should explicitly list. If $n$ is {\val{None}}, then all assets are listed.
+\item ${\constr{FBin}}(\cF_0,\cF_1)$ indicates that the left child of the compact tree should be represented according to $\cF_0$ and the right child according to $\cF_1$.
+\end{itemize}
 Elements of this type can be serialized and deserialized using
 {\serfunc{seo\_frame}}
 and
 {\serfunc{sei\_frame}}.
-\item {\type{rframe}}
+
+Remote frames $\cR$ are elements of the type {\type{rframe}}
+and essentially consists of frames without abbreviation nodes.
+Hence the type is defined by four constructors which correspond to the other four
+constructors described above:
+\begin{itemize}
+\item ${\constr{RFHash}}$
+\item ${\constr{RFAll}}$
+\item ${\constr{RFLeaf}}(\overline{b},n)$
+\item ${\constr{RFBin}}(\cF_0,\cF_1)$
+\end{itemize}
 Elements of this type can be serialized and deserialized using
 {\serfunc{seo\_rframe}}
 and
 {\serfunc{sei\_rframe}}.
-\item {\type{ctree}}
-Elements of this type can be serialized and deserialized using
-{\serfunc{seo\_ctree}}
-and
-{\serfunc{sei\_ctree}}.
-\end{itemize}
+
+\subsection{Unwritten}
 
 \begin{itemize}
 \item {\var{localframe}}
