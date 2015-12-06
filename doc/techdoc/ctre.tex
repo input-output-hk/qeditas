@@ -1,5 +1,11 @@
-\module{ctre}
-\module{ctregraft}
+The {\module{ctre}} module
+implements compact trees (``ctrees'')
+and supporting functions.
+Compact trees are used to approximate the state of the ledger
+by recording what assets are held at what addresses.
+The {\module{ctregraft}} module
+implements a way to graft information onto a compact
+tree in order to form an approximation with more information.
 
 {\bf{Note:}} Unit tests for the {\module{ctre}} and {\module{ctregraft}} modules are in {\file{ctreunittests.ml}}
 in the {\file{src/unittests}}
@@ -8,7 +14,7 @@ These unit tests give a number of examples demonstrating how the functions descr
 
 \section{Compact Ledger Trees}
 
-\module{ctre}
+We describe the main content of the module {\module{ctre}}.
 
 {\bf{Note:}} The largest part of the Coq formalization deals with verifying compact trees
 indeed represent ledgers as intended.
@@ -35,7 +41,79 @@ represented in the Coq formalization as these were added later to the
 OCaml code.
 For more information, see~\cite{White2015b}.
 
-% move reward_maturation and reward_locktime
+\subsection{Coin-age}
+
+We first consider some variables which affect the likelihood of
+coins to stake.\footnote{Since this has nothing to do with compact trees, it should be moved to a more appropriate module.}
+The current settings have been chosen after
+doing some simulations to determine a reasonable mixture
+between staking of coins in the initial distribution
+vs. staking of new coins issued through block rewards.
+(Initial simulations revealed that block rewards could
+easily dominate staking in the first few weeks unless their
+influence was dampened.)
+
+Typically, unlocked currency assets age quadratically as $(1+\lfloor\frac{a}{512}\rfloor)^2$ where $a$ is the number of blocks
+since the asset became {\defin{mature}}. This continues until a maximum age is reached.
+Users may commit currency assets to stake by locking them.
+Locked non-reward assets mature more quickly and, once mature, have their maximum age
+until it is close to the block height at which they will be unlocked, at which point
+they will be ineligible for staking.
+Rewards are necessarily locked. They age like unlocked currency assets until it is close to
+the block height at which they will be unlocked, at which point they will be ineligible for staking.
+
+\begin{itemize}
+\item {\var{maximum\_age}} is the number of blocks after which unlocked coins
+stop aging. This is currently set to $2^{14}$. With a 10 minute average block time,
+this means unlocked coins reach their maximum age after roughly $4$ months.
+(Coins in the initial distribution are exceptional: they have birthday $0$ and start with their maximum age.)
+\item {\var{maximum\_age\_sqr}} is $(1+\lfloor \frac{a}{512}\rfloor)^2$ where $a$ is {\var{maximum\_age}}.
+This is the maximum factor that can be used to determine an asset's coin-age.
+Given current settings this is $33^2$, i.e., $1089$.
+\item {\var{reward\_maturation}} indicates how old a reward must be before it can begin staking. This is currently set to $512$.
+\item {\var{reward\_locktime}} indicates the minimum number of blocks a reward must be locked.
+This is currently set to $2^{14}$ (the same as {\var{maximum\_age}}).
+This large value forces rewards not to be spent for roughly $4$ months.\footnote{This restriction is to dampen the effect
+of rewards on staking. If rewards could be unlocked quickly, then they could be
+spent to create a locked non-reward asset. This locked non-reward asset would
+very quickly mature and begin staking with its maximum age.
+If this setting is lowered to allow rewards to be spent more quickly,
+then other values should be changed so that spending the reward to create
+a locked non-reward assets cannot be used in a
+way that rewards would quickly dominate the supply of actively staking coins.}
+\item {\var{unlocked\_maturation}} indicates how many blocks must pass before
+an unlocked asset can be used for staking. It is currently set to $512$.
+\item {\var{locked\_maturation}} indicates how many blocks must pass before
+a new locked currency asset can be used for staking.
+It is currently set to $8$. This implies that $8$ blocks after creating a locked
+currency asset, the currency asset can be used for staking with its maximum age,
+until it is close to being unlocked.\footnote{The intention here is to encourage
+stakers to commit to ``locking'' some of their coins only for use in staking.}
+\item {\var{close\_to\_unlocked}} indicates the point at which locked assets can
+no longer be used for staking. It is currently set to $32$, meaning that
+the locked asset cannot be used for staking if it is $32$ blocks from being spendable
+(or even after it is spendable).
+\end{itemize}
+
+The function {\func{coinage}} computes the {\defin{coin-age}} of a
+currency asset given the current block height.
+As described above the ``age'' ranges from $0$ to $1089$,
+with a quadratic increase each $512$ blocks.
+(Specifically, the ``age'' progresses to be $n^2$
+where $n$ is incremented from $1$ to $33$ each $512$ blocks
+and then remains at $33$.)
+Assume $v$ is the number of cants in the currency asset.
+If the birthday of the asset is $0$, then it is part of the initial distribution
+and its coin-age is $1089 v$.
+Other than coins in the initial distribution,
+there are three cases: unlocked currency assets, locked rewards and locked non-rewards.
+Unlocked currency asset and locked rewards mature after $512$ blocks and then age quadratically
+as described above. In the case of locked rewards, the coin-age drops to $0$
+after block height $l-32$, where $l$ is the lock given for the reward.
+Locked non-rewards mature after $8$ blocks and then have coin-age $1089 v$
+until the coin-age drops to $0$ after block $l-32$, where $l$ is the lock given.
+
+\subsection{Approximating Asset Lists by Hlists}
 
 \begin{itemize}
 \item {\type{hlist}}
@@ -72,7 +150,6 @@ and
 {\exc{NotSupported}}
 
 \begin{itemize}
-\item {\func{coinage}}
 \item {\func{hlist\_hashroot}}
 \item {\func{nehlist\_hlist}}
 \item {\func{nehlist\_hashroot}}
