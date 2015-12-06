@@ -13,7 +13,7 @@ open Config
 
 let intention_minage = 144L
 
-let sqr512 x = let y = big_int_of_int64 (Int64.shift_right x 9) in mult_big_int y y
+let sqr512 x = let y = big_int_of_int64 (Int64.add 1L (Int64.shift_right x 9)) in mult_big_int y y
 
 let maximum_age = 16384L
 let maximum_age_sqr = sqr512 maximum_age
