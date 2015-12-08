@@ -215,8 +215,8 @@ let split_rframe fr =
   | _ -> (None,None)
 
 (***
- rframe_lub combines two normalized frames to give a normalized frame
- describing what at least one of the two frames stores.
+ rframe_lub combines two normalized rframes to give a normalized rframe
+ describing what at least one of the two rframes stores.
  This is used so a node can describe what parts of the ledger tree it can ask its peers about.
  ***)
 let rec rframe_lub fr1 fr2 =
