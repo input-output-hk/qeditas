@@ -368,43 +368,124 @@ pairs of hash values, the first being the hash of a local frame
 and the second being the hash of a corresponding compact tree.
 \end{itemize}
 
-\subsection{Supporting Transactions}
+\subsection{Transactions}
 
-{\exc{NotSupported}}
-
+We now describe functions related to checking that transactions
+are supported by a compact tree.
+The exception {\exc{NotSupported}} is raised if
+some condition required for a transaction to be supported fails.
 \begin{itemize}
-\item {\func{strip\_bitseq\_true}}
-\item {\func{strip\_bitseq\_false}}
-\item {\func{strip\_bitseq\_true0}}
-\item {\func{strip\_bitseq\_false0}}
-\item {\func{ctree\_lookup\_input\_assets}}
-\item {\func{ctree\_supports\_tx}}
-\item {\func{ctree\_supports\_tx\_2}}
-\item {\func{tx\_octree\_trans}}
-\item {\func{txl\_octree\_trans}}
-\item {\func{full\_needed}}
-\item {\func{get\_tx\_supporting\_octree}}
-\item {\func{get\_txl\_supporting\_octree}}
+\item {\func{ctree\_lookup\_input\_assets}} takes a compact tree and an
+{\type{addr\_assetid}} list (a list of transaction inputs)
+and uses {\func{ctree\_lookup\_asset}} to look up the assets corresponding to
+the assetids, returning the resulting list of pairs of addresses and assets.
+If one of the assetids cannot be found in the compact tree,
+the exception {\exc{NotSupported}} is raised.
+\item {\func{ctree\_supports\_tx}} checks if a compact tree supports a transaction.
+The function also requires an optional {\type{ttree}} (with all the currently known theories)
+an optional {\type{stree}} (with all the currently known signatures)
+and the current block height. (The block height is needed, for example, to check
+if certain assets have passed their lock height.)
+If the transaction is not supported, the exception {\exc{NotSupported}} is raised.
+If the transaction is supported,
+the difference between the currency units consumed and the currency units input
+is returned. If this value is negative, then it corresponds to a fee.
+If the value is positive, then it corresponds to a reward.
+\item {\func{ctree\_supports\_tx\_2}} is the same as {\func{ctree\_supports\_tx\_2}}
+except it also receives two extra inputs:
+a list of the input addresses associated with their assets
+and a list of those assets.
+The function {\func{ctree\_supports\_tx}} simply looks up the input assets and then calls {\func{ctree\_supports\_tx\_2}}, which does all the checking of the actual checking of conditions.
 \end{itemize}
+
+If a compact tree supports a transaction or list of transactions,
+typically some small approximation of the compact tree also provides the support.
+We next describe functions to construct such small approximations.
+\begin{itemize}
+\item {\func{full\_needed}} takes a {\type{addr\_preasset}} list (a list of transaction outputs)
+and returns a list of bit sequences (addresses represented as boolean lists)
+indicating which leaves need to have their full list of assets explicit
+in order to check if the transaction with these outputs
+is supported. 
+\item {\func{get\_tx\_supporting\_octree}} takes a transaction and (optional) compact tree
+and returns an approximation of the (optional) compact tree sufficient to support the transaction.
+\item {\func{get\_txl\_supporting\_octree}} takes a list of transactions and (optional) compact tree
+and returns an approximation of the (optional) compact tree sufficient to support the transactions.
+\end{itemize}
+
+There are two functions which transform (optional) compact trees using transactions.
+\begin{itemize}
+\item {\func{tx\_octree\_trans}} takes a block height, transaction and compact tree
+and transforms the ctree by deleting assets consumed in the inputs and
+create the new assets in the output. (The block height is needed to give
+birthdays to the new assets.)
+\item {\func{txl\_octree\_trans}} transforms a compact tree according to a
+list of transactions, sequentially.
+\end{itemize}
+
+There are also four auxiliary functions exposed in the interface.
+\begin{itemize}
+\item {\func{strip\_bitseq\_true}} takes a list of pairs, the first component of which are bit sequences, and returns the list
+filtered to the ones with a {\val{true}} as the head of the list with this {\val{true}} removed.
+For example, the input
+$$[((\val{false}::\overline{b_0}),x);((\val{true}::\overline{b_1}),y)]$$
+would give the output
+$$[(\overline{b_1},y)].$$
+\item {\func{strip\_bitseq\_false}} takes a list of pairs, the first component of which are bit sequences, and returns the list
+filtered to the ones with a {\val{false}} as the head of the list with this {\val{false}} removed.
+For example, the input
+$$[((\val{false}::\overline{b_0}),x);((\val{true}::\overline{b_1}),y)]$$
+would give the output
+$$[(\overline{b_0},x)].$$
+\item {\func{strip\_bitseq\_true0}} takes a list of bit sequences, and returns the list
+filtered to the ones with a {\val{true}} as the head of the list with this {\val{true}} removed.
+\item {\func{strip\_bitseq\_false0}} takes a list of bit sequences, and returns the list
+filtered to the ones with a {\val{false}} as the head of the list with this {\val{false}} removed.
+\end{itemize}
+These are exposed because they are used in the {\module{ctregraft}} module.\footnote{It might make more sense to combine the {\module{ctre}} and {\module{ctregraft}} modules so that these functions need not be exposed.}
 
 \section{Grafting Trees}
 
-\module{ctregraft}
+The module {\module{ctregraft}}
+has code for grafting subtrees onto a compact tree in order
+to form an approximation with more information.
+The purpose of this is so that a block header can
+have a compact tree small enough to check the details of the asset which
+staked the block,
+and the block delta can have a graft extending this compact tree
+to a larger compact tree with enough information to support
+all the transactions in the block.
 
 {\bf{Note:}} 
 In the Coq formalization the Coq module {\coqmod{CTreeGrafting}}
 corresponds to {\module{ctregrafting}}.
 For more information, see~\cite{White2015b}.
 
-{\type{cgraft}}
-with serialization function
+The type {\type{cgraft}} is a list of hash values associated with compact trees.
+The idea is simply to associate some hash roots with compact trees with these hash roots.
+As usual, the serialization and deserialization functions
+for this type are
 {\serfunc{seo\_cgraft}}
-and deerialization function
+and
 {\serfunc{sei\_cgraft}}.
 
+There are four functions exposed by {\module{ctregraft}}.
 \begin{itemize}
-\item {\func{cgraft\_valid}}
-\item {\func{ctree\_cgraft}}
-\item {\func{factor\_tx\_ctree\_cgraft}}
-\item {\func{factor\_inputs\_ctree\_cgraft}}
+\item {\func{cgraft\_valid}} checks if a graft is {\defin{valid}}, meaning simply that
+each pair $(h,\cC)$ is such that the hash root of $\cC$ is $h$.
+\item {\func{ctree\_cgraft}} takes a graft $\cG$ and a compact tree $\cC$
+and replaces each ${\constr{CHash}}(h)$ in $\cC$ with $\cC'$
+where $(h,\cC')$ is in $\cG$.
+\item {\func{factor\_tx\_ctree\_cgraft}} takes a transaction and a compact tree $\cC$
+and computes a pair $(\cC',\cG)$ of a compact tree $\cC'$ and a graft $\cG$.\footnote{This function is currently unused.}
+Here $\cC'$ is an approximation of $\cC$
+and {\func{ctree\_cgraft}} applied to $\cG$ and $\cC'$ yields $\cC$.
+\item {\func{factor\_inputs\_ctree\_cgraft}} takes an {\type{addr\_assetid}}
+(a list of transaction inputs)
+and a compact tree $\cC$
+and computes a pair $(\cC',\cG)$ of a compact tree $\cC'$ and a graft $\cG$.
+Here $\cC'$ is an approximation of $\cC$
+and {\func{ctree\_cgraft}} applied to $\cG$ and $\cC'$ yields $\cC$.
+The purpose of this function is to factor the part of the compact tree
+needed for the block header from the part needed for the rest of the block.
 \end{itemize}
