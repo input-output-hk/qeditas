@@ -296,27 +296,76 @@ These values are intended to be set upon start-up
 by loading a value from a file (see {\func{load\_currentframe}})
 and be modifiable by the user.
 (There is code in {\file{qeditascli.ml}} to change the current frame
-using commands.)
+using commands,
+calling some of the functions described below.)
 
+A remote frame of the form ${\constr{RFBin}}({\constr{RFAll}},{\constr{RFAll}})$
+is a redex with reduct ${\constr{RFAll}}$.
+A remote frame is normal if it has no redexes.
+
+We briefly describe some of the functions involving frames
+exported by the {\module{ctre}} module.
 \begin{itemize}
-\item {\func{normalize\_frame}}
-\item {\func{rframe\_lub}}
-\item {\func{wrap\_frame}}
-\item {\func{hashframe}}
-\item {\func{frame\_filter\_ctree}}
-\item {\func{frame\_filter\_octree}}
-\item {\func{rframe\_filter\_ctree}}
-\item {\func{rframe\_filter\_octree}}
-\item {\func{frame\_add\_leaf}}
-\item {\func{frame\_set\_hash\_pos}}
-\item {\func{frame\_set\_abbrev\_pos}}
-\item {\func{frame\_set\_abbrev\_level}}
-\item {\func{frame\_set\_all\_pos}}
-\item {\func{build\_rframe\_to\_req}}
-\item {\func{split\_rframe\_for\_reqs}}
-\item {\func{lookup\_all\_ctree\_root\_abbrevs}}
-\item {\func{lookup\_frame\_ctree\_root\_abbrev}}
-\item {\func{load\_root\_abbrevs\_index}}
+\item {\func{frame\_filter\_ctree}} takes a local frame $\cF$ and a compact tree $\cC$
+and changes the representation of $\cC$ according to $\cF$.
+This means nodes in $\cC$ corresponding to ${\constr{FHash}}$ nodes in $\cF$
+are replaced by ${\constr{CHash}}$ nodes storing the hash root of the node.
+It also means nodes in $\cC$ corresponding to ${\constr{FAbbrev}}$ nodes in $\cF$
+are replaced by ${\constr{CAbbrev}}$ nodes storing the hash root and full hash of the node,
+saving the subtree in a file if necessary.
+It is possible that $\cC$ does not have enough information to form the
+representation required by $\cF$ (e.g., if a ${\constr{CHash}}$ node occurs in $\cC$ corresponds
+to ${\constr{FBin}}$ in $\cF$),
+in which case the exception {\exc{InsufficientInformation}} is raised.
+\item {\func{frame\_filter\_octree}} is a wrapper for {\func{frame\_filter\_ctree}} handling
+optional ctrees, sending {\val{None}} to {\val{None}}.
+\item {\func{rframe\_filter\_ctree}} is similar to {\func{frame\_filter\_ctree}} except using remote frames.
+\item {\func{rframe\_filter\_octree}} is similar to {\func{frame\_filter\_octree}} except using remote frames.
+\item {\func{normalize\_frame}} takes a local frame and creates a remote frame
+by removing abbreviation nodes and by normalizing the result.
+\item {\func{rframe\_lub}} combines two normalized remote
+ frames to give a normalized remote frame
+ describing what at least one of the two frames stores.
+ The intention is that this function could be used for a peer to summarize
+ what information at least one of its peers has, and then share this
+ summary with all peers. In principle this could help locate a peer with specific
+ information in the ledger tree.
+\item {\func{wrap\_frame}} ensures that a local frame starts with ${\constr{FAbbrev}}$, by adding it if necessary.
+\item {\func{hashframe}} hashes a frame to obtain a unique identifier for it.
+\item {\func{frame\_add\_leaf}} changes a frame so that a given leaf (specified by an address)
+will be explicit, possibly up to a given prefix length.
+\item {\func{frame\_set\_hash\_pos}} changes a frame so that a certain position (specific by a list of booleans) will be summarized by a hash root.
+\item {\func{frame\_set\_abbrev\_pos}} changes a frame so that a certain position will be abbreviated.
+\item {\func{frame\_set\_abbrev\_level}} changes a frame to ensure that every node at a certain
+level of a tree will be abbreviated.\footnote{One example of a frame that has been used to compute the initial distribution compact tree has abbreviations at levels $2$, $10$ and $18$. This means that the top two levels of the compact tree will end in abbreviations for the trees representing p2pkh addresses, p2sh addresses, term addresses and publication addresses. These subtrees in turn will have abbreviations corresponding to the first and second bytes of the addresses.}
+\item {\func{frame\_set\_all\_pos}} changes a frame so that everything below a certain position will be explicit.
+\item {\func{build\_rframe\_to\_req}} takes a local frame and a compact tree
+and finds the parts of the compact tree where information is missing.
+These missing parts are used to create a remote frame.
+The intention is that this remote frame can be used to request the missing
+information from peers.
+\item {\func{split\_rframe\_for\_reqs}} takes an integer $n$ and a remote frame
+and returns a list of remote frames with the given frame as a least upper bound.
+This is essentially computed by traversing to depth $n$ and partitioning the
+request into $2^n$ parts to request.
+The intention is to use this to factor large requests 
+into small requests of parts of the compact tree from peers.
+\item {\func{load\_root\_abbrevs\_index}} loads the contents of a file {\file{rootabbrevsindex}}
+which associates hash roots of compact trees
+to hashes of local frames and compact trees.
+This index is used to find the abbreviation for a compact tree given a hash root
+and hash of a local frame.
+The intention is to only store this information for the hash root for the top
+of a compact tree (corresponding to addresses, i.e., 162-bit sequences)
+and not subtrees (of which there are too many).
+\item {\func{lookup\_frame\_ctree\_root\_abbrev}} takes a hash root of a compact tree
+and the hash of a local frame
+and returns the hash of the compact tree
+(or raises the exception {\exc{Not\_found}}).
+Note that this hash is needed to load the abbreviation.
+\item {\func{lookup\_all\_ctree\_root\_abbrevs}} takes a hash root and returns a list of
+pairs of hash values, the first being the hash of a local frame
+and the second being the hash of a corresponding compact tree.
 \end{itemize}
 
 \subsection{Supporting Transactions}
