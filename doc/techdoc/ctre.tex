@@ -148,6 +148,7 @@ the same as the one given by {\func{hlist\_hashroot}}.
 \item {\func{in\_hlist}} and {\func{in\_nehlist}} check if an asset is explicitly listed in
 the hlist or nehlist. Note that this will return {\val{false}} if the asset is not explicitly listed
 but is an asset on the part of the list being summarized by ${\constr{HHash}}$ or ${\constr{NehHash}}$.
+\item {\func{print\_hlist}} and {\func{print\_hlist\_to\_buffer}} print hlists and are included for debugging purposes.
 \end{itemize}
 
 \subsection{Compact Trees}
@@ -200,17 +201,49 @@ hlists at the leaves.
 \item {\func{octree\_hashroot}} takes an optional compact tree and returns an optional hash value.
 It simply returns {\val{None}} for the empty compact tree {\val{None}}
 and returns the result of {\func{ctree\_hashroot}} otherwise.
+\item {\func{ctree\_lookup\_asset}} takes an asset id (a hash value), a ctree and a bit sequence.
+It traverses to leaf in the ctree following the bit sequence.
+It then tries to look up the asset with the asset id in the nonempty hlist at the leaf.
+If the leaf is empty or the asset is not found, then {\val{None}} is returned. Otherwise, the asset is returned.
+\item {\func{remove\_hashed\_ctree}} deletes a file in which an abbreviated compact tree has been saved.
+\item {\func{archive\_unused\_ctrees}} uses the difference between two compact trees to determine which compact tree abbreviations can be ``archived.'' The intention is that once a block height has become a checkpoint,
+then the nodes in the compact tree unused beyond that height will no longer be needed.
+These nodes are simply listed in a file {\file{archive}} and can be explicitly deleted later.
+\item {\func{remove\_unused\_ctrees}} is similar to {\func{archive\_unused\_ctrees}} except that
+it actually deletes the files.
+\item {\func{ctree\_pre}} takes a bit sequence, a compact tree and an integer
+and returns the subtree located where the bit sequence indicates (or {\val{None}} if
+the subtree is empty, hence implicit) along with the depth.\footnote{It is unclear why the depth is returned or even computed as it seems to be simply the length of the bit sequence added to the integer. It is possible this is simply a remnant of some debugging information.}
+\item {\func{ctree\_addr}} given an address and a compact tree,
+returns the leaf (as a compact tree) at that address.
+This leaf could either be {\val{None}} indicating no assets are held at the address,
+or it could be a nonempty hlist, approximating the assets held at the address.
+It also returns the depth, which should always be 162, so it can be ignored.
+\item {\func{get\_ctree\_abbrev}} loads and returns a ctree given its hash, or
+raises the {\exc{Failure}} exception if the appropriate file cannot be found.
+\item {\func{octree\_lub}} takes the ``least upper bound'' of two optional compact trees.
+These are assumed to be ``compatible'' in the sense that they must have the same hash root.
+This means either both will be empty ({\val{None}})
+or both will be compact trees.
+The least upper bound of two empty compact trees is the empty compact tree.
+For nonempty compact trees, the recursive structure is followed,
+abreviations are expanded, and if one of the trees is a {\constr{CHash}}
+node then the other tree is taken.
+The idea is that if some information is in at least one of the trees,
+then the information will be in the resulting tree.
+\item {\func{print\_ctree}} and {\func{print\_ctree\_all}} print compact trees and are included for debugging purposes.
 \end{itemize}
 
 \subsection{Local Frames and Remote Frames}
 
-There are two types of {\defin{frames}} implemented as the types
+A {\defin{frame}} specifies how to represent a compact tree,
+including information about which parts of the tree should
+be explicit and which should be summarized as a hash root.
+In addition, a local frame specifies when to save
+part of a compact tree in a file as an abbreviation.
+There are two types of frames implemented as the types
 {\type{frame}} (for {\defin{local frames}}) and {\type{rframe}} (for
-{\defin{remote frames}}.
-In both cases the intention is to store information about
-how to represent a compact tree. In particular, where to include
-${\constr{CHash}}$ and ${\constr{CAbbrev}}$ nodes.
-\footnote{In the Coq formalization, there is
+{\defin{remote frames}}).\footnote{In the Coq formalization, there is
 no notion of a frame. Local frames were implemented to have a way of
 saving parts of a compact tree in local files, to be loaded when
 needed. Remote frames were implemented to have a way of communicating
@@ -254,38 +287,41 @@ Elements of this type can be serialized and deserialized using
 and
 {\serfunc{sei\_rframe}}.
 
-\subsection{Unwritten}
+The current local frame is stored in the variable
+{\var{localframe}} and the hash of the current local
+frame is stored in the variable {\var{localframehash}}.
+These values are intended to be set upon start-up
+by loading a value from a file (see {\func{load\_currentframe}})
+and be modifiable by the user.
+(There is code in {\file{qeditascli.ml}} to change the current frame
+using commands.)
 
 \begin{itemize}
-\item {\var{localframe}}
-\item {\var{localframehash}}
-\end{itemize}
-
-{\exc{NotSupported}}
-
-\begin{itemize}
-\item {\func{hlist\_hashroot}}
-\item {\func{nehlist\_hlist}}
-\item {\func{nehlist\_hashroot}}
 \item {\func{normalize\_frame}}
 \item {\func{rframe\_lub}}
-\item {\func{hashctree}}
-\item {\func{ctree\_hashroot}}
-\item {\func{octree\_hashroot}}
-\item {\func{ctree\_lookup\_asset}}
-\item {\func{remove\_hashed\_ctree}}
-\item {\func{archive\_unused\_ctrees}}
-\item {\func{remove\_unused\_ctrees}}
-\item {\func{ctree\_pre}}
-\item {\func{ctree\_addr}}
+\item {\func{wrap\_frame}}
+\item {\func{hashframe}}
 \item {\func{frame\_filter\_ctree}}
 \item {\func{frame\_filter\_octree}}
 \item {\func{rframe\_filter\_ctree}}
 \item {\func{rframe\_filter\_octree}}
+\item {\func{frame\_add\_leaf}}
+\item {\func{frame\_set\_hash\_pos}}
+\item {\func{frame\_set\_abbrev\_pos}}
+\item {\func{frame\_set\_abbrev\_level}}
+\item {\func{frame\_set\_all\_pos}}
+\item {\func{build\_rframe\_to\_req}}
+\item {\func{split\_rframe\_for\_reqs}}
 \item {\func{lookup\_all\_ctree\_root\_abbrevs}}
 \item {\func{lookup\_frame\_ctree\_root\_abbrev}}
-\item {\func{get\_ctree\_abbrev}}
 \item {\func{load\_root\_abbrevs\_index}}
+\end{itemize}
+
+\subsection{Supporting Transactions}
+
+{\exc{NotSupported}}
+
+\begin{itemize}
 \item {\func{strip\_bitseq\_true}}
 \item {\func{strip\_bitseq\_false}}
 \item {\func{strip\_bitseq\_true0}}
@@ -295,23 +331,9 @@ and
 \item {\func{ctree\_supports\_tx\_2}}
 \item {\func{tx\_octree\_trans}}
 \item {\func{txl\_octree\_trans}}
-\item {\func{octree\_lub}}
 \item {\func{full\_needed}}
 \item {\func{get\_tx\_supporting\_octree}}
 \item {\func{get\_txl\_supporting\_octree}}
-\item {\func{print\_hlist}}
-\item {\func{print\_hlist\_to\_buffer}}
-\item {\func{print\_ctree}}
-\item {\func{print\_ctree\_all}}
-\item {\func{wrap\_frame}}
-\item {\func{hashframe}}
-\item {\func{frame\_add\_leaf}}
-\item {\func{frame\_set\_hash\_pos}}
-\item {\func{frame\_set\_abbrev\_pos}}
-\item {\func{frame\_set\_abbrev\_level}}
-\item {\func{frame\_set\_all\_pos}}
-\item {\func{build\_rframe\_to\_req}}
-\item {\func{split\_rframe\_for\_reqs}}
 \end{itemize}
 
 \section{Grafting Trees}
