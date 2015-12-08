@@ -9,7 +9,7 @@ open Assets
 open Tx
 
 val reward_maturation : int64
-val reward_locktime : int64
+val reward_locktime : int64 -> int64
 
 val coinage : int64 -> int64 -> obligation -> int64 -> big_int
 

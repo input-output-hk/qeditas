@@ -71,16 +71,6 @@ this means unlocked coins reach their maximum age after roughly $4$ months.
 This is the maximum factor that can be used to determine an asset's coin-age.
 Given current settings this is $33^2$, i.e., $1089$.
 \item {\var{reward\_maturation}} indicates how old a reward must be before it can begin staking. This is currently set to $512$.
-\item {\var{reward\_locktime}} indicates the minimum number of blocks a reward must be locked.
-This is currently set to $2^{14}$ (the same as {\var{maximum\_age}}).
-This large value forces rewards not to be spent for roughly $4$ months.\footnote{This restriction is to dampen the effect
-of rewards on staking. If rewards could be unlocked quickly, then they could be
-spent to create a locked non-reward asset. This locked non-reward asset would
-very quickly mature and begin staking with its maximum age.
-If this setting is lowered to allow rewards to be spent more quickly,
-then other values should be changed so that spending the reward to create
-a locked non-reward assets cannot be used in a
-way that rewards would quickly dominate the supply of actively staking coins.}
 \item {\var{unlocked\_maturation}} indicates how many blocks must pass before
 an unlocked asset can be used for staking. It is currently set to $512$.
 \item {\var{locked\_maturation}} indicates how many blocks must pass before
@@ -94,6 +84,18 @@ no longer be used for staking. It is currently set to $32$, meaning that
 the locked asset cannot be used for staking if it is $32$ blocks from being spendable
 (or even after it is spendable).
 \end{itemize}
+
+Rewards must be locked until a certain block height before they can be spent.
+In order to prevent rewards from dominating the early staking process,\footnote{If rewards could be unlocked quickly, then they could be
+spent to create a locked non-reward asset. This locked non-reward asset would
+very quickly mature and begin staking with its maximum age.}
+this lock time is very long at first (16384 blocks, roughly 4 months), but reduces to
+128 blocks (roughly 1 day) over the course of the first 114688 blocks (roughly 2 years).
+The function {\var{reward\_locktime}} takes a given block height and
+returns the minimum number of blocks a reward must be locked.
+For the first 16834 blocks, the reward locktime is $16384$ (the same as {\var{maximum\_age}}).
+Every 16384 blocks, the reward locktime is halved
+until it reaches 128, where it remains indefinitely.
 
 The function {\func{coinage}} computes the {\defin{coin-age}} of a
 currency asset given the current block height.

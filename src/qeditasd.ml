@@ -447,7 +447,7 @@ let main () =
 				  else
 				    (csm,fsm,tar)
 				in
-				let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh reward_locktime,true),Currency(rewfn blkh)))] in
+				let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))] in
 				let coinstk : tx = ([(alpha2,aid)],stkoutl) in
 				let prevc = Some(CAbbrev(prevledgerroot,lookup_frame_ctree_root_abbrev !localframehash prevledgerroot)) in
 				let octree_ctree c =
