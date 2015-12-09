@@ -370,10 +370,108 @@ and the second being the hash of a corresponding compact tree.
 
 \subsection{Transactions}
 
-We now describe functions related to checking that transactions
-are supported by a compact tree.
+We now describe functions relating compact trees and transactions.
+One of the main concepts is that of {\defin{support}}.
+In short, we say a compact tree supports a transaction if for each
+input there is a corresponding asset held at the given address
+and that a number of conditions hold.
+To be more precise, there are further dependencies.
+For example, some of these conditions depend on the block height
+(e.g., to ensure an asset is no longer locked).
+Also, we must check the correctness of publications
+which may require looking up a theory or signature.
+These dependencies
+are explicit in the function {\func{ctree\_supports\_tx}}
+which checks if a compact tree supports a transaction,
+given a block height, theory tree ({\type{ttree}}) and signature tree ({\type{stree}}).
+The conditions to be checked often make reference to the actual assets
+being spent (which are referred to in the transaction by their assetids).
+The function {\func{ctree\_lookup\_input\_assets}} elaborates
+the inputs by looking up the assets.
 The exception {\exc{NotSupported}} is raised if
-some condition required for a transaction to be supported fails.
+some condition required for a transaction to be supported fails,
+which can happen either because the assets being spent cannot be found
+in the compact tree or because of failure of some condition.
+
+Let $\cC$ be a compact tree.
+We say an asset $a$ is {\defin{held at $\alpha$ in $\cC$}}
+if there is a nonempty hlist $\cH$ at leaf $\alpha$ in $\cC$ and $a$
+is explicitly listed in $\cH$ (see {\func{in\_nehlist}}).
+Let $\iota$ be an {\type{addr\_assetid}} list (a list of transaction inputs)
+and $\iota'$ be a list of pairs $(\alpha,a)$ of addresses and assets.
+We say $\iota'$ is an {\emph{elaboration of $\iota$ relative to $\cC$}}
+if for each $(\alpha,h) \in\iota$ there is a pair $(\alpha,a) \in\iota'$
+where $a$ is held at $\alpha$ in $\cC$ and $a$ has assetid $h$.\footnote{Technically, in the implementations the lists $\iota$ and $\iota'$ will list assetids and assets in the same order.}
+The function {\func{ctree\_lookup\_input\_assets}} 
+computes an elaboration $\iota'$ given $\iota$ and $\cC$,
+raising {\exc{NotSupported}} if 
+there is no asset $a$ with assetid $h$ held at $\alpha$ in $\cC$
+for some $(\alpha,h)$ in $\iota$.
+
+The function {\func{ctree\_supports\_tx}} simply
+calls {\func{ctree\_lookup\_input\_assets}} to obtain $\iota'$
+and then calls {\func{ctree\_supports\_tx\_2}} with this extra information.
+The function {\func{ctree\_supports\_tx\_2}} checks the conditions for
+$\cC$ to support $\tau=(\iota,o)$ with elaborated input $\iota'$
+relative to a block height $b$, a theory tree and a signature tree.\footnote{The function {\func{ctree\_supports\_tx\_2}} is also given a list of assets, but this is simply the second components of the pairs in $\iota'$.}
+Support requires several conditions.
+We describe each condition as a single sentence followed by
+a longer description.\footnote{Similar conditions can also be found in the Coq formalization as {\coqfunc{ctree\_supports\_tx}} in {\file{CTrees.v}}.}
+\begin{enumerate}
+\item {\sc{All output addresses are supported.}}
+That is, for each $(\alpha,u)\in o$ there is no ${\constr{CHash}}$ node along the
+path to the leaf in $\cC$ with position $\alpha$.
+This is needed so that the new assets can be added to the leaves.
+For each $(\alpha,u)\in o$ there are two possibilities: either there are no assets currently
+held at $\alpha$
+or there are assets represented by the nonempty hlist $\cH$ at $\alpha$.
+If there are no assets, the new nonempty hlist will only contain the new assets.
+If there are currently assets represented by $\cH$, we only need to
+push the new assets onto the explicit prefix of $\cH$.
+Note that this is possible even if $\cH$ is only the hash root of the hlist.
+\item {\sc{If an object or a proposition is used in a signature specification, then it must be royalty-free to use.}}
+For the definition of ``used'' see
+{\func{output\_signaspec\_uses\_objs}}
+and
+{\func{output\_signaspec\_uses\_props}}.
+Recall that each signature specification is intended for a specific theory (possibly the empty theory).
+Each parameter in a signature specification will correspond to two term
+addresses: one for the pure object and one for the object in the theory.
+Both of these addresses must be owned as objects and the ownership assets
+must both give $0$ as the price of a right to use the object.
+Likewise each axiom in a signature specification will correspond to two term
+addresses: one for the pure proposition and one for the proposition in the theory.
+Both of these addresses must be owned as propositions and the ownership assets
+also must give $0$ as the price of a right to use the proposition.
+The reason for this condition is to prevent someone from paying once
+for the right to use an object or a proposition
+and then publishing it in a signature which is then free for anyone to use.
+Of course, someone can purchase the ownership assets from the owners
+and then make the corresponding objects and propositions free to use.
+\item {\sc{If rights are consumed in the input, then they must be mentioned in the output.}}
+
+\item {\sc{Rights must be balanced.}}
+
+\item {\sc{Publications are correct and were declared in advance by a sufficiently old intention.}}
+
+
+\item {\sc{If an ownership asset is spent in the input, then it must be included as an output.}}
+That is, once a term address has an owner, it will always have an owner.
+This is necessary since ownership is used to determine which objects have certain types and which propositions
+have been proven (in both cases relative to a theory).
+\item {\sc{Newly claimed ownership must be actually new and must be supported by a document published by the transaction.}}
+\item {\sc{New objects and propositions must be given ownership by the transaction publishing the document.}}
+
+\item {\sc{Bounties can only be collected by the owners of propositions or negated propositions.}}
+
+\end{enumerate}
+The careful reader will note that none of these conditions require the currency units consumed
+in the input to be at least as great as the currency units created in the outputs (plus those
+required to be burned to publish theories and signatures).
+This is not required for support,
+and will not be true for coinstake transactions (which receive a reward).
+
+We summarize the descriptions of these three main functions discussed above as follows:
 \begin{itemize}
 \item {\func{ctree\_lookup\_input\_assets}} takes a compact tree and an
 {\type{addr\_assetid}} list (a list of transaction inputs)
@@ -384,18 +482,16 @@ the exception {\exc{NotSupported}} is raised.
 \item {\func{ctree\_supports\_tx}} checks if a compact tree supports a transaction.
 The function also requires an optional {\type{ttree}} (with all the currently known theories)
 an optional {\type{stree}} (with all the currently known signatures)
-and the current block height. (The block height is needed, for example, to check
-if certain assets have passed their lock height.)
+and the current block height.
 If the transaction is not supported, the exception {\exc{NotSupported}} is raised.
 If the transaction is supported,
-the difference between the currency units consumed and the currency units input
+the difference between the currency units output or burned and the currency units input
 is returned. If this value is negative, then it corresponds to a fee.
 If the value is positive, then it corresponds to a reward.
-\item {\func{ctree\_supports\_tx\_2}} is the same as {\func{ctree\_supports\_tx\_2}}
+\item {\func{ctree\_supports\_tx\_2}} is the same as {\func{ctree\_supports\_tx}}
 except it also receives two extra inputs:
 a list of the input addresses associated with their assets
 and a list of those assets.
-The function {\func{ctree\_supports\_tx}} simply looks up the input assets and then calls {\func{ctree\_supports\_tx\_2}}, which does all the checking of the actual checking of conditions.
 \end{itemize}
 
 If a compact tree supports a transaction or list of transactions,
