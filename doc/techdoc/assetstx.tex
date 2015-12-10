@@ -402,44 +402,71 @@ as well as the burn cost required to publish theory specifications
 and signature specifications.
 \end{itemize}
 
-\subsection{Support For Ownership Preassets}\label{sec:docsuppown}
-
-Ownership of objects, propositions and negated propositions
-will be originally justified by a publication supporting the ownership preasset at
-a given term address.
-What {\defin{support}} means differs in the three cases.
+\subsection{Creation of Objects and Propositions}\label{sec:outputcreates}
 
 Let $h$ be a theory identifier (an optional hash value),
 $\Delta$ be a document
 and $\alpha$ be a term address.
 \begin{itemize}
-\item We say $(h,\Delta)$ {\defin{supports}}
-      the preasset ${\constr{OwnsObj}}(\beta,p)$ at $\alpha$
-      if
+\item We say $(h,\Delta)$ {\defin{creates the object}} at $\alpha$ if
       there is a definition ${\constr{DocDef}}(\delta,s)$ in $\Delta$
       where $\alpha$ is either the term address of the pure object $s$ or
       of the object $s$ of type $\delta$ in the theory with theory identifier $h$.
-\item We say $(h,\Delta)$ {\defin{supports}}
-      the preasset ${\constr{OwnsProp}}(\beta,p)$ at $\alpha$ if
+\item We say $(h,\Delta)$ {\defin{creates the proposition}} at $\alpha$ if
       there is a proof ${\constr{DocPfOf}}(s,\cD)$ in $\Delta$
       where $\alpha$ is either the term address of the pure proposition $s$ or
       of the proposition $s$ in the theory with theory identifier $h$.
-\item We say $(h,\Delta)$ {\defin{supports}}
-      the preasset ${\constr{OwnsNegProp}}$ at $\alpha$ if
+\item We say $(h,\Delta)$ {\defin{creates the negated proposition}} at $\alpha$ if
       there is a proof ${\constr{DocPfOf}}(s,\cD)$ in $\Delta$
       and a proposition $t$ where $s$ is either $\neg t$ or $t\to\bot$\footnote{Here $\bot$ is $\forall_o x_0$ and $\neg$ is $\lambda_o x_0\to\bot$.}
       and
-      $\alpha$ is either the term address 
-      of the proposition $t$ in the theory with theory identifier $h$.\footnote{Negated proposition ownership is not given to pure propositions. The only reason for negated proposotion ownership is to collect bounties. Bounties only make sense for propositions in a theory. (Note that every proposition is provable in an inconsistent theory, and so for every pure proposition there is some theory in which the proposition is provable.)}
+      $\alpha$ is the term address 
+      of the proposition $t$ in the theory with theory identifier $h$.\footnote{We do not consider negated pure propositions. Negated propositions only need to be considered for collection of bounties by disproving a conjecture. Conjectures only make sense for propositions in a theory. (Note that every proposition is provable in an inconsistent theory, and so for every pure proposition there is some theory in which the proposition is provable.)}
 \end{itemize}
 
-Let $o$ be an {\type{addr\_preasset}} list (transaction outputs),
-$u$ be an ownership preasset and $\alpha$ be a term address.
-We say $o$ {\defin{supports}} $u$ at $\alpha$
+We extend these definitions from single documents to transaction outputs (which
+may publish several documents).
+
+Let $o$ be an {\type{addr\_preasset}} list (transaction outputs)
+and $\alpha$ be a term address.
+\begin{itemize}
+\item We say $o$ {\defin{creates the object}} at $\alpha$
 if there is some 
-$(\delta,(\omega,{\constr{DocPublication}}(\gamma,\nu,h,\Delta)))\in o$
-where $(h,\Delta)$ supports $u$ at $\alpha$.
-This notion of support will be used when we give the conditions
+$$(\delta,(\omega,{\constr{DocPublication}}(\gamma,\nu,h,\Delta)))\in o$$
+where $(h,\Delta)$ creates the object at $\alpha$.
+\item We say $o$ {\defin{creates the proposition}} at $\alpha$
+if there is some 
+$$(\delta,(\omega,{\constr{DocPublication}}(\gamma,\nu,h,\Delta)))\in o$$
+where $(h,\Delta)$ creates the proposition at $\alpha$.
+\item We say $o$ {\defin{creates the negated proposition}} at $\alpha$
+if there is some 
+$$(\delta,(\omega,{\constr{DocPublication}}(\gamma,\nu,h,\Delta)))\in o$$
+where $(h,\Delta)$ creates the negated proposition at $\alpha$.
+\end{itemize}
+
+Ownership of an object, proposition or negated proposition will be originally
+justified by the creation of the object, proposition or negated proposition.
+We need a notion of {\defin{support}} for this purpose.
+Ownership preassets
+are those of the form
+${\constr{OwnsObj}}(\beta,p)$,
+${\constr{OwnsProp}}(\beta,p)$
+and
+${\constr{OwnsNegProp}}$.
+Let $o$ be an {\type{addr\_preasset}} list (transaction outputs)
+and $\alpha$ be a term address.
+We define when $o$ supports an ownership preasset at $\alpha$
+by considering the three kinds of preassets.
+\begin{itemize}
+\item We say $o$ {\defin{supports}} ${\constr{OwnsObj}}(\beta,p)$ at $\alpha$
+      if $o$ creates the object at $\alpha$.
+\item We say $o$ {\defin{supports}} ${\constr{OwnsProp}}(\beta,p)$ at $\alpha$
+      if $o$ creates the proposition at $\alpha$.
+\item We say $o$ {\defin{supports}} ${\constr{OwnsNegProp}}$ at $\alpha$
+      if $o$ creates the negated proposition at $\alpha$.
+\end{itemize}
+
+These notions will be used when we give the conditions
 for a ledger tree to support a transaction.
 In terms of the code, there is no single function checking if $o$ support $u$ at $\alpha$.
 The functions
@@ -447,7 +474,8 @@ The functions
 {\func{output\_creates\_props}},
 and
 {\func{output\_creates\_neg\_props}}
-can be used to obtain term addresses which may support the ownership assets.
+can be used to obtain term addresses which are created as objects, propositions
+and negated propositions.
 When we need to check for support in {\func{ctree\_supports\_tx\_2}}
 in the module {\module{ctre}}
 we will already have the values returned by
@@ -539,6 +567,7 @@ and {\func{check\_tx\_out\_signatures}}
 to check the output signatures.
 \begin{itemize}
 \item {\func{check\_tx\_in\_signatures}} ensures that for each input
+(except those spending markers and bounties)
 there is an appropriate input signature. Here there are two possibilities.
 There could be a signature permitting the spending of the asset ({\func{check\_spend\_obligation}})
 or a signature permitting the movement of the asset ({\func{check\_move\_obligation}}).
