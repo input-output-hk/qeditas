@@ -377,7 +377,7 @@ input there is a corresponding asset held at the given address
 and that a number of conditions hold.
 To be more precise, there are further dependencies.
 For example, some of these conditions depend on the block height
-(e.g., to ensure an asset is no longer locked).
+(e.g., to ensure an old enough intention justifies a publication).\footnote{Lock heights are not checked here, but instead are checked with the signatures of transactions. The reason is that lock heights prevent an asset from being spent, but do not prevent assets from being moved. The distinction between being spent and being moved is not relevant for support.}
 Also, we must check the correctness of publications
 which may require looking up a theory or signature.
 These dependencies
@@ -465,7 +465,7 @@ have been proven (in both cases relative to a theory).
 \item {\sc{Bounties can only be collected by the owners of propositions or negated propositions.}}
 
 \end{enumerate}
-The careful reader will note that none of these conditions require the currency units consumed
+An attentive reader will note that none of these conditions require the currency units consumed
 in the input to be at least as great as the currency units created in the outputs (plus those
 required to be burned to publish theories and signatures).
 This is not required for support,
