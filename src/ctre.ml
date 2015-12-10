@@ -1811,11 +1811,17 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
   let ownobjclaims = ref [] in
   let ownpropclaims = ref [] in
   let ownnegpropclaims = ref [] in
+  let checkoblnonrew obl = (*** for ownership assets: insist on an obligation, or the ownership will not be transferable; also don't allow it to be indicated as a reward ***)
+    match obl with
+    | Some(_,_,b) when not b -> ()
+    | _ -> raise NotSupported
+  in
   List.iter
     (fun (alpha,(obl,u)) ->
       match u with
       | OwnsObj(beta,r) ->
 	  begin
+	    checkoblnonrew obl;
 	    try
 	      ignore
 		(List.find
@@ -1834,16 +1840,14 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 		  ownobjclaims := alpha::!ownobjclaims;
 		  match hlist_lookup_obj_owner hl with
 		  | Some(beta2,r2) -> raise NotSupported (*** already owned ***)
-		  | None ->
-		      match obl with (*** insist on an obligation, or the ownership will not be transferable; also don't allow it to be indicated as a reward ***)
-		      | Some(_,_,b) when not b -> ()
-		      | _ -> raise NotSupported
+		  | None -> ()
 		end
 	      else
 		raise NotSupported
 	  end
       | OwnsProp(beta,r) -> 
 	  begin
+	    checkoblnonrew obl;
 	    try
 	      ignore
 		(List.find
@@ -1862,16 +1866,14 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 		  ownpropclaims := alpha::!ownpropclaims;
 		  match hlist_lookup_prop_owner hl with
 		  | Some(beta2,r2) -> raise NotSupported (*** already owned ***)
-		  | None ->
-		      match obl with (*** insist on an obligation, or the ownership will not be transferable; note that a trivial transfer is made to collect bounties ***)
-		      | Some(_,_,b) when not b -> ()
-		      | _ -> raise NotSupported
+		  | None -> ()
 		end
 	      else
 		raise NotSupported
 	  end
       | OwnsNegProp -> 
 	  begin
+	    checkoblnonrew obl; (*** note that even this one needs to be transferable in order to collect bounties ***)
 	    try
 	      ignore (List.find (fun (alpha1,(_,_,_,u1)) -> u1 = OwnsNegProp && alpha = alpha1) aal); (*** if the ownership is being transferred ***)
 	      ownnegpropclaims := alpha::!ownnegpropclaims;
@@ -1883,10 +1885,6 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 		  ownpropclaims := alpha::!ownpropclaims;
 		  if hlist_lookup_neg_prop_owner hl then
 		    raise NotSupported (*** already owned ***)
-		  else
-		    match obl with (*** insist on an obligation, or the ownership will not be transferable; note that a trivial transfer is made to collect bounties ***)
-		    | Some(_,_,b) when not b -> ()
-		    | _ -> raise NotSupported
 		end
 	      else
 		raise NotSupported
