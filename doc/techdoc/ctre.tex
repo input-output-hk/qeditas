@@ -429,7 +429,7 @@ If there are no assets, the new nonempty hlist will only contain the new assets.
 If there are currently assets represented by $\cH$, we only need to
 push the new assets onto the explicit prefix of $\cH$.
 Note that this is possible even if $\cH$ is only the hash root of the hlist.
-\item {\sc{If an object or a proposition is used in a signature specification, then it must be royalty-free to use.}}
+\item {\sc{If an object or a proposition is used in a signature specification, then it must be free to use.}}
 For the definition of ``used'' see
 {\func{output\_signaspec\_uses\_objs}}
 and
@@ -448,22 +448,176 @@ for the right to use an object or a proposition
 and then publishing it in a signature which is then free for anyone to use.
 Of course, someone can purchase the ownership assets from the owners
 and then make the corresponding objects and propositions free to use.
-\item {\sc{If rights are consumed in the input, then they must be mentioned in the output.}}
-
+\item {\sc{If rights are spent in the input, then they must be mentioned in the output.}}
+If a preasset ${\constr{RightsObj}}(\beta,n)$ is being spent, then 
+$\beta$ must be ``mentioned'' (see {\func{obj\_rights\_mentioned}})
+in the sense that there is either an output of the form
+${\constr{RightsObj}}(\beta,m)$
+or the object is used (as a parameter) in a document being published.
+If a preasset ${\constr{RightsProp}}(\beta,n)$ is being spent, then 
+$\beta$ must be ``mentioned'' (see {\func{prop\_rights\_mentioned}})
+in the sense that there is either an output of the form
+${\constr{RightsProp}}(\beta,m)$
+or the proposition is used (as an axiom) in a document being published.
 \item {\sc{Rights must be balanced.}}
-
-\item {\sc{Publications are correct and were declared in advance by a sufficiently old intention.}}
-
-
+Let $\alpha$ be a term address corresponding to an object [a proposition] used in a document.
+Ensure that all the assets held at $\alpha$ are explict
+(using {\func{hlist\_full\_approx}})
+and look up the ownership asset for $\alpha$ as an object [a proposition].
+(Such ownership assets are held at $\alpha$.)
+If $\alpha$ has no owner, then the transaction is not supported.
+Let $r_1$ be the number of rights to $\alpha$ used as an object [a proposition].
+That is, $r_1$ is the number of documents which import $\alpha$ as a parameter [an axiom].
+This is computed using {\func{count\_rights\_used}}.
+Let $r_2$ be the number of rights to $\alpha$ as an object [a proposition]
+which are created in the output of the transaction.
+This is computed using {\func{rights\_out\_obj}} [{\func{rights\_out\_prop}}]
+and can be described as a simple sum:
+$$
+\sum_{{\constr{RightsObj}(\alpha,m)} {\mbox{ in }} o} m
+\,\,
+\left[
+\sum_{{\constr{RightsProp}(\alpha,m)} {\mbox{ in }} o} m
+\right]
+$$
+Let $r_3$ be the number of rights to $\alpha$ as an object [a propostion]
+which are spent in the input of the transaction.
+This is computed using {\func{count\_obj\_rights}} [{\func{count\_prop\_rights}}]
+and can be described as a simple sum:
+$$
+\sum_{{\constr{RightsObj}(\alpha,m)} {\mbox{ in }} \iota'} m
+\,\,
+\left[
+\sum_{{\constr{RightsProp}(\alpha,m)} {\mbox{ in }} \iota'} m
+\right].
+$$
+The function {\func{ctree\_rights\_balanced}} is called with this information,
+returning a boolean indicating if the rights are {\defin{balanced}}.
+Rights being balanced depends on the cost to purchase rights which is found in the
+ownership asset.
+If the cost to purchase rights is {\val{None}} (meaning rights cannot be purchased),
+then rights are balanced if $r_1 + r_2 = r_3$.\footnote{In practice, $r_1 > 0$ since the object or proposition was used. Hence the only way this equation can hold is if $r_3>0$. This is possible if rights to use
+the object or proposition were purchased earlier at a time when rights were being sold.}
+If the cost to purchase rights is $0$, then the rights are balanced.\footnote{Note that this means anyone can create rights to use the object or proposition later.}
+Assume the ownership asset is of the form ${\constr{OwnsObj}}(\beta,p)$
+[${\constr{OwnsProp}}(\beta,p)$] where $p>0$.
+That is, the cost to purchase rights is $p>0$. In this case it is possible rights are being purchased
+by paying cants to $\beta$.
+Let $r_4$ be the sum of cants sent to $\beta$ in the output $o$.
+The rights are balanced if $r_1+r_2 = r_3+r_4$.\footnote{There is a corner case here. If the same pay address $\beta$ was used in more than one ownership asset at term addresses $\alpha_1$ and $\alpha_2$, then someone could simultaneously create rights to use $\alpha_1$ and $\alpha_2$ by paying cants to $\beta$ once in a single transaction. This can be avoided by always giving a unique pay address for distinct ownership assets. This uniqueness is not enforced.}
+The transaction is not supported if the rights are not balanced.
+\item {\sc{Publications are correct, new and were declared in advance by a sufficiently old intention (marker).}}
+Recall that there are three kinds of publications:
+theory specifications, signature specifications and documents.
+The corresponding preassets are
+${\constr{TheoryPublication}}(\gamma,\nu,\tau)$,
+${\constr{SignaPublication}}(\gamma,\nu,h,\Sigma)$
+and
+${\constr{DocPublication}}(\gamma,\nu,h,\Delta)$.
+Recall that $\nu$ is a nonce.
+There will be two publication addresses associated with the publication.
+One is determined simply by the contents ($\tau$, $(h,\Sigma)$ or $(h,\Delta)$)
+and must be the $\alpha$ (in $o$) where the publication asset will be held.
+(This is checked in {\func{tx\_outputs\_valid\_addr\_cats}}.)
+The $\alpha$ must be empty or the transaction is not supported.
+(If $\alpha$ holds an asset, it implies the publication has already been published.)
+All the information (including $\gamma$ and $\nu$)
+can be hashed to obtain a publication address $\beta$,
+called the {\defin{marker address}}.
+The author of the document was able to compute this publication address $\beta$
+before making the corresponding publication (included in the preasset) public
+without revealing information about the publication's contents.
+The author must publish a {\constr{Marker}} asset
+to the address $\beta$ a certain number of blocks before attempting to publish
+the transaction with the publication.\footnote{The purpose of this is to prevent plagiarism, as described when ${\constr{Marker}}$ was introduced in Chapter~\ref{chap:assetstx}.}
+The number of blocks is {\var{intention\_minage}} which is currently set to $144$ (a day, assuming 10 minute block times).
+This {\constr{Marker}} must be spent by the transaction (assuring it exists)
+and must be old enough, otherwise the transaction is not supported.
+Finally, the publication must be correct.
+Correctness is judged by {\func{check\_theoryspec}}, {\func{check\_signaspec}} or {\func{check\_doc}}.
+In the cases of {\func{check\_signaspec}} or {\func{check\_doc}},
+the appropriate theory (if nonempty) must be looked up in the current theory tree,
+and the current signature tree must be given so that signatures imported by
+the signature specification or document can be retrieved.
+Also, recall that {\func{check\_signaspec}} and {\func{check\_doc}}
+depend on arguments
+{\var{gvtp}} and
+{\var{gvkn}}
+where 
+{\var{gvtp}} determines if an term is known to have a type in a theory
+and
+{\var{gvkn}} determines if a proposition is known to be provable in a theory.
+Now that we have access to the compact tree $\cC$,
+we are in a position to supply these arguments.
+In particular, {\var{gvtp}} computes the term address $\alpha'$ for the object in the given theory
+(which depends on the theory identifier,
+the hash root of the term in question and the hash of the type in question)
+and uses {\func{hlist\_lookup\_obj\_owner}} to determine if $\alpha'$
+is known to have an owner as an object.
+Similarly, {\var{gvkn}} computes the term address $\alpha'$ for the proposition in the given theory
+(which depends on the theory identifier and
+the hash root of the term in question)
+and uses {\func{hlist\_lookup\_prop\_owner}} to determine if $\alpha'$
+is known to have an owner as a proposition.
+Since term addresses can only be given owners as objects [propositions]
+when they are published in a document, the type correctness [provability]
+is guaranteed by ownership.
+\item {\sc{If a marker asset is being spent in the input, then there must be a corresponding publication in the output.}}
+Suppose $(\beta,a)\in\iota'$
+where the preasset of $a$ is {\constr{Marker}}.
+There must be some
+${\constr{TheoryPublication}}(\gamma,\nu,\tau)$,
+${\constr{SignaPublication}}(\gamma,\nu,h,\Sigma)$
+or
+${\constr{DocPublication}}(\gamma,\nu,h,\Delta)$
+in $o$
+for which $\beta$ is the marker address.
 \item {\sc{If an ownership asset is spent in the input, then it must be included as an output.}}
 That is, once a term address has an owner, it will always have an owner.
 This is necessary since ownership is used to determine which objects have certain types and which propositions
 have been proven (in both cases relative to a theory).
-\item {\sc{Newly claimed ownership must be actually new and must be supported by a document published by the transaction.}}
+The ownership asset may be spent and recreated for a number of reasons.
+It can be done to change the pay address or the purchase price of rights.
+Such a change could correspond to the ownership being sold from one party to another,
+where the payment for the sale is part of the same (atomic) transaction.
+Another reason would be to collect a bounty.
+Ownership of propositions and negated propositions are spent (and recreated) as part of
+a transaction which collect bounties.
+(Collecting bounties is the only reason for ownership of negated propositions.)
+Note that the signature to spend an ownership asset is the pay address in the obligation,
+not the pay address for the purchase of rights.
+The pay address in the obligation indicates the ``owner'' of the term address.\footnote{Ownership assets always have nontrivial obligations.}
+\item {\sc{New ownership preassets in the transaction outputs must have an explicit (non-reward) obligation and must be created or transferred. If an ownership output is being created, it must be supported by the transaction outputs.}}
+Suppose $(\alpha,(\omega,u))\in o$ where $u$ is either ${\constr{OwnsObj}}(\beta,p)$,
+${\constr{OwnsProp}}(\beta,p)$ or ${\constr{OwnsNegProp}}$.
+The obligation $\omega$ must not be $\val{None}$ and must indicate it is not a reward.
+There must either be an ownership asset at $\alpha$ listed in $\iota'$ (so ownership is being transferred)
+or no ownership asset is held at $\alpha$ in $\cC$ (so the ownership is being created).
+If the ownership asset is being created, then $o$ must support $u$ at $\alpha$ (see Section~\ref{sec:outputcreates}).
 \item {\sc{New objects and propositions must be given ownership by the transaction publishing the document.}}
-
+There are three different cases.
+(The notions of ``creates'' used here were defined in see Section~\ref{sec:outputcreates}.)
+If $o$ creates an object at term address $\alpha$
+and there is no ${\constr{OwnsObj}}$ asset held at $\alpha$ in $\cC$,
+then there must be some
+$(\alpha,(\omega,{\constr{OwnsObj}}(\beta,p)))\in o$.
+If $o$ creates a proposition at term address $\alpha$
+and there is no ${\constr{OwnsProp}}$ asset held at $\alpha$ in $\cC$,
+then there must be some
+$(\alpha,(\omega,{\constr{OwnsProp}}(\beta,p)))\in o$.
+(There is no requirement that created negated propositions must be given ownership.)
 \item {\sc{Bounties can only be collected by the owners of propositions or negated propositions.}}
-
+Suppose $(\alpha,a)\in\iota'$
+and the preasset of $a$ is ${\constr{Bounty}}(v)$.
+There must also be some $(\alpha,a')\in\iota'$ (with the same $\alpha$)
+where the preasset of $a'$ is either ${\constr{OwnsProp}}(\beta,p)$
+(for some $\beta$ and $p$)
+or ${\constr{OwnsNegProp}}$.
+The fact that ownership asset is being spent means that the ``owner'' (as given in the obligation of $a'$)
+must have signed the transaction spending the bounty.
+Note that by a condition above, the ownership asset must be recreated in the output $o$.
+The idea is that an owner of the proposition or negated proposition collects
+the bounty by a trivial transfer of the ownership asset.
 \end{enumerate}
 An attentive reader will note that none of these conditions require the currency units consumed
 in the input to be at least as great as the currency units created in the outputs (plus those
