@@ -894,7 +894,6 @@ let load_root_abbrevs_index () =
   if Sys.file_exists fn then
     begin
       let ch = open_in_bin fn in
-      let rl = ref [] in
       let cr = ref (ch,None) in
       try
 	while true do
@@ -1660,6 +1659,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
     | HNil -> ()
     | _ -> raise NotSupported
   in
+  let spentmarkersjustified = ref [] in
   List.iter
     (fun (alpha,(obl,u)) ->
       match u with
@@ -1672,13 +1672,17 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	      match hashtheory (theoryspec_theory thy) with
 	      | Some(thyh) ->
 		  let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce thyh)) in
-		  ignore (List.find
-			    (fun a ->
-			      match a with
-			      | (h,bday,obl,Marker) -> List.mem (beta,h) inpl && Int64.add bday intention_minage <= blkh
-			      | _ -> false
-			    )
-			    al)
+		  begin
+		    match
+		      List.find
+			(fun a ->
+			  match a with
+			  | (h,bday,obl,Marker) -> List.mem (beta,h) inpl && Int64.add bday intention_minage <= blkh
+			  | _ -> false
+			)
+			al
+		    with (h,_,_,_) -> spentmarkersjustified := h::!spentmarkersjustified
+		  end
 	      | None -> raise NotSupported
 	    with
 	    | CheckingFailure -> raise NotSupported
@@ -1708,13 +1712,17 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	      ignore (check_signaspec gvtp gvkn th thy sigt sl);
 	      let slh = hashsigna (signaspec_signa sl) in
 	      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th slh))) in
-	      ignore (List.find
-			(fun a ->
-			  match a with
-			  | (h,bday,obl,Marker) -> List.mem (beta,h) inpl && Int64.add bday intention_minage <= blkh
-			  | _ -> false
-			)
-			al)
+	      begin
+		match
+		  List.find
+		    (fun a ->
+		      match a with
+		      | (h,bday,obl,Marker) -> List.mem (beta,h) inpl && Int64.add bday intention_minage <= blkh
+		      | _ -> false
+		    )
+		    al
+		with (h,_,_,_) -> spentmarkersjustified := h::!spentmarkersjustified
+	      end
 	    with
 	    | CheckingFailure -> raise NotSupported
 	    | NonNormalTerm -> raise NotSupported
@@ -1742,14 +1750,17 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	      reset_resource_limits();
 	      ignore (check_doc gvtp gvkn th thy sigt dl);
 	      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (hashdoc dl)))) in
-	      ignore (List.find
-			(fun a ->
-			  match a with
-			  | (h,bday,obl,Marker) ->
-			      List.mem (beta,h) inpl && Int64.add bday intention_minage <= blkh
-			  | _ -> false
-			)
-			al)
+	      begin
+		match
+		  List.find
+		    (fun a ->
+		      match a with
+		      | (h,bday,obl,Marker) -> List.mem (beta,h) inpl && Int64.add bday intention_minage <= blkh
+		      | _ -> false
+		    )
+		    al
+		with (h,_,_,_) -> spentmarkersjustified := h::!spentmarkersjustified
+	      end
 	    with
 	    | CheckingFailure -> raise NotSupported
 	    | NonNormalTerm -> raise NotSupported
@@ -1758,6 +1769,14 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
       | _ -> ()
     )
     outpl;
+  (*** Every spent Marker corresponds to a publication in the output ***)
+  List.iter
+    (fun (h,bday,obl,u) ->
+      match u with
+      | Marker ->
+	  if not (List.mem h !spentmarkersjustified) then raise NotSupported
+      | _ -> ())
+    al;
   (*** If an ownership asset is spent in the input, then it must be included as an output.
        Once a termaddr is owned by someone, it must remain owned by someone. ***)
   List.iter
