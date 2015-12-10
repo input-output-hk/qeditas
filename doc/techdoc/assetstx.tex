@@ -40,6 +40,8 @@ Readers can examine the formal properties proven in {\coqmod{Assets}} to have a 
 idea of what properties corresponding OCaml functions should satisfy.
 For more information, see~\cite{White2015b}, although preassets in the version described there are restricted to currency units.
 
+\subsection{Obligations}
+
 We first consider the type {\type{obligation}}:
 \begin{verbatim}
 type obligation = (payaddr * int64 * bool) option
@@ -60,6 +62,8 @@ assets are given preference when staking.)
 The boolean $r$ indicates if the asset is a reward for staking a block.\footnote{Philosophically, this should not be part of the ``obligation,'' but the reward indicator was added late and this was a simple way to include it.}
 Rewards are considered special in the sense that they can be forfeited in the first 6 blocks
 after the reward is issued, if the issuer provably double signs within the next 6 blocks.
+
+\subsection{Categories of Preassets and Assets}
 
 There are 11 kinds of {\defin{assets}}, as determined
 by the corresponding {\defin{preasset}}: currency units, bounties, object ownership,
@@ -173,6 +177,8 @@ The functions {\func{assetid}}, {\func{assetbday}},
 {\func{assetobl}} and {\func{assetpre}}
 extract the components from the asset.
 
+\subsection{Types for Transaction Inputs and Outputs}
+
 The inputs of transactions will be pairs of addresses and asset identifiers (hash values)
 of assets held at these addresses. The type {\type{addr\_assetid}}
 plays the role of a transaction input and is defined as follows:
@@ -198,6 +204,8 @@ The type {\type{addr\_asset}} is included to represent such an elaborated input 
 \begin{verbatim}
 type addr_asset = addr * asset
 \end{verbatim}
+
+\subsection{Functions}
 
 The functions {\func{hashobligation}} hashes an obligation (returning {\val{None}}
 for the {\val{None}} obligation).
@@ -394,6 +402,61 @@ as well as the burn cost required to publish theory specifications
 and signature specifications.
 \end{itemize}
 
+\subsection{Support For Ownership Preassets}\label{sec:docsuppown}
+
+Ownership of objects, propositions and negated propositions
+will be originally justified by a publication supporting the ownership preasset at
+a given term address.
+What {\defin{support}} means differs in the three cases.
+
+Let $h$ be a theory identifier (an optional hash value),
+$\Delta$ be a document
+and $\alpha$ be a term address.
+\begin{itemize}
+\item We say $(h,\Delta)$ {\defin{supports}}
+      the preasset ${\constr{OwnsObj}}(\beta,p)$ at $\alpha$
+      if
+      there is a definition ${\constr{DocDef}}(\delta,s)$ in $\Delta$
+      where $\alpha$ is either the term address of the pure object $s$ or
+      of the object $s$ of type $\delta$ in the theory with theory identifier $h$.
+\item We say $(h,\Delta)$ {\defin{supports}}
+      the preasset ${\constr{OwnsProp}}(\beta,p)$ at $\alpha$ if
+      there is a proof ${\constr{DocPfOf}}(s,\cD)$ in $\Delta$
+      where $\alpha$ is either the term address of the pure proposition $s$ or
+      of the proposition $s$ in the theory with theory identifier $h$.
+\item We say $(h,\Delta)$ {\defin{supports}}
+      the preasset ${\constr{OwnsNegProp}}$ at $\alpha$ if
+      there is a proof ${\constr{DocPfOf}}(s,\cD)$ in $\Delta$
+      and a proposition $t$ where $s$ is either $\neg t$ or $t\to\bot$\footnote{Here $\bot$ is $\forall_o x_0$ and $\neg$ is $\lambda_o x_0\to\bot$.}
+      and
+      $\alpha$ is either the term address 
+      of the proposition $t$ in the theory with theory identifier $h$.\footnote{Negated proposition ownership is not given to pure propositions. The only reason for negated proposotion ownership is to collect bounties. Bounties only make sense for propositions in a theory. (Note that every proposition is provable in an inconsistent theory, and so for every pure proposition there is some theory in which the proposition is provable.)}
+\end{itemize}
+
+Let $o$ be an {\type{addr\_preasset}} list (transaction outputs),
+$u$ be an ownership preasset and $\alpha$ be a term address.
+We say $o$ {\defin{supports}} $u$ at $\alpha$
+if there is some 
+$(\delta,(\omega,{\constr{DocPublication}}(\gamma,\nu,h,\Delta)))\in o$
+where $(h,\Delta)$ supports $u$ at $\alpha$.
+This notion of support will be used when we give the conditions
+for a ledger tree to support a transaction.
+In terms of the code, there is no single function checking if $o$ support $u$ at $\alpha$.
+The functions
+{\func{output\_creates\_objs}},
+{\func{output\_creates\_props}},
+and
+{\func{output\_creates\_neg\_props}}
+can be used to obtain term addresses which may support the ownership assets.
+When we need to check for support in {\func{ctree\_supports\_tx\_2}}
+in the module {\module{ctre}}
+we will already have the values returned by
+{\func{output\_creates\_objs}},
+{\func{output\_creates\_props}},
+and
+{\func{output\_creates\_neg\_props}}
+and will make use of these values at the time.
+
 \section{Transactions}
 
 The module \module{tx} defines a type {\type{tx}} for transactions,
@@ -460,9 +523,11 @@ and checks that it is valid in that the following conditions hold:
 \begin{enumerate}
 \item At most one owner (as an object or proposition) is declared for each term address.\footnote{Note that it is legal for one term address to obtain an owner as an object and another owner as a proposition. In fact, this should be common for pure terms. For example, the term $\forall_o x_0\to x_0$ (or $\top$) will have
 a hash root $h_\top$. This can be both defined and owned as an object as well as proven and owned as a proposition.}
+The function checking this is {\func{tx\_outputs\_valid\_one\_owner}}.
 \item Each preasset is sent to an appropriate kind of address.
 Ownership preassets are sent to term addresses
 and publications and markers are sent to publication addresses.\footnote{This should probably be extended to ensure currency units and rights are only sent to pay addresses and bounties are only sent to term addresses.}
+The function checking this is {\func{tx\_outputs\_valid\_addr\_cats}}.
 \end{enumerate}
 \item {\func{tx\_valid}} checks that both the inputs and outputs are valid in the sense above.
 \item {\func{tx\_signatures\_valid}} takes a block height $b$, an asset list
