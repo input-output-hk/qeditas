@@ -1573,6 +1573,7 @@ let rec ctree_supports_output_addrs outpl tr =
 (*** return the fee (negative) or reward (positive) if supports tx, otherwise raise NotSupported ***)
 let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
   let (inpl,outpl) = tx in
+  (*** Each output address must be supported. ***)
   ctree_supports_output_addrs outpl tr;
   let objaddrs = obj_rights_mentioned outpl in
   let propaddrs = prop_rights_mentioned outpl in
