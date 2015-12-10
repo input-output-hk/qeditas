@@ -107,13 +107,17 @@ let rec check_tx_in_signatures blkh txhe outpl inpl al sl =
       assetid a = k
 	&&
       begin
-	try
-	  ignore (List.find
-		    (fun s ->
-		      check_spend_obligation alpha blkh txhe s (assetobl a) || check_move_obligation alpha txhe s (assetobl a) (assetpre a) outpl)
-		    sl);
-	  true
-	with Not_found -> false
+	match assetpre a with
+	| Marker -> true
+	| Bounty(_) -> true
+	| _ -> (*** don't require signatures to spend markers and bounties; but there are conditions for the tx to be supported by a ctree ***)
+	    try
+	      ignore (List.find
+			(fun s ->
+			  check_spend_obligation alpha blkh txhe s (assetobl a) || check_move_obligation alpha txhe s (assetobl a) (assetpre a) outpl)
+			sl);
+	      true
+	    with Not_found -> false
       end
   | _,_ -> false
 
