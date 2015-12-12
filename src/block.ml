@@ -68,8 +68,6 @@ let set_genesis_stakemods x =
  ***)
 set_genesis_stakemods "0000000000000000000000000000000000000000"
 
-let genesistimestamp = ref 1446148367L;; (*** Too early, but OK for testing. For the mainnet, this should be the timestamp in the same bitcoin block used to initialize the stake modifiers ***)
-
 (*** max target/min difficulty: 2^220 (for mainnet) ***)
 let max_target = ref (shift_left_big_int unit_big_int 220)
 let genesistarget = ref (shift_left_big_int unit_big_int 205) (* current estimate for initial difficulty *)
@@ -478,7 +476,7 @@ let check_postor_pdoc tm csm mtar alpha beta m =
   with InappropriatePostor -> false
 
 (***
- hitval computes a big_int by hashing the deltatime (seconds since the previous block), the stake's asset id and the current stake modifier.
+ hitval computes a big_int by hashing the timestamp (in seconds), the stake's asset id and the current stake modifier.
  If there is no proof of storage, then there's a hit if the hitval is less than the target times the stake.
  With a proof of storage, the stake is multiplied by 1.25 before the comparison is made.
  A proof of storage is either a term or partial document which abbreviates everything except one
@@ -926,6 +924,7 @@ let rec valid_blockchain_aux blkh bl =
 	  && bhd.prevblockhash = None
 	  && ctree_hashroot bhd.prevledger = !genesisledgerroot
 	  && eq_tinfo bhd.tinfo (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
+	  && bhd.deltatime = 600l
       then
 	(txout_update_ottree (tx_outputs (tx_of_block (bh,bd))) None,
 	 txout_update_ostree (tx_outputs (tx_of_block (bh,bd))) None)
@@ -959,6 +958,8 @@ let rec valid_blockheaderchain_aux blkh bhl =
       ctree_hashroot bhd.prevledger = !genesisledgerroot
 	&&
       eq_tinfo bhd.tinfo (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
+	&&
+      bhd.deltatime = 600l
   | [] -> false
 
 let valid_blockheaderchain blkh bhc =

@@ -167,7 +167,7 @@ let beststakingoption () =
 	(Int64.add blkh 1L,cs,bhd.newledgerroot,bhd.timestamp,Some(bhd,bhs),(csm2,fsm1,tar2))
     | None ->
 	(*** finally assume we are starting from the genesis ledger ***)
-	(1L,zero_big_int,hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",!genesistimestamp,None,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget));;
+	(1L,zero_big_int,hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",Int64.of_float (Unix.time()),None,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget));;
 
 let stakingproccomm : (in_channel * out_channel * in_channel) option ref = ref None;;
 
@@ -437,7 +437,7 @@ let main () =
 				let (pbhtm,pbhh) =
 				  match pbh with
 				  | Some(pbh,_) -> (pbh.timestamp,Some(hash_blockheaderdata pbh))
-				  | None -> (!genesistimestamp,None)
+				  | None -> (Int64.sub stktm 600L,None)
 				in
 				let newrandbit = rand_bit() in
 				let fsm = stakemod_pushbit newrandbit fsmprev in

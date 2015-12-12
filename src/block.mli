@@ -20,7 +20,6 @@ val set_genesis_stakemods : string -> unit
 val genesiscurrentstakemod : stakemod ref
 val genesisfuturestakemod : stakemod ref
 val genesisledgerroot : hashval ref
-val genesistimestamp : int64 ref
 val genesistarget : big_int ref
 val max_target : big_int ref
 
