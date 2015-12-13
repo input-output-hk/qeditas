@@ -1,4 +1,13 @@
-\module{block}
+The module {\module{block}}
+contains code related to blocks and block chains.
+This includes code to check if a block header is valid
+(including verifying the properties of the staking asset in the ledger),
+whether a block is valid
+and if a block or block header is a valid successor to a block or block header.
+In order to verify these properties we need to know when an asset
+is allowed to stake a block.
+We also allow for the possibility of forfeiture of block rewards as
+a punishment for signing on two different short forks.
 
 {\bf{Note:}} Unit tests for the {\module{block}} module have not been written.
 
@@ -7,71 +16,484 @@ In the Coq formalization the Coq module {\coqmod{Blocks}}
 corresponds to {\module{block}}.
 For more information, see~\cite{White2015b}.
 
+\section{Stake Modifiers}
+
+A {\defin{stake modifier}} is a 256 bit number.
+The type {\type{stakemod}} is defined as four 64-bit integers
+as a way of representing such a 256 bit number.
+The functions {\serfunc{seo\_stakemod}} and {\serfunc{sei\_stakemod}}
+serialize and deserialize stake modifiers.
+
+At each block height there will be a current stake modifier and a future stake modifier.
+The current stake modifier determines who will be able to stake the next block.
+The future stake modifier influences the next 256 current stake modifiers.
+
+The genesis current and future stake modifiers should be set in the variables
+{\var{genesiscurrentstakemod}} and
+{\var{genesisfuturestakemod}}.
+These will determine who will be able to stake the first $256$ blocks
+and will influence who will be able to stake the next $256$ blocks,
+so it is important that these genesis stake modifiers are chosen in a fair manner.
+The function {\func{set\_genesis\_stakemods}}
+sets {\var{genesiscurrentstakemod}}
+and {\var{genesisfuturestakemod}}
+by taking a 160-bit number (as a 40 character hex string),
+applying one round of {\tt{SHA256}} to obtain the value for
+{\var{genesiscurrentstakemod}}
+and another round of {\tt{SHA256}} to obtain the value for
+{\var{genesisfuturestakemod}}.\footnote{The plan was to choose some Bitcoin height in the future and when that height was reached to obtain the 160-bit seed number from the last 20 bytes of the hash of the Bitcoin block header at that height.}
+
+The following three functions operate on stake modifiers.
 \begin{itemize}
-\item {\type{stakemod}}
-{\serfunc{seo\_stakemod}}
-{\serfunc{sei\_stakemod}}
-\item {\type{targetinfo}}
-\item {\type{postor}}
-{\serfunc{seo\_postor}}
-{\serfunc{sei\_postor}}
-\item {\type{blockheaderdata}}
-\item {\type{blockheadersig}}
-\item {\type{blockheader}}
-{\serfunc{seo\_blockheader}}
-{\serfunc{sei\_blockheader}}
-\item {\type{poforfeit}}
-\item {\type{blockdelta}}
-{\serfunc{seo\_blockdelta}}
-{\serfunc{sei\_blockdelta}}
-\item {\type{block}}
-{\serfunc{seo\_block}}
-{\serfunc{sei\_block}}
-\item {\type{blockdeltah}}
-{\serfunc{seo\_blockdeltah}}
-{\serfunc{sei\_blockdeltah}}
-\item {\type{blockchain}}
-\item {\type{blockheaderchain}}
+\item {\func{stakemod\_pushbit}} takes a bit (as a boolean) and a stake modifier, shifts the 256-bit stake modifier (dropping the most significant bit) and using the new bit as the new least significant bit.
+\item {\func{stakemod\_lastbit}} takes a stake modifier and returns its most significant bit (as a boolean).
+\item {\func{stakemod\_firstbit}} takes a stake modifier and returns its least significant bit (as a boolean).
+\end{itemize}
+The current stake modifier changes from one block height to the next by
+taking the last bit of the future stake modifier and pushing this bit onto the current stake modifier.
+The future stake modifier changes from one block height to the next by
+pushing a new bit (either $0$ or $1$) onto the current future stake modifier.
+This implies those who stake blocks influence what will be the current stake modifiers,
+but this influence is limited. If one staker staked 50\% of blocks, the staker would
+choose approximately $128$ bits of the $256$ stake modifiers in the future.
+The hope is that this influence is not enough to significantly improve their
+chances in the future, as each bit not chosen by the staker also has a large influence
+on who will be able to stake.
+
+The function {\func{hitval}} performs one round of
+{\tt{SHA256}} on the least significant 32-bits of a 64-bit integer (intended to be the current time),
+a hash value (intended to be the asset id of the asset to stake) and a stake modifier (intended to be the current stake modifier).
+It returns the result as 256-bit number called the {\defin{hit value}}.
+
+\section{Targets}
+
+A value of type {\type{targetinfo}} is a triple
+consisting of the current stake modifier,
+the future stake modifier
+and the current target (represented by a {\type{big\_int}}).
+The target info used to determine if an asset
+is allowed to stake the next block.
+In particular, an asset can stake
+the hit value is less than the current target (or, the current target times $1.25$
+if proof of storage is used).
+
+We have described above how the current and future stake modifiers
+change at each block height.
+The current target should also change in order to target an average $10$ minute
+block. The function {\func{retarget}} defines how the target changes
+after each block.
+
+\begin{itemize}
+\item {\var{genesistarget}} is set to the initial target used for the genesis block.\footnote{It is currently set to $2^{205}$, but this should be reevaluated after a test run and before the launch of Qeditas.}
+\item {\var{max\_target}} is set to the maximum value for the target (i.e., the minimum difficulty). It
+is currently set to $2^{220}$.
+\item {\func{retarget}} takes a target $\tau$ and a number of seconds $\Delta$ and returns a new target.
+The intention is that the given target is the current target and the number of seconds
+is the number of seconds between the current block and the previous block.
+The value is the minimum of either {\var{max\_target}} or
+$\frac{\tau (9000 + \Delta)}{9600}$.
+In particular, the value returned is never more than the value of {\var{max\_target}}
+and remains $\tau$ if $\Delta$ is 600.
 \end{itemize}
 
+\section{Proof of Storage}
+
+The consensus system for Qeditas is primarily proof-of-stake,
+but also includes a proof-of-storage component.
+A node can use evidence that it is storing some
+part of a term or document
+to increase the weight of its stake by $25\%$.
+The evidence is a value of type {\type{postor}}, defined by two constructors:
 \begin{itemize}
-\item {\var{genesiscurrentstakemod}}
-\item {\var{genesisfuturestakemod}}
-\item {\var{genesisledgerroot}}
-\item {\var{genesistimestamp}}
-\item {\var{genesistarget}}
-\item {\var{max\_target}}
-\item {\var{fake\_blockheader}}
+\item ${\constr{PostorTrm}}(h,s,\alpha,k)$ is evidence of storage of part of a term of a type in a theory at a term address.
+The optional hash value $h$ identifies a theory,
+$s$ is a term, $\alpha$ is a type
+and $k$ is a hash value.
+Here $s$ should have type $\alpha$ in the theory identified by $h$.
+The way this typing constraint is ensured is by checking that the term
+address correspond to the object $s$ in theory $h$
+has an owner as an object.
+This ownership asset should have assed id $k$.
+The term $s$ is intended to be minimal:
+all except exactly one left of the tree representing $s$ should be 
+an abbreviation (i.e., {\constr{TmH}} of hash roots).
+(This minimality condition is checked by {\func{check\_postor\_tm\_r}}.)
+\item ${\constr{PostorDoc}}(\gamma,\nu,h,\Delta,k)$ is evidence of storage of part of a document at a publication address.
+Here $\gamma$ is a pay address, $\nu$ is a hash value (nonce), $h$ is an optional hash value (identifying a theory), $\Delta$ is a partial document (of type {\type{pdoc}})
+and $h$ is a hash value.
+The intention is that $h$ is the asset id for an asset with preasset ${\constr{DocPublication}}(\gamma,\nu,h,\Delta')$
+held and the publication address determined by hashing $\gamma$, $\nu$, $h$ and $\Delta'$.
+Here $\Delta'$ is a document with the same hash root as the partial document $\Delta$.
+The partial document $\Delta$ should be minimal:
+with exactly one document item containing more than hashes
+and with that one document item only containing one explicit leaf,
+with others abbreviated by hash roots.
+(This minimality condition is checked by {\func{check\_postor\_pdoc\_r}}.)
+\end{itemize}
+Values of type {\type{postor}}
+can be serialized and deserialized using
+{\serfunc{seo\_postor}} and
+{\serfunc{sei\_postor}}.
+
+The exception {\exc{InappropriatePostor}} is raised if a value of type {\type{postor}}
+is not an appropriate proof of storage
+because the term or partial document is not minimal.
+\begin{itemize}
+\item {\func{incrstake}} multiplies the number of cants being staked by $1.25$.
+This is the adjusted stake used when proof of storage is included.
+\item {\func{check\_postor\_tm\_r}} checks the minimality condition for a term,
+returning the hash of the unique important leaf upon success.
+\item {\func{check\_postor\_tm}} checks if
+${\constr{PostorTrm}}(h,s,\gamma,k)$
+can be used to increase the chances of staking.
+Let $\alpha$ be the (p2pkh) address where the asset to be staked is held.
+Let $\beta$ be the term address for the object $s$ of type $\gamma$ in the theory identified by $h$.
+Let $h'$ be the hash of the unique exposed leaf given by {\func{check\_postor\_tm\_r}}.
+Let $h''$ be the result of hashing the pair of $\beta$ and $h'$.
+Let $h'''$ be the result of hashing $\alpha$ with $h''$.
+There are two conditions:
+\begin{enumerate}
+\item A certain 16 bits of $h'''$ are all $0$. (This means that given a stake address $\alpha$,
+only one in every 65536 items of the form
+${\constr{PostorTrm}}(h,s,\gamma,k)$
+can possibly ever be used to help $\alpha$ stake, independent of targets and stake modifiers.
+\item The hit value of $h''$ is less than the target times the adjusted stake.
+\end{enumerate}
+\item {\func{check\_postor\_pdoc\_r}} checks the minimality condition for a partial document,
+returning the hash of the unique important leaf upon success.
+\item {\func{check\_postor\_pdoc}} checks if
+${\constr{PostorDoc}}(\gamma,\nu,h,\Delta,k)$
+can be used to increase the chances of staking.
+Let $\alpha$ be the (p2pkh) address where the asset to be staked is held.
+Let $\beta$ be the publication address for the corresponding document asset.
+Let $h'$ be the hash of the unique exposed leaf given by {\func{check\_postor\_pdoc\_r}}.
+Let $h''$ be the result of hashing the pair of $\beta$ and $h'$.
+Let $h'''$ be the result of hashing $\alpha$ with $h''$.
+\begin{enumerate}
+\item A certain 16 bits of $h'''$ are all $0$. (This means that given a stake address $\alpha$,
+only one in every 65536 items of the form
+${\constr{PostorDoc}}(\gamma,\nu,h,\Delta,k)$
+can possibly ever be used to help $\alpha$ stake, independent of targets and stake modifiers.
+\item The hit value of $h''$ is less than the target times the adjusted stake.
+\end{enumerate}
 \end{itemize}
 
-{\exc{InappropriatePostor}}
+\section{Hits and Cumulative Stake}
+
+We now describe two functions for checking if an asset
+(optionally with proof of storage) is allowed to stake.
+This is sometimes informally referred to as ``checking for a hit.''
+A third function {\func{check\_hit}} is deferred until
+we discuss block headers.
 
 \begin{itemize}
-\item {\func{set\_genesis\_stakemods}}
-\item {\func{stakemod\_pushbit}}
-\item {\func{stakemod\_lastbit}}
-\item {\func{stakemod\_firstbit}}
-\item {\func{rewfn}}
-\item {\func{hitval}}
-\item {\func{blockdelta\_blockdeltah}}
-\item {\func{coinstake}}
-\item {\func{incrstake}}
-\item {\func{check\_postor\_tm\_r}}
-\item {\func{check\_postor\_pdoc\_r}}
-\item {\func{check\_hit\_b}}
-\item {\func{check\_hit\_a}}
-\item {\func{check\_hit}}
-\item {\func{hash\_blockheaderdata}}
-\item {\func{valid\_blockheader}}
-\item {\func{ctree\_of\_block}}
-\item {\func{txl\_of\_block}}
-\item {\func{retarget}}
-\item {\func{cumul\_stake}}
-\item {\func{valid\_block}}
-\item {\func{blockheader\_succ}}
-\item {\func{blockchain\_headers}}
-\item {\func{ledgerroot\_of\_blockchain}}
-\item {\func{valid\_blockchain}}
-\item {\func{valid\_blockheaderchain}}
+\item {\func{check\_hit\_b}} is an auxiliary function which does most of the work
+to check if an currency asset can stake a block.
+It is given the block height, the birthday of the asset, the obligation of the asset,
+the number of cants $v$ in the currency asset, the current stake modifier, the current target,
+the current timestamp, the asset id of the asset to stake, the p2pkh address holding the stake address\footnote{Note that the obligation of the stake address may mean that a different person can spend the staking asset than the holder who can stake the asset. This could be used to, for example, ``loan'' assets to someone else to stake.}
+and an optional proof of storage.
+If no proof of storage is given,
+the asset can stake if its hit value (relative to the time stamp and current stake modifier)
+is less than the product of the target and the coinage (as computed by {\func{coinage}}) of the asset.
+Suppose a proof of storage is given.
+In this case, we consider an adjusted stake using $1.25 v$ instead of $v$.
+The asset can stake if the hit value of the asset is less than the target times the coinage of the adjusted stake
+and the proof of storage can be used (as judged by {\func{check\_postor\_tm}} or {\func{check\_postor\_pdoc}}).
+\item {\func{check\_hit\_a}} is simply a wrapper function which takes the target info (of type {\type{targetinfo}})
+and calls {\func{check\_hit\_b}} after extracting the current stake modifier and current target
+from the target info. Factoring the functions this way makes it clear that
+{\func{check\_hit\_b}} does not depend on the future stake modifier.
 \end{itemize}
 
+The best block chain will be the one with the most cumulative stake.\footnote{The intention is also to have rolling checkpoints to prevent long range attacks.}
+The cumulative stake is represented by a {\type{big\_int}}.
+The function {\func{cumul\_stake}} computes the new cumulative stake
+given the previous cumulative stake, the current target $\tau$
+and the latest delta time (time between blocks) $\Delta$.
+It computes this by adding the following (big integer) value to the previous cumulative stake:
+$$\lfloor \frac{\var{max\_target}}{\tau \Delta 2^{-20}} \rfloor$$
+or adding $1$ if this value is less than $1$.
+
+\section{Block Headers}
+
+We now describe block headers.
+A block header is made up of two sets of information:
+the header data and the header signature.
+The data part is represented using the
+record type 
+{\type{blockheaderdata}}
+while the signature part is represented using the record type
+{\type{blockheadersig}}.
+A block header (of type {\type{blockheader}})
+is simply a pair of the data with the signature.
+The functions
+{\serfunc{seo\_blockheader}} and
+{\serfunc{sei\_blockheader}} serialize and deserialize block headers.
+There is a value
+{\var{fake\_blockheader}}
+which can be used when some data structure needs a block header to be initialized.
+
+The fields in the record type {\type{blockheaderdata}} are as follows:
+\begin{itemize}
+\item {\field{prevblockhash}} should contain the hash of the data in the previous block header (or {\val{None}} for the genesis block header).
+\item {\field{newtheoryroot}} should be the hash root of the current theory tree (optional {\type{ttree}}) after the block with this header has been processed.
+It will change if some transaction in the block publishes a theory specification.
+\item {\field{newsignaroot}} should be the hash root of the current signature tree (optional {\type{stree}}) after the block with this header has been processed.
+It will change if some transaction in the block publishes a signature specification.
+\item {\field{newledgerroot}} should be the hash root of the current compact tree ({\type{ctree}})
+after the block with this header has been processed.
+This will always change since the asset staked will be spent and there will be
+outputs to the coinstake transaction of the block.
+\item {\field{stakeaddr}} should be the p2pkh address where the asset being staked is held.
+\item {\field{stakeassetid}} should be the asset id of the asset being staked.
+\item {\field{stored}} is an optional proof of storage ({\type{postor}})
+and will be {\var{None}} if proof of storage was not used to help stake this block.
+\item {\field{timestamp}} is a 64-bit integer time stamp and should correspond to the time the block was staked.
+\item {\field{deltatime}} is a 32-bit integer which should contain the difference between the time stamp of this block and the time stamp of the previous block. (For the genesis block header, this should simply be $600$.)
+\item {\field{tinfo}} should be the target information (current stake modifier, future stake modifier and current target) for this block header.
+\item {\field{prevledger}} is an approximation of the compact tree before processing the block corresponding to this block header.
+This approximation must contain the asset being staked and, if proof of storage is included,
+the relevant object ownership asset
+or document asset.
+\end{itemize}
+
+The fields in the record type {\type{blockheadersig}} are as follows:
+\begin{itemize}
+\item {\field{blocksignat}} is a cryptographic signature of type {\type{signat}}.
+This should be a signature of a hash of the data in the block header.
+Unless an endorsement is used, the signature should be by the private key
+corresponding to the stake address.
+If an endorsement is used, the signature should be by the private key
+\item {\field{blocksignatrecid}} is an integer which should be between $0$ and $3$.
+It is included to help recover the public key for the address (either stake or endorsed) from the signature
+(see the function {\file{recover\_key}} in the module {\module{signat}}).
+\item {\field{blocksignatfcomp}} is a boolean indicating if the address (either stake or endorsed) corresponds
+to the compressed or uncompressed public key.
+\item {\field{blocksignatendorsement}} is an optional endorsement.
+If {\val{None}}, then signature corresponds to the stake address.
+Suppose it is $(\beta,r,b,\sigma)$ where $\beta$ is p2pkh address (the endorsed address), $r$ is an integer ($0\leq r\leq 3$),
+$b$ is a boolean and $\sigma$ is a cryptographic signature.
+Here $\sigma$ should be a signature of the Bitcoin message
+``\verb+endorse+ $\beta$''
+where $\beta$ is the endorsed address (as a Qeditas address in base58 format).
+The signature $\sigma$ should be by the private key corresponding to the address $\alpha$
+and $r$ and $b$ are used to recover the public key.
+\end{itemize}
+
+The following functions operate on block headers:
+\begin{itemize}
+\item {\func{hash\_blockheaderdata}} hashes the data in the block header. This is to determine
+the hash to be signed in the signature part
+as well as the hash to be used in the {\field{previousblockhash}} field of the next block header.
+\item {\func{check\_hit}} takes block header data ({\type{blockheaderdata}})
+and checks if the given staked asset is allowed to create the block.
+It simply calles {\func{check\_hit\_a}} after
+extracting the target info ({\field{tinfo}}), time stamp ({\field{timestamp}}),
+stake asset id ({\field{stakeassetid}}),
+address where the staked asset is held ({\field{stakeaddr}})
+and the optional proof of storage ({\field{stored}})
+from given block header data.
+\item {\func{valid\_blockheader}} determines if a block header is a valid block at the current height.
+In order to check if the block is valid the staked asset must be retrieved from
+the previous ledger.
+The staked asset must be a currency asset with $v$ cants.
+The function {\func{valid\_blockheader\_a}} is called with the extra information given by this asset
+to check the following conditions:
+\begin{enumerate}
+\item The signature in the blockheader must be a valid signature (either directly or via endorsement) of the hash given by {\func{hash\_blockheaderdata}}.
+\item The staked asset has the asset id declared in the header.
+\item The delta time is greater than $0$.
+\item The staked asset is a ``hit'' for the current block height.
+\item If proof of storage is included, then the asset id given for the
+object ownership of the term or
+for the document
+is in the given approximation of the previous ledger.
+\end{enumerate}
+\item {\func{blockheader\_succ}} determines if a second block header is a valid successor to a first block header.
+The following conditions must be checked:
+\begin{enumerate}
+\item The second {\field{prevblockhash}} is the hash of the data in the first given block header.
+\item The second {\field{timestamp}} is the sum of the first {\field{timestamp}} and the second {\field{deltatime}}.
+\item The current stake modifier given in the second {\field{tinfo}}
+ is the result of pushing the last bit of the future stake modifier of the first {\field{tinfo}}
+ onto the current stake modifier of the first {\field{tinfo}}.
+\item The future stake modifier given in the second {\field{tinfo}}
+      is the result of pushing a $0$ or a $1$ onto the future stake modifier of the first {\field{tinfo}}.
+\item The target given in the second {\field{tinfo}} is the result of retargeting using
+      the target given in the first {\field{tinfo}}
+      and the first {\field{deltatime}}.
+\end{enumerate}
+\end{itemize}
+
+\section{Proof of Forfeiture}
+
+Proof of forfeiture is
+optional data proving a staker signed on two recent chain forks within 6 blocks.
+When such a proof is supplied by a staker of a block, the new staker can
+take recent coinstake rewards from the double signing staker.
+Such a proof is a value of type {\type{poforfeit}}
+and consists of a 6-tuple
+$$(b_1,b_2,\overline{c_1},\overline{c_2},d,\overline{h}).$$
+Here $b_1$ and $b_2$ are block headers which should contain different data but both be signed by the
+same stake address.
+The values $\overline{c_1}$ and $\overline{c_2}$ are lists of block header data
+each of which should have length at most 5.
+Finally, $v$ is the number of cants being forfeited
+and $\overline{h}$ is a list of hash values (asset ids of the rewards being forfeited).
+
+The function {\func{check\_poforfeit}} verifies if the given value of type {\type{poforfeit}}
+can be used to support forfeiture of rewards. It first verifies that the data in $b_1$ and $b_2$
+are different (by ensuring their hashes are different)
+and
+are staked using assets at the same stake address $\alpha$.
+It also verifies that $\overline{c_1}$
+and $\overline{c_2}$ have no more than 5 elements.
+It then verifies the signatures for $b_1$ and $b_2$.
+It calls {\func{check\_bhl}} on $\overline{c_1}$ and $\overline{c_2}$
+to ensure that each forms a (reverse) chain connecting $b_1$ and $b_2$
+to some previous block hashes $k_1$ and $k_2$,
+and then checks that $k_1 = k_2$. This implies $b_1$ and $b_2$ are signed block headers
+forking from a common block (with hash $k_1$). (The function {\func{check\_bhl}} also ensures
+that the hash of $b_2$ does not occur in $\overline{c_1}$ as this would mean
+the second chain is a subchain for the first, rather than a fork. Likewise it ensures
+the hash of $b_1$ does not occur in $\overline{c_2}$.)
+Finally it calls {\func{check\_poforfeit\_a}}
+which looks up assets by the asset ids listed in $\overline{h}$
+and verifies that each is a reward less than 6 blocks old
+which was paid to address $\alpha$
+and that the sum of these rewards is $v$ cants.
+
+\section{Blocks}
+
+A {\defin{block}} consists of a block header and a block delta.
+The block delta (implemented as the record type {\type{blockdelta}})
+contains information about how to transform the previous ledger (compact tree)
+into the next ledger (compact tree).
+In particular, the stake output is given (which completes the coinstake transaction)
+and all other transactions in the block are given.
+In addition, an optional proof of forfeiture is given which may effectively increase
+the rewards given to the staker of the block.
+In order to transform the previous ledger,
+one will generally need to graft more information about the previous
+ledger than was given in the header.
+This graft is also given.
+
+The {\type{blockdelta}} record type consists of four fields:
+\begin{itemize}
+\item {\field{stakeoutput}} is the output to the coinstake transaction.
+\item {\field{forfeiture}} is an optional proof that a recent staker signed on a recent fork, thus
+justifying forfeiture of that staker's recent rewards.
+\item {\field{prevledgergraft}} is a graft providing the extra information needed by the output of the coinstake transaction, the other transactions in the block and optionally the data in the {\field{forfeiture}} field.
+\item {\field{blockdelta\_stxl}} is a list of signed transactions, the transactions in the block.
+\end{itemize}
+The functions {\serfunc{seo\_blockdelta}} and {\serfunc{sei\_blockdelta}} serialize
+and deserialize block deltas.
+
+The type {\type{block}} is the product of {\type{blockheader}} and {\type{blockdelta}}.
+The functions {\serfunc{seo\_block}} and {\serfunc{sei\_block}} serialize
+and deserialize blocks.
+
+In Bitcoin it was noticed that blocks could be transmitted more efficiently
+if all the transactions were not sent with the block, since most nodes know
+about these (uncomfirmed) transactions already.
+To support such an idea in Qeditas, the type {\type{blockdeltah}}
+is given. It is similar to {\type{blockdeltah}} but only lists hashes of transactions
+instead of (signed) transactions themselves.
+As always, the functions {\serfunc{seo\_blockdeltah}} and
+{\serfunc{sei\_blockdeltah}} serialize and deserialize values of type {\type{blockdeltah}}.
+The function {\func{blockdelta\_blockdeltah}} converts a block delta into a
+value of type {\type{blockdeltah}}. (Note that the hashes are of the transactions,
+not the signed transactions. This is intended to avoid transaction malleability issues
+which have plagued Bitcoin.)
+
+\begin{itemize}
+\item {\func{coinstake}} builds the coinstake transaction by
+using the staked asset possibly combined with forfeited rewards as the input
+and taking {\field{stakeoutput}} from the block delta for the output.
+\item {\func{ctree\_of\_block}} returns the compact tree of a block (approximating the ledger state before
+processing the block) by taking {\field{prevledger}} from the block header data
+and grafting on {\field{prevledgergraft}} from the block delta.
+We call this the {\defin{compact tree of a block}}.
+\item {\func{tx\_of\_block}} combines all the transactions in the block (including the coinstake) into one large transaction combining all the inputs and all the outputs.
+This is used to check validity of blocks.
+\item {\func{txl\_of\_block}} returns a list of all (unsigned) transactions in the block,
+including the coinstake transaction and the underlying transactions listed in {\field{blockdelta\_stxl}} of the block delta.
+\item {\func{rewfn}} returns the number of cants of the reward at the current block height.
+The reward schedule is the same as Bitcoins (except for the amount of precision), except with the assumption that the first 350000 blocks have already passed (since this was the block height for the snapshot).
+We begin counting with a block height of $1$. From blocks $1$ to $70000$,
+the block reward is $25$ fraenks (25 trillion cants).
+After this the reward halves every $210000$ blocks.
+Since the initial distribution contained (slightly less than) 14 million fraenks, this leads to cap of 21 million fraenks.
+\item {\func{valid\_block}} checks if a block is valid at the given height.
+It does this by looking up the staked asset and passing the information to {\func{valid\_block\_a}}
+which checks the following conditions:
+\begin{enumerate}
+\item The header must be valid.
+\item The transaction outputs in {\field{stakeoutput}} must be valid (as judged by {\func{tx\_outputs\_valid}}).
+\item If the staked asset has an explicit obligation, then ensure the first output on {\field{stakeoutput}}
+is of a preasset with the same amount of cants and the same obligation sent to the stake address.\footnote{This is to support ``loaning'' assets for staking.}
+\item All outputs in {\field{stakeoutput}} except possibly the first is explicitly must be marked as a reward
+and
+have a lock in the obligation at least as long as the value given by {\func{reward\_locktime}}.
+Furthermore, all the outputs must be sent to the stake address.
+If the first output in {\field{stakeoutput}} is not marked as a reward, then it must also
+be sent to the stake address, must be a Currency asset with the same number of cants as the staked asset
+and must have the same obligation (possibly the default {\val{None}} obligation) as the staked asset.
+\item The compact tree of the block must support the coinstake transaction
+and it must have a reward at least\footnote{This is to allow for collection of fees and of forfeiture of recent awards. The fact that the output is not too high is guaranteed later.}
+as high as the value given by {\func{rewfn}}.
+\item There are no duplicate transactions listed in {\field{blockdelta\_stxl}}.
+\item Each transaction in {\field{blockdelta\_stxl}} has valid signatures, is valid and is supported by the compact tree of the block. Furthermore, none of these outputs are marked as rewards, none of these transactions spend the asset being staked. Finally, each transaction consumes at least as many cants as required.
+\item No two transactions in {\field{blockdelta\_stxl}} spend the same input.
+\item If proof of forfeiture is given, then check it is valid and remember the number of cants being forfeited.
+\item Let $\tau=(\iota,o)$ be the transaction of the block. The following must hold:
+\item Let $\cC$ be the result of transforming the compact tree of the block ({\func{ctree\_of\_block}})
+using the transactions of the block ({\func{txl\_of\_block}}).
+The hash root of $\cC$ must be {\field{newledgerroot}}.
+\begin{enumerate}
+\item The cost of the outputs of $\tau$ (see {\func{out\_cost}})
+is equal to the sum of the assets being spent
+along with the reward ({\func{rewfn}})
+and (possibly) the number of cants being forfeited.
+\item No two distinct outputs create ownership as an object (resp., as a proposition) at the same term address.\footnote{It is allowed for the same term address as both an object and a proposition.}
+\item The transformation of the current theory tree by $o$ must have hash root $\field{newtheoryroot}$.
+\item The transformation of the current signature tree by $o$ must have hash root $\field{newsignatroot}$.
+\end{enumerate}
+\end{enumerate}
+\end{itemize}
+
+\section{Chains}
+
+There are additional types
+{\type{blockchain}}
+and 
+{\type{blockheaderchain}}.
+These can be used to represent (nonempty) chains of blocks or block headers.\footnote{It is not clear if this is explicitly needed.}
+In each case the representation is as a pair
+where the first component should be the most recent block of block header
+and the second component is a list of the previous blocks or block headers
+in reverse order.
+
+The variable {\var{genesisledgerroot}} gives the ledger root of the initial compact tree
+with the initial distribution. The value is (as of December 2015):
+\begin{verbatim}
+af8de840af01805f1dbe9f1312c388efeea1e619
+\end{verbatim}
+
+\begin{itemize}
+\item {\func{blockchain\_headers}} converts a block chain into block header chain by dropping the block deltas.
+\item {\func{ledgerroot\_of\_blockchain}} takes a block chain and returns the value of {\field{newledgerroot}} in the latest block header data.
+\item {\func{valid\_blockchain}} checks if a block chain is valid at a given height.
+This requires checking the validity of each block and that each block header is a valid
+successor to the previous block header. It also requires keeping up with the
+theory tree and signature tree.
+In the case of the genesis block, the {\field{prevblockhash}} should be {\val{None}},
+the {\field{prevledger}} should have hash root {\var{genesisledgerroot}},
+the {\field{tinfo}} should be composed of the values in {\var{genesisccurrentstakemod}},
+{\var{genesisfuturestakemod}} and {\var{genesistarget}}
+and the {\field{deltatime}} should be $600$.\footnote{Alternatively, one could set a ``genesis timestamp'' and enforce that the {\field{deltatime}} of the genesis block is the difference between the time stamp of the genesis block and the fixed genesis timestamp.}
+\item {\func{valid\_blockheaderchain}} checks the validity of a block header chain.
+It is similar to {\func{valid\_blockchain}} but only checks the headers are valid
+instead of the full blocks.
+\end{itemize}
