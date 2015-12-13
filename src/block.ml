@@ -618,12 +618,12 @@ let rec check_poforfeit_a blkh alpha alphabs v fal tr =
       | _ -> false
 
 let check_poforfeit blkh ((bhd1,bhs1),(bhd2,bhs2),bhl1,bhl2,v,fal) tr =
-  if hash_blockheaderdata bhd1 = hash_blockheaderdata bhd2 || List.length bhl1 > 5 || List.length bhl2 > 5 then
+  if hash_blockheaderdata bhd1 = hash_blockheaderdata bhd2 || not (bhd1.stakeaddr = bhd2.stakeaddr) || List.length bhl1 > 5 || List.length bhl2 > 5 then
     false
   else
     let bhd1h = hash_blockheaderdata bhd1 in
     let bhd2h = hash_blockheaderdata bhd2 in
-    (*** we only need to check the signatures hear at the heads by the bad actor bhd*.stakeaddr ***)
+    (*** we only need to check the signatures here at the heads by the bad actor bhd*.stakeaddr ***)
     if verify_p2pkhaddr_signat (hashval_big_int bhd1h) bhd1.stakeaddr bhs1.blocksignat bhs1.blocksignatrecid bhs1.blocksignatfcomp
 	&&
       verify_p2pkhaddr_signat (hashval_big_int bhd2h) bhd2.stakeaddr bhs2.blocksignat bhs2.blocksignatrecid bhs2.blocksignatfcomp
