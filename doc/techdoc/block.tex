@@ -74,7 +74,8 @@ and the current target (represented by a {\type{big\_int}}).
 The target info used to determine if an asset
 is allowed to stake the next block.
 In particular, an asset can stake
-the hit value is less than the current target (or, the current target times $1.25$
+the hit value is less than the current target times the coinage of the staked asset
+(or, the coinage times $1.25$
 if proof of storage is used).
 
 We have described above how the current and future stake modifiers
@@ -444,6 +445,7 @@ and must have the same obligation (possibly the default {\val{None}} obligation)
 and it must have a reward at least\footnote{This is to allow for collection of fees and of forfeiture of recent awards. The fact that the output is not too high is guaranteed later.}
 as high as the value given by {\func{rewfn}}.
 \item There are no duplicate transactions listed in {\field{blockdelta\_stxl}}.
+\item The graft in {\field{prevledgergraft}} is valid.
 \item Each transaction in {\field{blockdelta\_stxl}} has valid signatures, is valid and is supported by the compact tree of the block. Furthermore, none of these outputs are marked as rewards, none of these transactions spend the asset being staked. Finally, each transaction consumes at least as many cants as required.
 \item No two transactions in {\field{blockdelta\_stxl}} spend the same input.
 \item No two transactions in {\field{blockdelta\_stxl}} create ownership as an object (resp., as a proposition) at the same term address.
