@@ -641,8 +641,6 @@ let check_poforfeit blkh ((bhd1,bhs1),(bhd2,bhs2),bhl1,bhl2,v,fal) tr =
     else
       false
 
-exception Done
-
 let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
   let ((bhd,bhs),bd) = b in
   (*** The header is valid. ***)
@@ -792,6 +790,41 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
     with NotSupported -> false
   end
     &&
+  (*** Ownership is not created for the same address alpha by the coinstake and a tx in the block. ***)
+  begin
+    try
+      List.iter
+	(fun (alpha,(obl,u)) ->
+	  match u with
+	  | OwnsObj(_,_) ->
+	      List.iter
+		(fun ((_,outpl2),_) ->
+		  List.iter
+		    (fun (alpha2,(obl2,u2)) ->
+		      if alpha = alpha2 then
+			match u2 with
+			| OwnsObj(_,_) -> raise NotSupported
+			| _ -> ())
+		    outpl2)
+		bd.blockdelta_stxl
+	  | OwnsProp(_,_) ->
+	      List.iter
+		(fun ((_,outpl2),_) ->
+		  List.iter
+		    (fun (alpha2,(obl2,u2)) ->
+		      if alpha = alpha2 then
+			match u2 with
+			| OwnsProp(_,_) -> raise NotSupported
+			| _ -> ())
+		    outpl2)
+		bd.blockdelta_stxl
+	  | _ -> ()
+	)
+	bd.stakeoutput;
+      true
+    with NotSupported -> false
+  end
+    &&
    let (forfeitval,forfok) =
      begin
      match bd.forfeiture with
@@ -824,47 +857,13 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
   bhd.newtheoryroot = ottree_hashroot (txout_update_ottree outpl tht)
     &&
   bhd.newsignaroot = ostree_hashroot (txout_update_ostree outpl sigt)
-    &&
-  (*** Ownership is not created for the same term address alpha twice. ***)
-  begin
-    try
-      let outpl2 = ref outpl in
-      while true do
-	match !outpl2 with
-	| [] -> raise Done
-	| ((alpha,(obl,u))::outpr) ->
-	    outpl2 := outpr;
-	    match u with
-	    | OwnsObj(_,_) ->
-		List.iter
-		  (fun (alpha2,(obl2,u2)) ->
-		    if alpha = alpha2 then
-		      match u2 with
-		      | OwnsObj(_,_) -> raise NotSupported
-		      | _ -> ())
-		  outpr
-	    | OwnsProp(_,_) ->
-		List.iter
-		  (fun (alpha2,(obl2,u2)) ->
-		    if alpha = alpha2 then
-		      match u2 with
-		      | OwnsProp(_,_) -> raise NotSupported
-		      | _ -> ())
-		  outpr
-	    | _ -> ()
-      done;
-      true (*** unreachable ***)
-    with
-    | Done -> true
-    | NotSupported -> false
-  end
 
 let valid_block tht sigt blkh (b:block) =
   let ((bhd,_),_) = b in
   let stkaddr = p2pkhaddr_addr bhd.stakeaddr in
   let stkaddrbs = addr_bitseq stkaddr in
   match ctree_lookup_asset bhd.stakeassetid bhd.prevledger stkaddrbs with
-  | Some(aid,bday,obl,Currency(v)) -> (*** stake is held by the staker ***)
+  | Some(aid,bday,obl,Currency(v)) -> (*** stake belongs to staker ***)
       valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs
   | _ -> false
 

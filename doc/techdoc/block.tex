@@ -446,20 +446,22 @@ as high as the value given by {\func{rewfn}}.
 \item There are no duplicate transactions listed in {\field{blockdelta\_stxl}}.
 \item Each transaction in {\field{blockdelta\_stxl}} has valid signatures, is valid and is supported by the compact tree of the block. Furthermore, none of these outputs are marked as rewards, none of these transactions spend the asset being staked. Finally, each transaction consumes at least as many cants as required.
 \item No two transactions in {\field{blockdelta\_stxl}} spend the same input.
+\item No two transactions in {\field{blockdelta\_stxl}} create ownership as an object (resp., as a proposition) at the same term address.
+\item If a transaction in {\field{blockdelta\_stxl}} creates ownership as an object (resp., as a proposition)
+at a term address, then the output of the coinstake transaction does not create the same kind of ownership at the term address.\footnote{It would make sense to simply disallow creation of non-currency assets in the coinstake transaction, but this is not currently the case.}
 \item If proof of forfeiture is given, then check it is valid and remember the number of cants being forfeited.
-\item Let $\tau=(\iota,o)$ be the transaction of the block. The following must hold:
 \item Let $\cC$ be the result of transforming the compact tree of the block ({\func{ctree\_of\_block}})
 using the transactions of the block ({\func{txl\_of\_block}}).
 The hash root of $\cC$ must be {\field{newledgerroot}}.
-\begin{enumerate}
+\item Let $\tau=(\iota,o)$ be the transaction of the block. The following must hold:
+\begin{itemize}
 \item The cost of the outputs of $\tau$ (see {\func{out\_cost}})
 is equal to the sum of the assets being spent
 along with the reward ({\func{rewfn}})
 and (possibly) the number of cants being forfeited.
-\item No two distinct outputs create ownership as an object (resp., as a proposition) at the same term address.\footnote{It is allowed for the same term address as both an object and a proposition.}
 \item The transformation of the current theory tree by $o$ must have hash root $\field{newtheoryroot}$.
 \item The transformation of the current signature tree by $o$ must have hash root $\field{newsignatroot}$.
-\end{enumerate}
+\end{itemize}
 \end{enumerate}
 \end{itemize}
 
