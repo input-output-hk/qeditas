@@ -71,7 +71,7 @@ set_genesis_stakemods "0000000000000000000000000000000000000000"
 (*** max target/min difficulty: 2^220 (for mainnet) ***)
 let max_target = ref (shift_left_big_int unit_big_int 220)
 let genesistarget = ref (shift_left_big_int unit_big_int 205) (* current estimate for initial difficulty *)
-let genesisledgerroot : hashval ref = ref (hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e");; (*** snapshot ledger root ***)
+let genesisledgerroot : hashval ref = ref (hexstring_hashval "af8de840af01805f1dbe9f1312c388efeea1e619");; (*** snapshot ledger root ***)
 
 (*** base reward of 50 fraenks (50 trillion cants) like bitcoin, but assume the first 350000 blocks have passed. ***)
 let basereward = 50000000000000L
@@ -590,7 +590,8 @@ let rec stxs_alloutputs stxl =
 (*** all txs of the block combined into one big transaction; used for checking validity of blocks ***)
 let tx_of_block b =
   let ((bhd,_),bd) = b in
-  ((p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)::stxs_allinputs bd.blockdelta_stxl,bd.stakeoutput @ stxs_alloutputs bd.blockdelta_stxl)
+  let (ci,co) = coinstake b in
+  (ci @ stxs_allinputs bd.blockdelta_stxl,co @ stxs_alloutputs bd.blockdelta_stxl)
 
 let txl_of_block b =
   let (_,bd) = b in
@@ -639,6 +640,8 @@ let check_poforfeit blkh ((bhd1,bhs1),(bhd2,bhs2),bhl1,bhl2,v,fal) tr =
       with Not_found -> false
     else
       false
+
+exception Done
 
 let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
   let ((bhd,bhs),bd) = b in
@@ -789,41 +792,6 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
     with NotSupported -> false
   end
     &&
-  (*** Ownership is not created for the same address alpha by the coinstake and a tx in the block. ***)
-  begin
-    try
-      List.iter
-	(fun (alpha,(obl,u)) ->
-	  match u with
-	  | OwnsObj(_,_) ->
-	      List.iter
-		(fun ((_,outpl2),_) ->
-		  List.iter
-		    (fun (alpha2,(obl2,u2)) ->
-		      if alpha = alpha2 then
-			match u2 with
-			| OwnsObj(_,_) -> raise NotSupported
-			| _ -> ())
-		    outpl2)
-		bd.blockdelta_stxl
-	  | OwnsProp(_,_) ->
-	      List.iter
-		(fun ((_,outpl2),_) ->
-		  List.iter
-		    (fun (alpha2,(obl2,u2)) ->
-		      if alpha = alpha2 then
-			match u2 with
-			| OwnsProp(_,_) -> raise NotSupported
-			| _ -> ())
-		    outpl2)
-		bd.blockdelta_stxl
-	  | _ -> ()
-	)
-	bd.stakeoutput;
-      true
-    with NotSupported -> false
-  end
-    &&
    let (forfeitval,forfok) =
      begin
      match bd.forfeiture with
@@ -835,6 +803,16 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
    in
    forfok
      &&
+  (***
+      The root of the transformed ctree is the newledgerroot in the header.
+   ***)
+  begin
+    match txl_octree_trans blkh (txl_of_block b) (Some(tr)) with
+    | Some(tr2) ->
+	bhd.newledgerroot = ctree_hashroot tr2
+    | None -> false
+  end
+     &&
   (*** The total inputs and outputs match up with the declared fee. ***)
   let tau = tx_of_block b in (*** let tau be the combined tx of the block ***)
   let (inpl,outpl) = tau in
@@ -843,25 +821,50 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
   (*** Originally I added totalfees to the out_cost, but this was wrong since the totalfees are in the stake output which is already counted in out_cost. I don't really need totalfees to be explicit. ***)
   out_cost outpl = Int64.add (asset_value_sum al) (Int64.add (rewfn blkh) forfeitval)
     &&
-  (***
-      The root of the transformed ctree is the newledgerroot in the header.
-      Likewise for the transformed tht and sigt.
-   ***)
-  match txl_octree_trans blkh (coinstake b::List.map (fun (tx,_) -> tx) bd.blockdelta_stxl) (Some(tr)) with
-  | Some(tr2) ->
-      bhd.newledgerroot = ctree_hashroot tr2
-	&&
-      bhd.newtheoryroot = ottree_hashroot (txout_update_ottree outpl tht)
-	&&
-      bhd.newsignaroot = ostree_hashroot (txout_update_ostree outpl sigt)
-  | None -> false
+  bhd.newtheoryroot = ottree_hashroot (txout_update_ottree outpl tht)
+    &&
+  bhd.newsignaroot = ostree_hashroot (txout_update_ostree outpl sigt)
+    &&
+  (*** Ownership is not created for the same term address alpha twice. ***)
+  begin
+    try
+      let outpl2 = ref outpl in
+      while true do
+	match !outpl2 with
+	| [] -> raise Done
+	| ((alpha,(obl,u))::outpr) ->
+	    outpl2 := outpr;
+	    match u with
+	    | OwnsObj(_,_) ->
+		List.iter
+		  (fun (alpha2,(obl2,u2)) ->
+		    if alpha = alpha2 then
+		      match u2 with
+		      | OwnsObj(_,_) -> raise NotSupported
+		      | _ -> ())
+		  outpr
+	    | OwnsProp(_,_) ->
+		List.iter
+		  (fun (alpha2,(obl2,u2)) ->
+		    if alpha = alpha2 then
+		      match u2 with
+		      | OwnsProp(_,_) -> raise NotSupported
+		      | _ -> ())
+		  outpr
+	    | _ -> ()
+      done;
+      true (*** unreachable ***)
+    with
+    | Done -> true
+    | NotSupported -> false
+  end
 
 let valid_block tht sigt blkh (b:block) =
   let ((bhd,_),_) = b in
   let stkaddr = p2pkhaddr_addr bhd.stakeaddr in
   let stkaddrbs = addr_bitseq stkaddr in
   match ctree_lookup_asset bhd.stakeassetid bhd.prevledger stkaddrbs with
-  | Some(aid,bday,obl,Currency(v)) -> (*** stake belongs to staker ***)
+  | Some(aid,bday,obl,Currency(v)) -> (*** stake is held by the staker ***)
       valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs
   | _ -> false
 
