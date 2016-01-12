@@ -118,6 +118,7 @@ val cumul_stake : big_int -> big_int -> int32 -> big_int
 
 val valid_block : ttree option -> stree option -> int64 -> block -> bool
 
+val blockheader_succ_a : int32 -> int64 -> targetinfo -> blockheader -> bool
 val blockheader_succ : blockheader -> blockheader -> bool
 
 type blockchain = block * block list

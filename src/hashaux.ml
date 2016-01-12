@@ -50,6 +50,12 @@ let hexchar_inv x =
   | 'f' -> 15l
   | _ -> raise (Failure("not a hexit: " ^ (string_of_int (Char.code x))))
 
+let hexsubstring_int8 h i =
+  Int32.to_int
+    (Int32.logor
+       (Int32.shift_left (hexchar_inv h.[i]) 4)
+       (hexchar_inv h.[i+1]))
+
 let hexsubstring_int32 h i =
   Int32.logor (Int32.shift_left (hexchar_inv h.[i]) 28)
     (Int32.logor (Int32.shift_left (hexchar_inv h.[i+1]) 24)

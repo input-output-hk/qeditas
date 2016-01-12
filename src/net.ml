@@ -11,6 +11,170 @@ open Tx
 open Ctre
 open Block
 
+let stxpool : stx list ref = ref [];;
+
+type blocktree = BlocktreeNode of hashval option * hashval option * hashval option * hashval * targetinfo * int32 * int64 * big_int * int64 * bool ref * (blockheader * blocktree) list ref
+
+let genesistimestamp = 1452623181L;;
+let genesisblocktreenode = BlocktreeNode(None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),600l,genesistimestamp,zero_big_int,1L,ref false,ref []);;
+
+let bestnode = ref genesisblocktreenode;;
+
+let blkheadernode : (hashval option,blocktree) Hashtbl.t = Hashtbl.create 1000;;
+Hashtbl.add blkheadernode None genesisblocktreenode;;
+let orphanblkheaders : (hashval option,blockheader) Hashtbl.t = Hashtbl.create 1000;;
+let earlyblocktreenodes : (int64 * blocktree) list ref = ref [];;
+
+let rec insertnewdelayed (tm,n) btnl =
+  match btnl with
+  | [] -> [(tm,n)]
+  | (tm2,n2)::btnr when tm < tm2 -> (tm,n)::btnl
+  | (tm2,n2)::btnr -> (tm2,n2)::insertnewdelayed (tm,n) btnr
+
+exception Hung
+
+let sethungsignalhandler () =
+  Sys.set_signal Sys.sigalrm (Sys.Signal_handle (fun _ -> raise Hung));;
+
+let process_new_tx h =
+  let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " loaddata qtx " ^ h) in
+  let txhd = input_line qednetch in
+  Unix.close_process_in qednetch;
+  try
+    let l = String.length txhd in
+    let l2 = l/2 in
+    let strb = Buffer.create l2 in
+    let i = ref 1 in
+    while (!i < l) do
+      Buffer.add_char strb (Char.chr (Hashaux.hexsubstring_int8 txhd (!i-1)));
+      i := !i + 2;
+    done;
+    let (stx1,_) = sei_stx seis (Buffer.contents strb,l2,None,0,0) in
+    let (tx1,_) = stx1 in
+    let txid = hashtx tx1 in
+    if not (txid = hexstring_hashval h) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
+      begin
+        Printf.printf "WARNING: Received tx with different hash as advertised, removing %s\nThis may e due to a bug or due to a misbehaving peer.\n" h; flush stdout;
+        let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " removedata qtx " ^ h) in
+        ignore (Unix.close_process_in qednetch)
+      end
+    else if tx_valid tx1 then
+      begin (*** checking the validity of signatures and support depend on the current ledger; delay this here in favor of checking them before including them in a block we're actively trying to stake; note that the relevant properties are checked when they are included in a block as part of checking a block is valid ***)
+        stxpool := stx1 :: !stxpool;
+     end
+   else
+   (*** in this case, reject the tx since it's definitely not valid ***)
+     begin
+       let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " blacklistdata qtx " ^ h) in
+       ignore (Unix.close_process_in qednetch);
+       let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " removedata qtx " ^ h) in
+       ignore (Unix.close_process_in qednetch)
+     end
+  with
+  | _ -> (*** in some cases, failure should lead to blacklist and removal of the tx, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
+      ()
+
+let rec processdelayednodes tm btnl =
+  match btnl with
+  | (tm2,n2)::btnr when tm2 <= tm ->
+    let BlocktreeNode(_,_,_,_,_,_,_,bestcumulstk,_,_,_) = !bestnode in
+    let BlocktreeNode(pbh,_,_,_,_,_,_,newcumulstk,_,_,_) = n2 in
+    if gt_big_int newcumulstk bestcumulstk then
+      begin
+        Printf.printf "New best blockheader %s\n" (match pbh with Some(h) -> hashval_hexstring h | None -> "(genesis)"); flush stdout;
+        bestnode := n2
+      end;
+    processdelayednodes tm btnr
+  | _ -> btnl
+
+let rec process_new_header_a h hh blkh1 blkhd1 =
+  let prevblkh = blkhd1.prevblockhash in
+  begin
+    try
+      let prevnode = Hashtbl.find blkheadernode prevblkh in
+      let BlocktreeNode(_,thyroot,sigroot,ledgerroot,tinfo,deltm,tmstamp,prevcumulstk,blkhght,blacklisted,succl) = prevnode in
+      if !blacklisted then (*** child of a blacklisted node, drop and blacklist it ***)
+        begin
+          let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " blacklistdata qblockheader " ^ h) in
+          ignore (Unix.close_process_in qednetch);
+          let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " removedata qblockheader " ^ h) in
+          ignore (Unix.close_process_in qednetch)
+        end
+      else if valid_blockheader blkhght blkh1 && blockheader_succ_a deltm tmstamp tinfo blkh1 then
+        let (_,_,tar1) = blkhd1.tinfo in
+        let newcumulstake = cumul_stake prevcumulstk tar1 blkhd1.deltatime in
+        let newnode = BlocktreeNode(prevblkh,blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,blkhd1.tinfo,blkhd1.deltatime,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,ref false,ref []) in
+        begin (*** add it as a leaf and check if it's the best ***)
+          succl := (blkh1,newnode)::!succl;
+          if Int64.of_float (Unix.time()) < tmstamp then (*** delay it ***)
+            earlyblocktreenodes := insertnewdelayed (tmstamp,newnode) !earlyblocktreenodes
+          else
+            let BlocktreeNode(_,_,_,_,_,_,_,bestcumulstk,_,_,_) = !bestnode in
+            if gt_big_int newcumulstake bestcumulstk then
+              begin
+                Printf.printf "New best blockheader %s\n" h; flush stdout;
+                bestnode := newnode
+              end;
+          List.iter
+            (fun blkh1 -> let (blkhd1,_) = blkh1 in let hh = hash_blockheaderdata blkhd1 in process_new_header_a (hashval_hexstring hh) hh blkh1 blkhd1)
+            (Hashtbl.find_all orphanblkheaders (Some(hh)))
+        end
+      else
+        begin (*** if it's wrong, delete it and blacklist it so it won't look new in the future ***)
+          let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " blacklistdata qblockheader " ^ h) in
+          ignore (Unix.close_process_in qednetch);
+          let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " removedata qblockheader " ^ h) in
+          ignore (Unix.close_process_in qednetch)
+        end
+    with Not_found -> (*** orphan block header, put it on the relevant hash table ***)
+      Hashtbl.add orphanblkheaders prevblkh blkh1
+  end
+
+let process_new_header h =
+  let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " loaddata qblockheader " ^ h) in
+  let blkhd = input_line qednetch in
+  Unix.close_process_in qednetch;
+  try
+    let l = String.length blkhd in
+    let l2 = l/2 in
+    let strb = Buffer.create l2 in
+    let i = ref 1 in
+    while (!i < l) do
+      Buffer.add_char strb (Char.chr (Hashaux.hexsubstring_int8 blkhd (!i-1)));
+      i := !i + 2;
+    done;
+    let (blkh1,_) = sei_blockheader seis (Buffer.contents strb,l2,None,0,0) in
+    let (blkhd1,blkhs1) = blkh1 in
+    let hh = hexstring_hashval h in
+    if not (hash_blockheaderdata blkhd1 = hh) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
+      begin
+        Printf.printf "WARNING: Received block header with different hash as advertised, removing %s\nThis may e due to a bug or due to a misbehaving peer.\n" h; flush stdout;
+        let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " removedata qtx " ^ h) in
+        ignore (Unix.close_process_in qednetch)
+      end
+    else
+      process_new_header_a h hh blkh1 blkhd1
+  with
+  | _ -> (*** in some cases, failure should lead to blacklist and removal of the tx, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
+      ()
+  
+let qednetmain preloopfn =
+  let qednetch = Unix.open_process_in !Config.qednetdexec in
+  while true do
+    try
+      preloopfn();
+      earlyblocktreenodes := processdelayednodes (Int64.of_float (Unix.time())) !earlyblocktreenodes;
+      ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 1.0 });
+      let l = input_line qednetch in
+      ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
+      let ll = String.length l in
+      if ll = 44 && String.sub l 0 4 = "QTX:" then
+	process_new_tx (String.sub l 4 40)
+      else if ll = 48 && String.sub l 0 8 = "QHEADER:" then
+	process_new_header (String.sub l 8 40)
+    with Hung -> ()
+  done
+
 let myaddr () =
   match !Config.ip with
   | Some(ip) -> 
@@ -56,12 +220,8 @@ let insertnewblockheader bhh cs mine blkh bh =
   flush stdout
 
 exception RequestRejected
-exception Hung
 exception IllformedMsg
 
-let sethungsignalhandler () =
-  Sys.set_signal Sys.sigalrm (Sys.Signal_handle (fun _ -> raise Hung));;
-  
 let accept_nohang s tm =
   try
     ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = tm });

@@ -13,22 +13,12 @@ do
 	    if [ ${v:0:9} == "-datadir=" ]; then
 		DATADIR=${v:9}
 	    else
-		if [ ${v:0:14} == "-ctreedatadir=" ]; then
-		    CTREEDATADIR=${v:14}
-		else
-		    if [ ${v:0:14} == "-chaindatadir=" ]; then
-			CHAINDATADIR=${v:14}
-		    else
-			echo "Unknown command line argument $v"
-			echo "configure can be given the following arguments:"
-			echo "-bytecode (to only build bytecode)"
-			echo "-qeditasdir=<dir> (to specify the install directory)"
-			echo "-datadir=<dir> (to specify the default directory for Qeditas data)"
-			echo "-ctreedatadir=<dir> (to specify the default directory for saving ctree abbreviations)"
-			echo "-chaindatadir=<dir> (to specify the default directory for saving chain information)"
-			exit 1
-		    fi
-		fi
+		echo "Unknown command line argument $v"
+		echo "configure can be given the following arguments:"
+		echo "-bytecode (to only build bytecode)"
+		echo "-qeditasdir=<dir> (to specify the install directory)"
+		echo "-datadir=<dir> (to specify the default directory for Qeditas data)"
+		exit 1
 	    fi
 	fi
     fi
@@ -39,27 +29,7 @@ fi
 if [ ! -d $DATADIR ]; then
     echo "$DATADIR is not a directory; create it first or give an existing directory with -datadir=<dir>"
 fi
-if [ ! $CTREEDATADIR ]; then
-    CTREEDATADIR=$DATADIR/ctrees
-    if [ ! -d $CTREEDATADIR ]; then
-	mkdir $CTREEDATADIR
-    fi
-fi
-if [ ! -d $CTREEDATADIR ]; then
-    echo "$CTREEDATADIR is not a directory; create it first"
-fi
-if [ ! $CHAINDATADIR ]; then
-    CHAINDATADIR=$DATADIR/chain
-    if [ ! -d $CHAINDATADIR ]; then
-	mkdir $CHAINDATADIR
-    fi
-fi
-if [ ! -d $CHAINDATADIR ]; then
-    echo "$CHAINDATADIR is not a directory; create it first"
-fi
 echo let datadir = ref \"$DATADIR\" > src/config.ml
-echo let ctreedatadir = ref \"$CTREEDATADIR\" >> src/config.ml
-echo let chaindatadir = ref \"$CHAINDATADIR\" >> src/config.ml
 echo let testnet = ref false >> src/config.ml
 echo let staking = ref false >> src/config.ml
 echo let ip = ref None >> src/config.ml
@@ -71,6 +41,9 @@ echo let maxconns = ref 200 >> src/config.ml
 echo let seed = ref \"\" >> src/config.ml
 echo let lastcheckpoint = ref \"\" >> src/config.ml
 echo let currledgerroot = ref \"7b47514ebb7fb6ab06389940224d09df2951e97e\" >> src/config.ml
+echo let qednetdexec = ref \"qednet\" >> src/config.ml
+echo let ctreedatadir = ref \"/tmp/depricated\" >> src/config.ml
+echo let chaindatadir = ref \"/tmp/depricated\" >> src/config.ml
 if [ $BYTECODE ]; then
     if [ $INSTALLDIR ]; then
 	echo "bytecode cannot be installed"

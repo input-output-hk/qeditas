@@ -9,6 +9,8 @@ open Tx
 open Ctre
 open Block
 
+val qednetmain : (unit -> unit) -> unit
+
 val myaddr : unit -> string
 
 val recentledgerroots : (hashval, int64 * hashval) Hashtbl.t

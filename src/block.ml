@@ -893,20 +893,24 @@ let cumul_stake cs tar deltm =
     cs
     (max_big_int unit_big_int (div_big_int !max_target (shift_right_towards_zero_big_int (mult_big_int tar (big_int_of_int32 deltm)) 20)))
 
-let blockheader_succ bh1 bh2 =
-  let (bhd1,bhs1) = bh1 in
+let blockheader_succ_a deltm1 tmstamp1 tinfo1 bh2 =
   let (bhd2,bhs2) = bh2 in
-  bhd2.prevblockhash = Some (hash_blockheaderdata bhd1)
+  bhd2.timestamp = Int64.add tmstamp1 (Int64.of_int32 bhd2.deltatime)
     &&
-  bhd2.timestamp = Int64.add bhd1.timestamp (Int64.of_int32 bhd2.deltatime)
-    &&
-  let (csm1,fsm1,tar1) = bhd1.tinfo in
+  let (csm1,fsm1,tar1) = tinfo1 in
   let (csm2,fsm2,tar2) = bhd2.tinfo in
   stakemod_pushbit (stakemod_lastbit fsm1) csm1 = csm2 (*** new stake modifier is old one shifted with one new bit from the future stake modifier ***)
     &&
   stakemod_pushbit (stakemod_firstbit fsm2) fsm1 = fsm2 (*** the new bit of the new future stake modifier fsm2 is freely chosen by the staker ***)
     &&
-  eq_big_int tar2 (retarget tar1 bhd1.deltatime)
+  eq_big_int tar2 (retarget tar1 deltm1)
+
+let blockheader_succ bh1 bh2 =
+  let (bhd1,bhs1) = bh1 in
+  let (bhd2,bhs2) = bh2 in
+  bhd2.prevblockhash = Some (hash_blockheaderdata bhd1)
+    &&
+  blockheader_succ_a bhd1.deltatime bhd1.timestamp bhd1.tinfo bh2
 
 let rec valid_blockchain_aux blkh bl =
   match bl with

@@ -16,4 +16,4 @@ val maxconns : int ref
 val seed : string ref
 val lastcheckpoint : string ref
 val currledgerroot : string ref
-
+val qednetdexec : string ref
