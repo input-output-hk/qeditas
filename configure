@@ -42,8 +42,8 @@ echo let seed = ref \"\" >> src/config.ml
 echo let lastcheckpoint = ref \"\" >> src/config.ml
 echo let currledgerroot = ref \"7b47514ebb7fb6ab06389940224d09df2951e97e\" >> src/config.ml
 echo let qednetdexec = ref \"qednet\" >> src/config.ml
-echo let ctreedatadir = ref \"/tmp/depricated\" >> src/config.ml
-echo let chaindatadir = ref \"/tmp/depricated\" >> src/config.ml
+echo let ctreedatadir = ref \"/tmp/deprecated\" >> src/config.ml
+echo let chaindatadir = ref \"/tmp/deprecated\" >> src/config.ml
 if [ $BYTECODE ]; then
     if [ $INSTALLDIR ]; then
 	echo "bytecode cannot be installed"
