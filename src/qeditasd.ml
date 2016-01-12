@@ -1,4 +1,4 @@
-(* Copyright (c) 2015 The Qeditas developers *)
+(* Copyright (c) 2015-2016 The Qeditas developers *)
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
@@ -167,7 +167,7 @@ let beststakingoption () =
 	(Int64.add blkh 1L,cs,bhd.newledgerroot,bhd.timestamp,Some(bhd,bhs),(csm2,fsm1,tar2))
     | None ->
 	(*** finally assume we are starting from the genesis ledger ***)
-	(1L,zero_big_int,hexstring_hashval "7b47514ebb7fb6ab06389940224d09df2951e97e",Int64.of_float (Unix.time()),None,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget));;
+	(1L,zero_big_int,hexstring_hashval "af8de840af01805f1dbe9f1312c388efeea1e619",Int64.of_float (Unix.time()),None,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget));;
 
 let stakingproccomm : (in_channel * out_channel * in_channel) option ref = ref None;;
 
@@ -382,7 +382,7 @@ let main () =
     localframe := Commands.load_currentframe();
     localframehash := hashframe !localframe;
     Printf.printf "Loading ctree index\n"; flush stdout;
-    load_root_abbrevs_index();
+(*    load_root_abbrevs_index(); *)
     Printf.printf "Initializing random seed\n"; flush stdout;
     if not !random_initialized then initialize_random_seed();
     this_nodes_nonce := rand_int64();

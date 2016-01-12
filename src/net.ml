@@ -1,4 +1,4 @@
-(* Copyright (c) 2015 The Qeditas developers *)
+(* Copyright (c) 2015-2016 The Qeditas developers *)
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
@@ -36,8 +36,10 @@ exception Hung
 let sethungsignalhandler () =
   Sys.set_signal Sys.sigalrm (Sys.Signal_handle (fun _ -> raise Hung));;
 
+let qednetd () = if !Config.testnet then (!Config.qednetdexec ^ " -testnet") else !Config.qednetdexec
+
 let process_new_tx h =
-  let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " loaddata qtx " ^ h) in
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qtx " ^ h) in
   let txhd = input_line qednetch in
   Unix.close_process_in qednetch;
   try
@@ -55,7 +57,7 @@ let process_new_tx h =
     if not (txid = hexstring_hashval h) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
       begin
         Printf.printf "WARNING: Received tx with different hash as advertised, removing %s\nThis may e due to a bug or due to a misbehaving peer.\n" h; flush stdout;
-        let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " removedata qtx " ^ h) in
+        let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qtx " ^ h) in
         ignore (Unix.close_process_in qednetch)
       end
     else if tx_valid tx1 then
@@ -65,9 +67,9 @@ let process_new_tx h =
    else
    (*** in this case, reject the tx since it's definitely not valid ***)
      begin
-       let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " blacklistdata qtx " ^ h) in
+       let qednetch = Unix.open_process_in ((qednetd()) ^ " blacklistdata qtx " ^ h) in
        ignore (Unix.close_process_in qednetch);
-       let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " removedata qtx " ^ h) in
+       let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qtx " ^ h) in
        ignore (Unix.close_process_in qednetch)
      end
   with
@@ -95,9 +97,9 @@ let rec process_new_header_a h hh blkh1 blkhd1 =
       let BlocktreeNode(_,thyroot,sigroot,ledgerroot,tinfo,deltm,tmstamp,prevcumulstk,blkhght,blacklisted,succl) = prevnode in
       if !blacklisted then (*** child of a blacklisted node, drop and blacklist it ***)
         begin
-          let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " blacklistdata qblockheader " ^ h) in
+          let qednetch = Unix.open_process_in ((qednetd()) ^ " blacklistdata qblockheader " ^ h) in
           ignore (Unix.close_process_in qednetch);
-          let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " removedata qblockheader " ^ h) in
+          let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qblockheader " ^ h) in
           ignore (Unix.close_process_in qednetch)
         end
       else if valid_blockheader blkhght blkh1 && blockheader_succ_a deltm tmstamp tinfo blkh1 then
@@ -121,9 +123,9 @@ let rec process_new_header_a h hh blkh1 blkhd1 =
         end
       else
         begin (*** if it's wrong, delete it and blacklist it so it won't look new in the future ***)
-          let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " blacklistdata qblockheader " ^ h) in
+          let qednetch = Unix.open_process_in ((qednetd()) ^ " blacklistdata qblockheader " ^ h) in
           ignore (Unix.close_process_in qednetch);
-          let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " removedata qblockheader " ^ h) in
+          let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qblockheader " ^ h) in
           ignore (Unix.close_process_in qednetch)
         end
     with Not_found -> (*** orphan block header, put it on the relevant hash table ***)
@@ -131,7 +133,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 =
   end
 
 let process_new_header h =
-  let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " loaddata qblockheader " ^ h) in
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qblockheader " ^ h) in
   let blkhd = input_line qednetch in
   Unix.close_process_in qednetch;
   try
@@ -149,7 +151,7 @@ let process_new_header h =
     if not (hash_blockheaderdata blkhd1 = hh) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
       begin
         Printf.printf "WARNING: Received block header with different hash as advertised, removing %s\nThis may e due to a bug or due to a misbehaving peer.\n" h; flush stdout;
-        let qednetch = Unix.open_process_in (!Config.qednetdexec ^ " removedata qtx " ^ h) in
+        let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qtx " ^ h) in
         ignore (Unix.close_process_in qednetch)
       end
     else
@@ -159,7 +161,7 @@ let process_new_header h =
       ()
   
 let qednetmain preloopfn =
-  let qednetch = Unix.open_process_in !Config.qednetdexec in
+  let qednetch = Unix.open_process_in (qednetd()) in
   while true do
     try
       preloopfn();
