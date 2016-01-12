@@ -4,6 +4,7 @@
 
 open Big_int
 
+val hexsubstring_int8 : string -> int -> int
 val hexsubstring_int32 : string -> int -> int32
 val int32_hexstring : Buffer.t -> int32 -> unit
 val big_int_sub_int32 : big_int -> int -> int32
