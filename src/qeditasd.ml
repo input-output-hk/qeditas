@@ -388,16 +388,23 @@ let main () =
     this_nodes_nonce := rand_int64();
     let l = 
       match !Config.ip with
+(***
       | Some(ip) ->
 	  let l = openlistener ip !Config.port 5 in
 	  Printf.printf "Listening for incoming connections.\n";
 	  flush stdout;
 	  Some(l)
       | None ->
+***)
+      | _ ->
 	  Printf.printf "Not listening for incoming connections.\nIf you want Qeditas to listen for incoming connections set ip to your ip address\nusing ip=... in qeditas.conf or -ip=... on the command line.\n";
 	  flush stdout;
 	  None
     in
+    let initfn () = () in
+    let preloopfn () = () in
+    qednetmain initfn preloopfn
+(***
     if !Config.staking then
       begin
 	Commands.load_wallet();
@@ -807,6 +814,7 @@ let main () =
       | Failure(x) -> Printf.printf "Failure: %s\n...but continuing\n" x; flush stdout
       | exc -> Printf.printf "%s\n...but continuing\n" (Printexc.to_string exc); flush stdout
     done
+***)
   end;;
 
 try
