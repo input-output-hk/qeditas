@@ -70,6 +70,7 @@ val rframe_filter_octree : rframe -> ctree option -> ctree option
 val lookup_all_ctree_root_abbrevs : hashval -> (hashval * hashval) list
 val lookup_frame_ctree_root_abbrev : hashval -> hashval -> hashval
 val get_ctree_abbrev : hashval -> ctree
+val get_frame_abbrev : hashval -> frame
 val load_root_abbrevs_index : unit -> unit
 
 val strip_bitseq_true : (bool list * 'a) list -> (bool list * 'a) list

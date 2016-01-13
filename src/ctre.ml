@@ -703,6 +703,10 @@ let sei_nehlist i c =
     let (hr,c) = sei_hlist i c in
     (NehCons(a,hr),c)
 
+(***
+ (2016) serialization of frames changed to recognize FBin where both sides are the same; otherwise the size
+ of the serialization is unnecessarily large
+ ***)
 let rec seo_frame o fr c =
   match fr with
   | FHash -> (* 00 *)
@@ -720,8 +724,11 @@ let rec seo_frame o fr c =
 	| Some(i) -> Some(Int64.of_int i)
 	| None -> None)
 	c
-  | FBin(frl,frr) -> (* 11 *)
-      let c = o 2 3 c in
+  | FBin(frl,frr) when frl = frr -> (* 11 0 *)
+      let c = o 3 3 c in
+      seo_frame o frl c
+  | FBin(frl,frr) -> (* 11 1 *)
+      let c = o 3 7 c in
       let c = seo_frame o frl c in
       let c = seo_frame o frr c in
       c
@@ -743,9 +750,14 @@ let rec sei_frame i c =
     let io2 = (match io with Some(i) -> Some(Int64.to_int i) | None -> None) in
     (FLeaf(bl,io2),c)
   else
-    let (frl,c) = sei_frame i c in
-    let (frr,c) = sei_frame i c in
-    (FBin(frl,frr),c)
+    let (y,c) = i 1 c in
+    if y = 0 then
+      let (fru,c) = sei_frame i c in
+      (FBin(fru,fru),c)
+    else
+      let (frl,c) = sei_frame i c in
+      let (frr,c) = sei_frame i c in
+      (FBin(frl,frr),c)
 
 let rec seo_rframe o fr c =
   match fr with
@@ -966,6 +978,26 @@ let get_ctree_abbrev h =
     let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qctreeabbrev " ^ hh) in
     ignore (Unix.close_process_in qednetch);
     raise (Failure ("could not resolve a needed ctree abbrev " ^ hh ^ "; requesting from peers"))
+
+(*** saving frames in the database using sharing, since otherwise they are unnecessarily large ***)
+let get_frame_abbrev h =
+  let hh = hashval_hexstring h in
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qframe " ^ hh) in
+  try
+    let cd = input_line qednetch in
+    ignore (Unix.close_process_in qednetch);
+    begin
+      try
+	let ch = hexstring_string cd in
+	let (c,_) = sei_frame seis (ch,String.length ch,None,0,0) in
+	c
+      with _ ->
+	raise (Failure ("could not understand frame " ^ hh))
+    end
+  with _ -> (*** request it and fail ***)
+    let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qframe " ^ hh) in
+    ignore (Unix.close_process_in qednetch);
+    raise (Failure ("could not resolve a needed frame " ^ hh ^ "; requesting from peers"))
 
 let rec octree_S_inv c =
   match c with
