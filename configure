@@ -41,7 +41,7 @@ echo let maxconns = ref 200 >> src/config.ml
 echo let seed = ref \"\" >> src/config.ml
 echo let lastcheckpoint = ref \"\" >> src/config.ml
 echo let currledgerroot = ref \"af8de840af01805f1dbe9f1312c388efeea1e619\" >> src/config.ml
-echo let qednetdexec = ref \"qednet\" >> src/config.ml
+echo let qednetdexec = ref \"$HOME/qednet/src/qednetd\" >> src/config.ml
 echo let ctreedatadir = ref \"/tmp/deprecated\" >> src/config.ml
 echo let chaindatadir = ref \"/tmp/deprecated\" >> src/config.ml
 if [ $BYTECODE ]; then
