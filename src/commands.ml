@@ -23,7 +23,9 @@ let storagedocassets = ref []
 let load_currentframe () =
   let framefn = Filename.concat !Config.datadir "currentframe" in
   if not (Sys.file_exists framefn) then
-    FHash (*** default frame, just the hashroot ***)
+    (*** default frame, the one used for the initial distribution; only supporting this frame for now; FAbbrev(FBin(FBin(f,f),FAll)) where f is FAbbrev(FBin^8(FAbbrev(FBin^8(FAll)))) ***)
+    let (fr,_) = Ctre.sei_frame Ser.seis ("\249\178m\219\150m\219\182\180",9,None,0,0) in
+    fr
   else
     let s = open_in_bin framefn in
     let (fr,_) = sei_frame seic (s,None) in
