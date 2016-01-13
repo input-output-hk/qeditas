@@ -66,6 +66,10 @@ let hexsubstring_int32 h i =
 		   (Int32.logor (Int32.shift_left (hexchar_inv h.[i+6]) 4)
 		      (hexchar_inv h.[i+7])))))))
   
+let int8_hexstring b x =
+  Buffer.add_char b (hexchar (Int32.of_int ((x lsr 4) land 15)));
+  Buffer.add_char b (hexchar (Int32.of_int (x land 15)))
+
 let int32_hexstring b x =
   Buffer.add_char b (hexchar (Int32.shift_right_logical x 28));
   Buffer.add_char b (hexchar (Int32.logand (Int32.shift_right_logical x 24) 15l));
