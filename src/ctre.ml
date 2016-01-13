@@ -902,64 +902,43 @@ let ensure_dir_exists d =
 
 exception FoundHashval of hashval
 
-let rootabbrevs : (hashval,(hashval * hashval)) Hashtbl.t = Hashtbl.create 65536
-
-let load_root_abbrevs_index () =
-  ensure_dir_exists !ctreedatadir;
-  let fn = Filename.concat !ctreedatadir "rootabbrevsindex" in
-  if Sys.file_exists fn then
-    begin
-      let ch = open_in_bin fn in
-      let cr = ref (ch,None) in
-      try
-	while true do
-	  let ((rh,fh,a),c) = sei_prod3 sei_hashval sei_hashval sei_hashval seic !cr in
-	  Hashtbl.add rootabbrevs rh (fh,a);
-	  cr := c
-	done;
-	raise Not_found (*** unreachable ***)
-      with
-      | End_of_file -> ()
-    end
-
-let lookup_all_ctree_root_abbrevs r =
-  Hashtbl.find_all rootabbrevs r
-
 let lookup_frame_ctree_root_abbrev fh r =
-  let fal = Hashtbl.find_all rootabbrevs r in
-  List.assoc fh fal
+  let h = hashpair r fh in
+  let hh = hashval_hexstring h in
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qctreerootframeabbrev " ^ hh) in
+  try
+    let cd = input_line qednetch in
+    ignore (Unix.close_process_in qednetch);
+    begin
+      try
+	hexstring_hashval cd
+      with _ ->
+	raise (Failure ("could not understand ctree abbrev hashval corresponding to root-frame pair " ^ hh))
+    end
+  with _ -> (*** request it and fail ***)
+    let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qctreeabbrev " ^ hh) in
+    ignore (Unix.close_process_in qednetch);
+    raise (Failure ("could not find abbrev corresponding to root-frame pair " ^ hh ^ "; requesting from peers"))
 
 let save_hashed_ctree r fh a (tr:ctree) =
-  ensure_dir_exists !ctreedatadir;
+  let h = hashpair r fh in
+  let hh = hashval_hexstring h in
   begin
     try
       ignore (lookup_frame_ctree_root_abbrev fh r)
-    with Not_found ->
-      let fn = Filename.concat !ctreedatadir "rootabbrevsindex" in
-      if Sys.file_exists fn then
-	begin
-	  let ch = open_out_gen [Open_wronly;Open_binary;Open_append] 0o644 fn in
-	  let c = seo_prod3 seo_hashval seo_hashval seo_hashval seoc (r,fh,a) (ch,None) in
-	  seocf c;
-	  close_out ch      
-	end
-      else
-	begin
-	  let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
-	  let c = seo_prod3 seo_hashval seo_hashval seo_hashval seoc (r,fh,a) (ch,None) in
-	  seocf c;
-	  close_out ch;
-	end;
-      Hashtbl.add rootabbrevs r (fh,a);
+    with
+    | _ ->
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qctreerootframeabbrev " ^ hh ^ " " ^ (hashval_hexstring a)) in
+	ignore (Unix.close_process_in qednetch);
   end;
-  let fn = Filename.concat !ctreedatadir (hashval_hexstring a) in
-  if not (Sys.file_exists fn) then
-    begin
-      let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
-      let c = seo_ctree seoc tr (ch,None) in
-      seocf c;
-      close_out ch      
-    end
+  let ha = hashval_hexstring a in
+  let fn = Filename.concat !datadir ha in
+  let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
+  let c = seo_ctree seoc tr (ch,None) in
+  seocf c;
+  close_out ch;
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " adddatafromfile qctreeabbrev " ^ hh ^ " " ^ (hashval_hexstring a) ^ " " ^ fn) in
+  ignore (Unix.close_process_in qednetch)
 
 let get_ctree_abbrev h =
   let hh = hashval_hexstring h in
