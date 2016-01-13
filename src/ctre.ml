@@ -906,7 +906,7 @@ exception GettingRemoteData
 let lookup_frame_ctree_root_abbrev fh r =
   let h = hashpair r fh in
   let hh = hashval_hexstring h in
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qctreerootframeabbrev " ^ hh) in
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qrootfrmabbr " ^ hh) in
   try
     let cd = input_line qednetch in
     ignore (Unix.close_process_in qednetch);
@@ -917,7 +917,7 @@ let lookup_frame_ctree_root_abbrev fh r =
         raise (Failure ("could not understand ctree abbrev hashval corresponding to root-frame pair " ^ hh))
     end
   with _ -> (*** request it and fail ***)
-    let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qctreerootframeabbrev " ^ hh) in
+    let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qrootfrmabbr " ^ hh) in
     ignore (Unix.close_process_in qednetch);
 (*    raise (Failure ("could not find abbrev corresponding to root-frame pair " ^ hh ^ "; requesting from peers")) *)
     raise GettingRemoteData
@@ -930,7 +930,7 @@ let save_hashed_ctree r fh a (tr:ctree) =
       ignore (lookup_frame_ctree_root_abbrev fh r)
     with
     | _ ->
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qctreerootframeabbrev " ^ hh ^ " " ^ (hashval_hexstring a)) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qrootfrmabbr " ^ hh ^ " " ^ (hashval_hexstring a)) in
 	ignore (Unix.close_process_in qednetch);
   end;
   let ha = hashval_hexstring a in
