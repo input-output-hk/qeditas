@@ -57,6 +57,7 @@ val ctree_lookup_asset : hashval -> ctree -> bool list -> asset option
 
 exception NotSupported
 exception InsufficientInformation
+exception GettingRemoteData
 
 val remove_hashed_ctree : hashval -> unit
 val archive_unused_ctrees : int64 -> ctree -> ctree -> unit

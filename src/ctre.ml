@@ -901,6 +901,7 @@ let ensure_dir_exists d =
   | _ -> raise (Failure("Problem with " ^ d))
 
 exception FoundHashval of hashval
+exception GettingRemoteData
 
 let lookup_frame_ctree_root_abbrev fh r =
   let h = hashpair r fh in
@@ -913,12 +914,13 @@ let lookup_frame_ctree_root_abbrev fh r =
       try
 	hexstring_hashval cd
       with _ ->
-	raise (Failure ("could not understand ctree abbrev hashval corresponding to root-frame pair " ^ hh))
+        raise (Failure ("could not understand ctree abbrev hashval corresponding to root-frame pair " ^ hh))
     end
   with _ -> (*** request it and fail ***)
     let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qctreeabbrev " ^ hh) in
     ignore (Unix.close_process_in qednetch);
-    raise (Failure ("could not find abbrev corresponding to root-frame pair " ^ hh ^ "; requesting from peers"))
+(*    raise (Failure ("could not find abbrev corresponding to root-frame pair " ^ hh ^ "; requesting from peers")) *)
+    raise GettingRemoteData
 
 let save_hashed_ctree r fh a (tr:ctree) =
   let h = hashpair r fh in
@@ -957,7 +959,8 @@ let get_ctree_abbrev h =
   with _ -> (*** request it and fail ***)
     let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qctreeabbrev " ^ hh) in
     ignore (Unix.close_process_in qednetch);
-    raise (Failure ("could not resolve a needed ctree abbrev " ^ hh ^ "; requesting from peers"))
+(*    raise (Failure ("could not resolve a needed ctree abbrev " ^ hh ^ "; requesting from peers")) *)
+    raise GettingRemoteData
 
 (*** saving frames in the database using sharing, since otherwise they are unnecessarily large ***)
 let get_frame_abbrev h =
@@ -977,7 +980,8 @@ let get_frame_abbrev h =
   with _ -> (*** request it and fail ***)
     let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qframe " ^ hh) in
     ignore (Unix.close_process_in qednetch);
-    raise (Failure ("could not resolve a needed frame " ^ hh ^ "; requesting from peers"))
+(*    raise (Failure ("could not resolve a needed frame " ^ hh ^ "; requesting from peers")) *)
+    raise GettingRemoteData
 
 let rec octree_S_inv c =
   match c with
@@ -1183,7 +1187,16 @@ let rec frame_filter_ctree f c =
       | CHash(h) -> raise InsufficientInformation
       | CLeft(c0) -> CLeft(frame_filter_ctree f0 c0)
       | CRight(c1) -> CRight(frame_filter_ctree f1 c1)
-      | CBin(c0,c1) -> CBin(frame_filter_ctree f0 c0,frame_filter_ctree f1 c1)
+      | CBin(c0,c1) ->
+	  let c0f =
+	    try
+	      frame_filter_ctree f0 c0
+	    with GettingRemoteData ->
+	      ignore (frame_filter_ctree f1 c1); (*** only make this call in case more getdata requests need to be sent ***)
+	      raise GettingRemoteData
+	  in
+	  let c1f = frame_filter_ctree f1 c1 in
+	  CBin(c0f,c1f)
       | CLeaf(false::bl,hl) -> (*** Leaves pass over FHash, but uses the FAbbrev to determine the abstraction to use for hl ***)
 	  begin
 	    match frame_hlist_bitseq f0 bl with
