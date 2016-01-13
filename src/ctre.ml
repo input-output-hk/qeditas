@@ -917,7 +917,7 @@ let lookup_frame_ctree_root_abbrev fh r =
         raise (Failure ("could not understand ctree abbrev hashval corresponding to root-frame pair " ^ hh))
     end
   with _ -> (*** request it and fail ***)
-    let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qctreeabbrev " ^ hh) in
+    let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qctreerootframeabbrev " ^ hh) in
     ignore (Unix.close_process_in qednetch);
 (*    raise (Failure ("could not find abbrev corresponding to root-frame pair " ^ hh ^ "; requesting from peers")) *)
     raise GettingRemoteData
