@@ -1139,6 +1139,7 @@ let handle_msg sin sout cs replyto mh m =
 	end
   | (None,GetFramedCTree(vers,blkho,cr,fr)) ->
       Printf.printf "Handling GetFramedCTree.\n"; flush stdout;
+(***
       List.iter
         (fun (_,ca) ->
     	  let c = CAbbrev(cr,ca) in
@@ -1149,6 +1150,7 @@ let handle_msg sin sout cs replyto mh m =
 	  | _ -> () (*** try a different abbrev corresponding to the root ***)
 	)
 	(lookup_all_ctree_root_abbrevs cr);
+***)
       ignore (send_reply sout mh (Reject("GetFramedCTree",1,"could not build framed ctree","")))
   | (Some(qh),MCTree(vers,ctr)) ->
       cs.pending <- update_pending cs.pending qh m

@@ -322,7 +322,6 @@ let process_command r =
   | [c] when c = "printassets" ->
       localframe := load_currentframe();
       localframehash := hashframe !localframe;
-      load_root_abbrevs_index();
       load_wallet();
       printassets()
   | [c;w] when c = "importprivkey" ->
