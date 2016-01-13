@@ -8,6 +8,8 @@ open Mathdata
 open Assets
 open Tx
 
+val qednetd : unit -> string
+
 val reward_maturation : int64
 val reward_locktime : int64 -> int64
 

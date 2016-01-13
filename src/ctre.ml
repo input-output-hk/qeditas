@@ -4,12 +4,15 @@
 
 open Big_int
 open Ser
+open Hashaux
 open Hash
 open Mathdata
 open Assets
 open Cryptocurr
 open Tx
 open Config
+
+let qednetd () = if !testnet then (!qednetdexec ^ " -testnet") else !qednetdexec
 
 let intention_minage = 144L
 
@@ -946,17 +949,23 @@ let save_hashed_ctree r fh a (tr:ctree) =
     end
 
 let get_ctree_abbrev h =
-  ensure_dir_exists !ctreedatadir;
-  let fn = Filename.concat !ctreedatadir (hashval_hexstring h) in
-  if Sys.file_exists fn then
+  let hh = hashval_hexstring h in
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qctreeabbrev " ^ hh) in
+  try
+    let cd = input_line qednetch in
+    ignore (Unix.close_process_in qednetch);
     begin
-      let ch = open_in_bin fn in
-      let (c,_) = sei_ctree seic (ch,None) in
-      close_in ch;
-      c
+      try
+	let ch = hexstring_string cd in
+	let (c,_) = sei_ctree seis (ch,String.length ch,None,0,0) in
+	c
+      with _ ->
+	raise (Failure ("could not understand ctree abbrev " ^ hh))
     end
-  else
-    raise (Failure ("could not resolve a needed ctree abbrev " ^ fn))
+  with _ -> (*** request it and fail ***)
+    let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qctreeabbrev " ^ hh) in
+    ignore (Unix.close_process_in qednetch);
+    raise (Failure ("could not resolve a needed ctree abbrev " ^ hh ^ "; requesting from peers"))
 
 let rec octree_S_inv c =
   match c with

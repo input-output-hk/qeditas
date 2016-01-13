@@ -4,6 +4,7 @@
 
 open Big_int
 open Ser
+open Hashaux
 open Hash
 open Assets
 open Signat
@@ -36,23 +37,14 @@ exception Hung
 let sethungsignalhandler () =
   Sys.set_signal Sys.sigalrm (Sys.Signal_handle (fun _ -> raise Hung));;
 
-let qednetd () = if !Config.testnet then (!Config.qednetdexec ^ " -testnet") else !Config.qednetdexec
-
 let process_new_tx h =
   Printf.printf "Processing new tx %s\n" h; flush stdout;
   let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qtx " ^ h) in
   let txhd = input_line qednetch in
   Unix.close_process_in qednetch;
   try
-    let l = String.length txhd in
-    let l2 = l/2 in
-    let strb = Buffer.create l2 in
-    let i = ref 1 in
-    while (!i < l) do
-      Buffer.add_char strb (Char.chr (Hashaux.hexsubstring_int8 txhd (!i-1)));
-      i := !i + 2;
-    done;
-    let (stx1,_) = sei_stx seis (Buffer.contents strb,l2,None,0,0) in
+    let s = hexstring_string txhd in
+    let (stx1,_) = sei_stx seis (s,String.length s,None,0,0) in
     let (tx1,_) = stx1 in
     let txid = hashtx tx1 in
     if not (txid = hexstring_hashval h) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
@@ -158,16 +150,8 @@ and process_new_header h initialization =
   let blkhd = input_line qednetch in
   Unix.close_process_in qednetch;
   try
-    let l = String.length blkhd in
-    let l2 = l/2 in
-    let strb = Buffer.create l2 in
-    let i = ref 1 in
-    while (!i < l) do
-      Buffer.add_char strb (Char.chr (Hashaux.hexsubstring_int8 blkhd (!i-1)));
-      i := !i + 2;
-    done;
-  Printf.printf "about to try to deserialize\n"; flush stdout;
-    let (blkh1,_) = sei_blockheader seis (Buffer.contents strb,l2,None,0,0) in
+    let s = hexstring_string blkhd in
+    let (blkh1,_) = sei_blockheader seis (s,String.length s,None,0,0) in
     let (blkhd1,blkhs1) = blkh1 in
     let hh = hexstring_hashval h in
     if not (hash_blockheaderdata blkhd1 = hh) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
