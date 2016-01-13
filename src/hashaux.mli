@@ -4,9 +4,9 @@
 
 open Big_int
 
-val hexsubstring_int8 : string -> int -> int
+val string_hexstring : string -> string
+val hexstring_string : string -> string
 val hexsubstring_int32 : string -> int -> int32
-val int8_hexstring : Buffer.t -> int -> unit
 val int32_hexstring : Buffer.t -> int32 -> unit
 val big_int_sub_int32 : big_int -> int -> int32
 val int32_big_int_bits : int32 -> int -> big_int

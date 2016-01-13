@@ -56,6 +56,28 @@ let hexsubstring_int8 h i =
        (Int32.shift_left (hexchar_inv h.[i]) 4)
        (hexchar_inv h.[i+1]))
 
+let hexstring_string s =
+  let l = String.length s in
+  let l2 = l/2 in
+  let strb = Buffer.create l2 in
+  let i = ref 1 in
+  while (!i < l) do
+    Buffer.add_char strb (Char.chr (hexsubstring_int8 s (!i-1)));
+    i := !i + 2;
+  done;
+  Buffer.contents strb
+
+let string_hexstring s =
+  let l = String.length s in
+  let l2 = l*2 in
+  let strb = Buffer.create l2 in
+  for i = 0 to l-1 do
+    let x = Char.code s.[i] in
+    Buffer.add_char strb (hexchar (Int32.of_int ((x lsr 4) land 15)));
+    Buffer.add_char strb (hexchar (Int32.of_int (x land 15)));
+  done;
+  Buffer.contents strb
+
 let hexsubstring_int32 h i =
   Int32.logor (Int32.shift_left (hexchar_inv h.[i]) 28)
     (Int32.logor (Int32.shift_left (hexchar_inv h.[i+1]) 24)
@@ -66,10 +88,6 @@ let hexsubstring_int32 h i =
 		   (Int32.logor (Int32.shift_left (hexchar_inv h.[i+6]) 4)
 		      (hexchar_inv h.[i+7])))))))
   
-let int8_hexstring b x =
-  Buffer.add_char b (hexchar (Int32.of_int ((x lsr 4) land 15)));
-  Buffer.add_char b (hexchar (Int32.of_int (x land 15)))
-
 let int32_hexstring b x =
   Buffer.add_char b (hexchar (Int32.shift_right_logical x 28));
   Buffer.add_char b (hexchar (Int32.logand (Int32.shift_right_logical x 24) 15l));
