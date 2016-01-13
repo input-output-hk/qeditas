@@ -191,6 +191,7 @@ let qednetmain initfn preloopfn =
   Printf.printf "Init headers\n"; flush stdout;
   init_headers();
   initfn();
+  Printf.printf "Initialization phase complete.\n"; flush stdout;
   while true do
     try
       preloopfn();
