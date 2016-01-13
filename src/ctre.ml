@@ -261,6 +261,7 @@ let rec hashframe fr =
   | FAll -> hashint32 198l
   | FLeaf(bl,None) -> hashtag (hashbitseq bl) 199l
   | FLeaf(bl,Some(i)) -> hashtag (hashpair (hashbitseq bl) (hashint32 (Int32.of_int i))) 200l
+  | FBin(frl,frr) when frl = frr -> let frlh = hashframe frl in hashtag (hashpair frlh frlh) 201l
   | FBin(frl,frr) -> hashtag (hashpair (hashframe frl) (hashframe frr)) 201l
 
 type ctree =
