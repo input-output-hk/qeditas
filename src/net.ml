@@ -160,8 +160,9 @@ let process_new_header h =
   | _ -> (*** in some cases, failure should lead to blacklist and removal of the tx, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
       ()
   
-let qednetmain preloopfn =
+let qednetmain initfn preloopfn =
   let qednetch = Unix.open_process_in (qednetd()) in
+  initfn();
   while true do
     try
       preloopfn();

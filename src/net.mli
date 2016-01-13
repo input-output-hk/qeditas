@@ -9,7 +9,7 @@ open Tx
 open Ctre
 open Block
 
-val qednetmain : (unit -> unit) -> unit
+val qednetmain : (unit -> unit) -> (unit -> unit) -> unit
 
 val myaddr : unit -> string
 
