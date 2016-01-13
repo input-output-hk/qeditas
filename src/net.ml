@@ -13,7 +13,7 @@ open Block
 
 let stxpool : stx list ref = ref [];;
 
-type blocktree = BlocktreeNode of hashval option * hashval option * hashval option * hashval * targetinfo * int32 * int64 * big_int * int64 * bool ref * (blockheader * blocktree) list ref
+type blocktree = BlocktreeNode of hashval option * hashval option * hashval option * hashval * targetinfo * int32 * int64 * big_int * int64 * bool ref * (hashval * blocktree) list ref
 
 let genesistimestamp = 1452623181L;;
 let genesisblocktreenode = BlocktreeNode(None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),600l,genesistimestamp,zero_big_int,1L,ref false,ref []);;
@@ -39,6 +39,7 @@ let sethungsignalhandler () =
 let qednetd () = if !Config.testnet then (!Config.qednetdexec ^ " -testnet") else !Config.qednetdexec
 
 let process_new_tx h =
+  Printf.printf "Processing new tx %s\n" h; flush stdout;
   let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qtx " ^ h) in
   let txhd = input_line qednetch in
   Unix.close_process_in qednetch;
@@ -72,9 +73,14 @@ let process_new_tx h =
        let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qtx " ^ h) in
        ignore (Unix.close_process_in qednetch)
      end
-  with
-  | _ -> (*** in some cases, failure should lead to blacklist and removal of the tx, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
-      ()
+  with (*** in some cases, failure should lead to blacklist and removal of the tx, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
+  | Not_found ->
+    Printf.printf "Problem with tx, deleting it\n"; flush stdout;
+    let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qtx " ^ h) in
+    ignore (Unix.close_process_in qednetch)
+  | e ->
+    Printf.printf "exception %s\n" (Printexc.to_string e); flush stdout;
+    ()
 
 let rec processdelayednodes tm btnl =
   match btnl with
@@ -89,7 +95,13 @@ let rec processdelayednodes tm btnl =
     processdelayednodes tm btnr
   | _ -> btnl
 
-let rec process_new_header_a h hh blkh1 blkhd1 =
+let add_to_headers_file h =
+  let fn = !Config.datadir ^ "/headers" in
+  let f = open_out_gen [Open_append;Open_creat] 0o440 fn in
+  output_string f (h ^ "\n");
+  close_out f
+
+let rec process_new_header_a h hh blkh1 blkhd1 initialization =
   let prevblkh = blkhd1.prevblockhash in
   begin
     try
@@ -107,7 +119,8 @@ let rec process_new_header_a h hh blkh1 blkhd1 =
         let newcumulstake = cumul_stake prevcumulstk tar1 blkhd1.deltatime in
         let newnode = BlocktreeNode(prevblkh,blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,blkhd1.tinfo,blkhd1.deltatime,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,ref false,ref []) in
         begin (*** add it as a leaf and check if it's the best ***)
-          succl := (blkh1,newnode)::!succl;
+          succl := (hh,newnode)::!succl;
+          if not initialization then add_to_headers_file h;
           if Int64.of_float (Unix.time()) < tmstamp then (*** delay it ***)
             earlyblocktreenodes := insertnewdelayed (tmstamp,newnode) !earlyblocktreenodes
           else
@@ -118,21 +131,29 @@ let rec process_new_header_a h hh blkh1 blkhd1 =
                 bestnode := newnode
               end;
           List.iter
-            (fun blkh1 -> let (blkhd1,_) = blkh1 in let hh = hash_blockheaderdata blkhd1 in process_new_header_a (hashval_hexstring hh) hh blkh1 blkhd1)
+            (fun blkh1 -> let (blkhd1,_) = blkh1 in let hh = hash_blockheaderdata blkhd1 in process_new_header_a (hashval_hexstring hh) hh blkh1 blkhd1 initialization)
             (Hashtbl.find_all orphanblkheaders (Some(hh)))
         end
       else
         begin (*** if it's wrong, delete it and blacklist it so it won't look new in the future ***)
+          Printf.printf "Incorrect blockheader, deleting and blacklisting\n"; flush stdout;
           let qednetch = Unix.open_process_in ((qednetd()) ^ " blacklistdata qblockheader " ^ h) in
           ignore (Unix.close_process_in qednetch);
           let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qblockheader " ^ h) in
           ignore (Unix.close_process_in qednetch)
         end
-    with Not_found -> (*** orphan block header, put it on the relevant hash table ***)
-      Hashtbl.add orphanblkheaders prevblkh blkh1
+    with Not_found -> (*** orphan block header, put it on the relevant hash table and request parent ***)
+      Hashtbl.add orphanblkheaders prevblkh blkh1;
+      match prevblkh with
+      | Some(pbh) ->
+        let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qblockheader " ^ (hashval_hexstring pbh)) in
+        let l = input_line qednetch in
+        if l = "already have" then process_new_header (hashval_hexstring pbh) initialization;
+        ignore (Unix.close_process_in qednetch);
+      | None -> ()
   end
-
-let process_new_header h =
+and process_new_header h initialization =
+  Printf.printf "Processing new header %s\n" h; flush stdout;
   let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qblockheader " ^ h) in
   let blkhd = input_line qednetch in
   Unix.close_process_in qednetch;
@@ -145,36 +166,59 @@ let process_new_header h =
       Buffer.add_char strb (Char.chr (Hashaux.hexsubstring_int8 blkhd (!i-1)));
       i := !i + 2;
     done;
+  Printf.printf "about to try to deserialize\n"; flush stdout;
     let (blkh1,_) = sei_blockheader seis (Buffer.contents strb,l2,None,0,0) in
     let (blkhd1,blkhs1) = blkh1 in
     let hh = hexstring_hashval h in
     if not (hash_blockheaderdata blkhd1 = hh) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
       begin
         Printf.printf "WARNING: Received block header with different hash as advertised, removing %s\nThis may e due to a bug or due to a misbehaving peer.\n" h; flush stdout;
-        let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qtx " ^ h) in
+        let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qblockheader " ^ h) in
         ignore (Unix.close_process_in qednetch)
       end
     else
-      process_new_header_a h hh blkh1 blkhd1
-  with
-  | _ -> (*** in some cases, failure should lead to blacklist and removal of the tx, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
-      ()
+      process_new_header_a h hh blkh1 blkhd1 initialization
+  with (*** in some cases, failure should lead to blacklist and removal of the tx, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
+  | Not_found ->
+    Printf.printf "Problem with blockheader, deleting it\n"; flush stdout;
+    let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qblockheader " ^ h) in
+    ignore (Unix.close_process_in qednetch)
+  | e ->
+    Printf.printf "exception %s\n" (Printexc.to_string e); flush stdout;
+    ()
+
+let init_headers () =
+  let fn = !Config.datadir ^ "/headers" in
+  if Sys.file_exists fn then
+    let f = open_in fn in
+    begin
+      try
+        let h = input_line f in
+        process_new_header h true
+      with End_of_file -> close_in f
+    end
+  else
+    ()
   
 let qednetmain initfn preloopfn =
-  let qednetch = Unix.open_process_in (qednetd()) in
+  sethungsignalhandler();
+  Printf.printf "Starting qednetd\n"; flush stdout;
+  let (qednetch1,qednetch2,qednetch3) = Unix.open_process_full (qednetd()) (Unix.environment()) in
+  Printf.printf "Init headers\n"; flush stdout;
+  init_headers();
   initfn();
   while true do
     try
       preloopfn();
       earlyblocktreenodes := processdelayednodes (Int64.of_float (Unix.time())) !earlyblocktreenodes;
       ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 1.0 });
-      let l = input_line qednetch in
+      let l = input_line qednetch3 in
       ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
       let ll = String.length l in
-      if ll = 44 && String.sub l 0 4 = "QTX:" then
-	process_new_tx (String.sub l 4 40)
-      else if ll = 48 && String.sub l 0 8 = "QHEADER:" then
-	process_new_header (String.sub l 8 40)
+      if ll = 68 && String.sub l 0 4 = "QTX:" then
+	process_new_tx (String.sub l 28 40)
+      else if ll = 72 && String.sub l 0 8 = "QHEADER:" then
+	process_new_header (String.sub l 32 40) false
     with Hung -> ()
   done
 
