@@ -54,7 +54,7 @@ let commhelp = [
 ("importbtcprivkey",1,Some 1,"importbtcprivkey <Bitcoin WIF>","Import a private key (in Bitcoin WIF format) for a Qeditas p2pkh address into the local wallet.");
 ("importendorsement",3,Some 3,"importendorsement <address 1> <address 2> <Bitcoin message signature>","Import an endorsement of Qeditas pay address 1 to Qeditas pay address 2 (so that address 2 can sign for address 1).");
 ("importwatchaddr",1,Some 1,"importwatchaddr <address>","Import an address into the wallet in order to watch the address.");
-("importbtcwatchaddr",1,Some 1,"importbtcwatchaddr <Bitcoin address>","Import a Qeditas pay address by giving the corresponding Bitcoin address.
+("importwatchbtcaddr",1,Some 1,"importwatchbtcaddr <Bitcoin address>","Import a Qeditas pay address by giving the corresponding Bitcoin address.
 The address is only watched, not controlled.");
 ("btctoqedaddr",1,Some 1,"btctoqedaddr <Bitcoin address>","Give the Qeditas pay address corresponding to the given Bitcoin address. The wallet is not affected.");
 ("printassets",0,Some 0,"printassets","Print the assets held at the addresses in the wallet.
