@@ -350,63 +350,75 @@ let importwatchbtcaddr a =
   walletwatchaddrs := alpha::!walletwatchaddrs;
   save_wallet() (*** overkill, should append if possible ***)
 
+let rec printassets_a ctr =
+  try
+    let al1 = List.map (fun (k,b,(x,y),w,h,z) -> (z,Ctre.ctree_addr (hashval_p2pkh_addr h) ctr)) !walletkeys in
+    let al2 = List.map (fun (h,z,scr) -> (z,Ctre.ctree_addr (hashval_p2sh_addr h) ctr)) !walletp2shs in
+    let al3 = List.map (fun (alpha,beta,(x,y),recid,fcomp,esg) -> let alpha2 = payaddr_addr alpha in (alpha2,Ctre.ctree_addr alpha2 ctr)) !walletendorsements in
+    let al4 = List.map (fun alpha -> (alpha,Ctre.ctree_addr alpha ctr)) !walletwatchaddrs in
+    Printf.printf "Controlled p2pkh assets:\n";
+    List.iter
+      (fun (z,x) ->
+	match x with
+	| (Some(Ctre.CLeaf(_,hl)),_) ->
+	    Printf.printf "%s:\n" z;
+	    Ctre.print_hlist (Ctre.nehlist_hlist hl)
+	| (None,_) ->
+	    Printf.printf "%s: empty\n" z;
+	| _ ->
+	    Printf.printf "%s: no information\n" z;
+      )
+      al1;
+    Printf.printf "Possibly controlled p2sh assets:\n";
+    List.iter
+      (fun (z,x) ->
+	match x with
+	| (Some(Ctre.CLeaf(_,hl)),_) ->
+	    Printf.printf "%s:\n" z;
+	    Ctre.print_hlist (Ctre.nehlist_hlist hl)
+	| (None,_) ->
+	    Printf.printf "%s: empty\n" z;
+	| _ ->
+	    Printf.printf "%s: no information\n" z;
+      )
+      al2;
+    Printf.printf "Assets via endorsement:\n";
+    List.iter
+      (fun (alpha2,x) ->
+	match x with
+	| (Some(Ctre.CLeaf(_,hl)),_) ->
+	    Printf.printf "%s:\n" (addr_qedaddrstr alpha2);
+	    Ctre.print_hlist (Ctre.nehlist_hlist hl)
+	| (None,_) ->
+	    Printf.printf "%s: empty\n" (addr_qedaddrstr alpha2);
+	| _ ->
+	    Printf.printf "%s: no information\n" (addr_qedaddrstr alpha2);
+      )
+      al3;
+    Printf.printf "Watched assets:\n";
+    List.iter
+      (fun (alpha,x) ->
+	match x with
+	| (Some(Ctre.CLeaf(_,hl)),_) ->
+	    Printf.printf "%s:\n" (addr_qedaddrstr alpha);
+	    Ctre.print_hlist (Ctre.nehlist_hlist hl)
+	| (None,_) ->
+	    Printf.printf "%s: empty\n" (addr_qedaddrstr alpha);
+	| _ ->
+	    Printf.printf "%s: no information\n" (addr_qedaddrstr alpha);
+      )
+      al4;
+  with Ctre.GettingRemoteData ->
+    Printf.printf "Requesting remote data...please wait...\n";
+    Unix.sleep 2;
+    printassets_a ctr
+  
 let printassets () =
   let cr = hexstring_hashval !Config.currledgerroot in
   Printf.printf "localframehash %s cr %s\n" (hashval_hexstring !localframehash) (hashval_hexstring cr); flush stdout;
   let ca = lookup_frame_ctree_root_abbrev cr !localframehash in
   Printf.printf "ca %s\n" (hashval_hexstring ca); flush stdout;
   let ctr = Ctre.CAbbrev(cr,ca) in
-  Printf.printf "Controlled p2pkh assets:\n";
-  List.iter
-    (fun (k,b,(x,y),w,h,z) ->
-      match Ctre.ctree_addr (hashval_p2pkh_addr h) ctr with
-      | (Some(Ctre.CLeaf(_,hl)),_) ->
-	  Printf.printf "%s:\n" z;
-	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
-      | (None,_) ->
-	  Printf.printf "%s: empty\n" z;
-      | _ ->
-	  Printf.printf "%s: no information\n" z;
-    )
-    !walletkeys;
-  Printf.printf "Possibly controlled p2sh assets:\n";
-  List.iter
-    (fun (h,z,scr) ->
-      match Ctre.ctree_addr (hashval_p2sh_addr h) ctr with
-      | (Some(Ctre.CLeaf(_,hl)),_) ->
-	  Printf.printf "%s:\n" z;
-	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
-      | (None,_) ->
-	  Printf.printf "%s: empty\n" z;
-      | _ ->
-	  Printf.printf "%s: no information\n" z;
-    )
-    !walletp2shs;
-  Printf.printf "Assets via endorsement:\n";
-  List.iter
-    (fun (alpha,beta,(x,y),recid,fcomp,esg) ->
-      let alpha2 = payaddr_addr alpha in
-      match Ctre.ctree_addr alpha2 ctr with
-      | (Some(Ctre.CLeaf(_,hl)),_) ->
-	  Printf.printf "%s:\n" (addr_qedaddrstr alpha2);
-	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
-      | (None,_) ->
-	  Printf.printf "%s: empty\n" (addr_qedaddrstr alpha2);
-      | _ ->
-	  Printf.printf "%s: no information\n" (addr_qedaddrstr alpha2);
-    )
-    !walletendorsements;
-  Printf.printf "Watched assets:\n";
-  List.iter
-    (fun alpha ->
-      match Ctre.ctree_addr alpha ctr with
-      | (Some(Ctre.CLeaf(_,hl)),_) ->
-	  Printf.printf "%s:\n" (addr_qedaddrstr alpha);
-	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
-      | (None,_) ->
-	  Printf.printf "%s: empty\n" (addr_qedaddrstr alpha);
-      | _ ->
-	  Printf.printf "%s: no information\n" (addr_qedaddrstr alpha);
-    )
-    !walletwatchaddrs
+  printassets_a ctr
+
     
