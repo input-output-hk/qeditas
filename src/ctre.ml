@@ -917,8 +917,8 @@ let lookup_frame_ctree_root_abbrev fh r =
         raise (Failure ("could not understand ctree abbrev hashval corresponding to root-frame pair " ^ hh))
     end
   with _ -> (*** request it and fail ***)
-    let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qrootfrmabbr " ^ hh) in
-    ignore (Unix.close_process_in qednetch);
+    let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qrootfrmabbr " ^ hh) (Unix.environment()) in
+    ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
 (*    raise (Failure ("could not find abbrev corresponding to root-frame pair " ^ hh ^ "; requesting from peers")) *)
     raise GettingRemoteData
 
@@ -957,8 +957,8 @@ let get_ctree_abbrev h =
 	raise (Failure ("could not understand ctree abbrev " ^ hh))
     end
   with _ -> (*** request it and fail ***)
-    let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qctreeabbrev " ^ hh) in
-    ignore (Unix.close_process_in qednetch);
+    let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qctreeabbrev " ^ hh) (Unix.environment()) in
+    ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
 (*    raise (Failure ("could not resolve a needed ctree abbrev " ^ hh ^ "; requesting from peers")) *)
     raise GettingRemoteData
 
@@ -978,8 +978,8 @@ let get_frame_abbrev h =
 	raise (Failure ("could not understand frame " ^ hh))
     end
   with _ -> (*** request it and fail ***)
-    let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qframe " ^ hh) in
-    ignore (Unix.close_process_in qednetch);
+    let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qframe " ^ hh) (Unix.environment()) in
+    ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
 (*    raise (Failure ("could not resolve a needed frame " ^ hh ^ "; requesting from peers")) *)
     raise GettingRemoteData
 
