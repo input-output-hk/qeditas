@@ -409,7 +409,7 @@ let rec printassets_a ctr =
       )
       al4;
   with Ctre.GettingRemoteData ->
-    Printf.printf "Requesting remote data...please wait...\n";
+    Printf.printf "Requesting remote data...please wait...\n"; flush stdout;
     Unix.sleep 2;
     printassets_a ctr
   
