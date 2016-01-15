@@ -159,7 +159,8 @@ let main () =
 			let c = seo_hashval seoc stkaddr c in
 			let c = seo_hashval seoc h c in
 			seocf c;
-			flush stdout
+			flush stdout;
+			raise Stop
 		      end
 		    else (*** if not, check if there is some storage that will make it a hit ***)
 		      begin
@@ -178,7 +179,8 @@ let main () =
 			  let c = seo_hashval seoc h c in
 			  let c = seo_postor seoc (PostorTrm(th,m,a,h)) c in
 			  seocf c;
-			  flush stdout
+			  flush stdout;
+			  raise Stop
 			with Not_found ->
 			  try
 			    let (gamma,nonce,th,d,h,betak) =
@@ -195,7 +197,8 @@ let main () =
 			    let c = seo_hashval seoc h c in
 			    let c = seo_postor seoc (PostorDoc(gamma,nonce,th,d,h)) c in
 			    seocf c;
-			    flush stdout
+			    flush stdout;
+			    raise Stop
 			  with Not_found -> () (*** not a hit at all ***)
 		      end
 		  end)
