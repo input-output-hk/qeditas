@@ -13,13 +13,14 @@ open Ctre
 open Block
 
 let stxpool : (hashval,stx) Hashtbl.t = Hashtbl.create 1000;;
+let published_stx : (hashval,unit) Hashtbl.t = Hashtbl.create 1000;;
 let thytree : (hashval,Mathdata.ttree) Hashtbl.t = Hashtbl.create 1000;;
 let sigtree : (hashval,Mathdata.stree) Hashtbl.t = Hashtbl.create 1000;;
 
-type blocktree = BlocktreeNode of hashval option * hashval option * hashval option * hashval * targetinfo * int32 * int64 * big_int * int64 * bool option ref * bool ref * (hashval * blocktree) list ref
+type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * int32 * int64 * big_int * int64 * bool option ref * bool ref * (hashval * blocktree) list ref
 
 let genesistimestamp = 1452623181L;;
-let genesisblocktreenode = BlocktreeNode(None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),600l,genesistimestamp,zero_big_int,1L,ref (Some(true)),ref false,ref []);;
+let genesisblocktreenode = BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),600l,genesistimestamp,zero_big_int,1L,ref (Some(true)),ref false,ref []);;
 
 let lastcheckpointnode = ref genesisblocktreenode;;
 
@@ -91,7 +92,7 @@ let process_new_tx h =
   Printf.printf "Processing new tx %s\n" h; flush stdout;
   let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qtx " ^ h) in
   let txhd = input_line qednetch in
-  Unix.close_process_in qednetch;
+  ignore (Unix.close_process_in qednetch);
   try
     let s = hexstring_string txhd in
     let (stx1,_) = sei_stx seis (s,String.length s,None,0,0) in
@@ -127,8 +128,8 @@ let process_new_tx h =
 let rec processdelayednodes tm btnl =
   match btnl with
   | (tm2,n2)::btnr when tm2 <= tm ->
-    let BlocktreeNode(_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
-    let BlocktreeNode(pbh,_,_,_,_,_,_,newcumulstk,_,_,_,_) = n2 in
+    let BlocktreeNode(_,_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
+    let BlocktreeNode(_,_,pbh,_,_,_,_,_,_,newcumulstk,_,_,_,_) = n2 in
     if gt_big_int newcumulstk bestcumulstk then
       begin
         Printf.printf "New best blockheader %s\n" (match pbh with Some(h) -> hashval_hexstring h | None -> "(genesis)"); flush stdout;
@@ -153,12 +154,36 @@ let add_to_headers_file h =
   output_string f (h ^ "\n");
   close_out f
 
+let rec is_recent_staker stkaddr n i =
+  if i > 0 then
+    begin
+      let BlocktreeNode(par,stakers,_,_,_,_,_,_,_,_,_,_,_,_) = n in
+      if List.mem stkaddr !stakers then
+	true
+      else
+	match par with
+	| Some(p) -> is_recent_staker stkaddr p (i-1)
+	| _ -> false
+    end
+  else
+    false
+
+let rec record_recent_staker stkaddr n i =
+  if i > 0 then
+    begin
+      let BlocktreeNode(par,stakers,_,_,_,_,_,_,_,_,_,_,_,_) = n in
+      stakers := stkaddr::!stakers;
+      match par with
+      | Some(p) -> record_recent_staker stkaddr p (i-1)
+      | None -> ()
+    end
+
 let rec process_new_header_a h hh blkh1 blkhd1 initialization =
   let prevblkh = blkhd1.prevblockhash in
   begin
     try
       let prevnode = Hashtbl.find blkheadernode prevblkh in
-      let BlocktreeNode(_,thyroot,sigroot,ledgerroot,tinfo,deltm,tmstamp,prevcumulstk,blkhght,validated,blacklisted,succl) = prevnode in
+      let BlocktreeNode(_,_,_,thyroot,sigroot,ledgerroot,tinfo,deltm,tmstamp,prevcumulstk,blkhght,validated,blacklisted,succl) = prevnode in
       if !blacklisted then (*** child of a blacklisted node, drop and blacklist it ***)
         begin
           let qednetch = Unix.open_process_in ((qednetd()) ^ " blacklistdata qblockheader " ^ h) in
@@ -170,14 +195,15 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization =
         let (_,_,tar1) = blkhd1.tinfo in
         let newcumulstake = cumul_stake prevcumulstk tar1 blkhd1.deltatime in
 	let validated = ref None in
-        let newnode = BlocktreeNode(prevblkh,blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,blkhd1.tinfo,blkhd1.deltatime,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
+        let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],prevblkh,blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,blkhd1.tinfo,blkhd1.deltatime,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
         begin (*** add it as a leaf, indicate that we want the block delta to validate it, and check if it's the best ***)
           succl := (hh,newnode)::!succl;
+	  record_recent_staker blkhd1.stakeaddr prevnode 6;
 	  let validatefn () =
 	    try
 	      let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qblockdeltah " ^ h) in
 	      let blkdhh = input_line qednetch in
-	      Unix.close_process_in qednetch;
+	      ignore (Unix.close_process_in qednetch);
 	      let blkdhs = hexstring_string blkdhh in
 	      let (blkdh,_) = sei_blockdeltah seis (blkdhs,String.length blkdhs,None,0,0) in
 	      let (stkout,forf,cg,txhl) = blkdh in
@@ -189,7 +215,8 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization =
 		      alltxs := false;
 		      let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qtx " ^ (hashval_hexstring txh)) in
 		      ignore (Unix.close_process_in qednetch);
-		    end);
+		    end)
+		txhl;
 	      if !alltxs then
 		let blkdel = { stakeoutput = stkout;
 			       forfeiture = forf;
@@ -219,7 +246,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization =
           if Int64.of_float (Unix.time()) < tmstamp then (*** delay it ***)
             earlyblocktreenodes := insertnewdelayed (tmstamp,newnode) !earlyblocktreenodes
           else
-            let BlocktreeNode(_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
+            let BlocktreeNode(_,_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
             if gt_big_int newcumulstake bestcumulstk then
               begin
                 Printf.printf "New best blockheader %s\n" h; flush stdout;
@@ -251,7 +278,7 @@ and process_new_header h initialization =
   Printf.printf "Processing new header %s\n" h; flush stdout;
   let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qblockheader " ^ h) in
   let blkhd = input_line qednetch in
-  Unix.close_process_in qednetch;
+  ignore (Unix.close_process_in qednetch);
   try
     let s = hexstring_string blkhd in
     let (blkh1,_) = sei_blockheader seis (s,String.length s,None,0,0) in
@@ -288,7 +315,7 @@ let init_headers () =
     ()
 
 let rec find_best_validated_block_from fromnode bestcumulstk =
-  let BlocktreeNode(_,_,_,_,_,_,_,cumulstk,_,validatedp,blklistp,succl) = fromnode in
+  let BlocktreeNode(_,_,_,_,_,_,_,_,_,cumulstk,_,validatedp,blklistp,succl) = fromnode in
   if not !blklistp && !validatedp = Some(true) then
     begin
       let newbestcumulstk = ref
@@ -308,7 +335,47 @@ let rec find_best_validated_block_from fromnode bestcumulstk =
     end
   else
     bestcumulstk
-  
+
+let publish_stx txh stx1 =
+  let txhh = hashval_hexstring txh in
+  let fn = Filename.concat !Config.datadir ("t" ^ txhh) in
+  let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
+  let c = seo_stx seoc stx1 (ch,None) in
+  seocf c;
+  close_out ch;
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " adddatafromfile qtx " ^ txhh ^ " " ^ fn) in
+  ignore (Unix.close_process_in qednetch);
+  Sys.remove fn;
+  Hashtbl.add published_stx txh ()
+
+let publish_block bhh (bh,bd) =
+  let bhhh = hashval_hexstring bhh in
+  let fn = Filename.concat !Config.datadir ("h" ^ bhhh) in
+  let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
+  let c = seo_blockheader seoc bh (ch,None) in
+  seocf c;
+  close_out ch;
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " adddatafromfile qblockheader " ^ bhhh ^ " " ^ fn) in
+  ignore (Unix.close_process_in qednetch);
+  Sys.remove fn;
+  let stxhl =
+    List.map
+      (fun (tx1,txsg1) ->
+	let tx1h = hashtx tx1 in
+	if not (Hashtbl.mem published_stx tx1h) then publish_stx tx1h (tx1,txsg1);
+	tx1h)
+      bd.blockdelta_stxl
+  in
+  let bdh = (bd.stakeoutput,bd.forfeiture,bd.prevledgergraft,stxhl) in
+  let fn = Filename.concat !Config.datadir ("d" ^ bhhh) in
+  let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
+  let c = seo_blockdeltah seoc bdh (ch,None) in
+  seocf c;
+  close_out ch;
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " adddatafromfile qblockdeltah " ^ bhhh ^ " " ^ fn) in
+  ignore (Unix.close_process_in qednetch);
+  Sys.remove fn
+
 let qednetmain initfn preloopfn =
   sethungsignalhandler();
   Printf.printf "Starting qednetd\n"; flush stdout;

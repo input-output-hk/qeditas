@@ -13,11 +13,18 @@ exception Hung
 val sethungsignalhandler : unit -> unit
 val input_byte_nohang : in_channel -> float -> int option
 
-type blocktree = BlocktreeNode of hashval option * hashval option * hashval option * hashval * targetinfo * int32 * int64 * big_int * int64 * bool option ref * bool ref * (hashval * blocktree) list ref
+type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * int32 * int64 * big_int * int64 * bool option ref * bool ref * (hashval * blocktree) list ref
 
 val genesisblocktreenode : blocktree
 val lastcheckpointnode : blocktree ref
 val bestnode : blocktree ref
 val find_best_validated_block_from : blocktree -> big_int -> big_int
+val is_recent_staker : hashval -> blocktree -> int -> bool
+
+val lookup_thytree : hashval option -> Mathdata.ttree option
+val lookup_sigtree : hashval option -> Mathdata.stree option
+
+val publish_stx : hashval -> stx -> unit
+val publish_block : hashval -> block -> unit
 
 val qednetmain : (unit -> unit) -> (unit -> unit) -> unit
