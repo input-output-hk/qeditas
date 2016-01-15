@@ -47,6 +47,7 @@ let send_assets_to_staker tostkr c n =
   let reasontostake = ref false in
   List.iter
     (fun (k,b,(x,y),w,h,alpha) ->
+      Printf.printf "about to get assets from %s for staking\n" alpha; flush stdout;
       if not (is_recent_staker h n 6) then
 	match ctree_addr (hashval_p2pkh_addr h) c with
 	| (Some(CLeaf(_,hl)),_) ->
@@ -56,6 +57,7 @@ let send_assets_to_staker tostkr c n =
     !Commands.walletkeys;
   List.iter
     (fun (alpha,beta,_,_,_,_) ->
+      Printf.printf "about to get assets from %s for staking via endorsement\n" (Cryptocurr.addr_qedaddrstr (payaddr_addr alpha)); flush stdout;
       let (p,x4,x3,x2,x1,x0) = alpha in
       let (q,_,_,_,_,_) = beta in
       if not p && not q then (*** only p2pkh can stake ***)
@@ -106,6 +108,7 @@ let start_staking () =
       begin
 	Printf.printf "should stake on top of current best block, height %Ld, hash %s\n" blkhght (match prevblkh with Some(bh) -> (hashval_hexstring bh) | None -> "(genesis)"); flush stdout;
 	let ca = lookup_frame_ctree_root_abbrev !localframehash currledgerroot in
+Printf.printf "stst 2b\n"; flush stdout;
 	let (fromstkr,tostkr,stkerr) = Unix.open_process_full stkexec [||] in
 	stakingproccomm := Some(fromstkr,tostkr,stkerr);
 	Commands.stakingassets := [];
@@ -191,6 +194,8 @@ let main () =
     Printf.printf "Loading current frame\n"; flush stdout;
     localframe := Commands.load_currentframe();
     localframehash := hashframe !localframe;
+    Printf.printf "Loading wallet\n"; flush stdout;
+    Commands.load_wallet();
     let initfn () = () in
     let preloopfn () =
       if !Config.staking then
@@ -213,10 +218,13 @@ let main () =
 			let (_,_,bday,obl,v) = List.find (fun (_,h,_,_,_) -> h = aid) !Commands.stakingassets in
 			match !currstaking with
 			| Some(blkh,cs,prevledgerroot,n,(csm,fsmprev,tar)) ->
+Printf.printf "h1\n"; flush stdout;
 			    stop_staking();
+Printf.printf "h2\n"; flush stdout;
 			    if check_hit_b blkh bday obl v csm tar stktm aid alpha None then (*** confirm the staking process is correct ***)
 			      let BlocktreeNode(_,_,pbhh,pbthyroot,pbsigroot,_,pbtinfo,pbdeltm,pbtmstamp,cs,blkhght,_,_,_) = n in
 			      let newrandbit = rand_bit() in
+Printf.printf "h3\n"; flush stdout;
 			      let fsm = stakemod_pushbit newrandbit fsmprev in
 			      let (csm,fsm,tar) =
 				if blkh = 1L then
@@ -224,6 +232,7 @@ let main () =
 				else
 				  (csm,fsm,tar)
 			      in
+Printf.printf "h4\n"; flush stdout;
 			      let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))] in
 			      let coinstk : tx = ([(alpha2,aid)],stkoutl) in
 			      let prevc = Some(CAbbrev(prevledgerroot,lookup_frame_ctree_root_abbrev !localframehash prevledgerroot)) in
@@ -232,6 +241,7 @@ let main () =
 				| Some(c) -> c
 				| None -> raise (Failure "tree should not be empty")
 			      in
+Printf.printf "h5\n"; flush stdout;
 			      let dync = ref (octree_ctree (tx_octree_trans blkh coinstk prevc)) in
 			      let otherstxs = ref [] in
 			      Hashtbl.iter
@@ -370,7 +380,7 @@ let main () =
       if !Config.staking then
 	begin (*** check to see if a new block can be published ***)
 	  match !waitingblock with
-	  | Some(_,_,_,_,_,_,n) when not (n = !bestnode) -> (*** if there's now a better block to stake on than the one the waiting block was staked on, forget it and restart staking ***)
+	  | Some(_,_,_,_,_,_,n) when not (eq_node n !bestnode) -> (*** if there's now a better block to stake on than the one the waiting block was staked on, forget it and restart staking ***)
 	      waitingblock := None;
 	      start_staking();
 	  | Some(stktm,blkh,bhh,bh,bd,cs,_) when Int64.of_float (Unix.time()) >= stktm ->
@@ -383,7 +393,8 @@ let main () =
 		| None ->
 		    start_staking()
 		| Some(_,_,_,n,_) -> (*** if we are staking, make sure it's still on top of the best block ***)
-		    if not (n = !bestnode) then
+Printf.printf "g1\n"; flush stdout;
+		    if not (eq_node n !bestnode) then
 		      start_staking()
 	      end
 	  | _ ->
