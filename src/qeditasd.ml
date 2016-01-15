@@ -102,7 +102,10 @@ let start_staking () =
 	| None -> waitingonvalidationsince := Some(Unix.time())
 	| Some(tm) ->
 	    if Unix.time() > tm +. 60.0 then
-	      ignore (find_best_validated_block_from !lastcheckpointnode zero_big_int) (*** give up and switch to staking on best validated node ***)
+	      begin (*** give up and switch to staking on best validated node ***)
+		waitingonvalidationsince := None;
+		ignore (find_best_validated_block_from !lastcheckpointnode zero_big_int)
+	      end
       end
     else
       begin
