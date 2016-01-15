@@ -91,6 +91,7 @@ let waitingonvalidationsince = ref None;;
 let start_staking () =
   stop_staking(); (*** stop staking first, if necessary ***)
   let stkexec = Filename.concat (Filename.dirname (Sys.argv.(0))) "qeditasstk" in
+  let stkexec = if !Config.testnet then (stkexec ^ " -testnet=1") else stkexec in
   try
     let best = !bestnode in
     let BlocktreeNode(_,_,prevblkh,thyroot,sigroot,currledgerroot,tinfo,deltm,tmstamp,prevcumulstk,blkhght,validated,blacklisted,succl) = best in
