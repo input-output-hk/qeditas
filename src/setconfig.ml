@@ -10,7 +10,6 @@ let stringconfigvars = [
 ("currledgerroot",fun x -> Config.currledgerroot := x)
 ];;
 let boolconfigvars = [
-("testnet",fun x -> Config.testnet := x);
 ("staking",fun x -> Config.staking := x);
 ("ipv6",fun x -> Config.ipv6 := x)
 ];;
@@ -53,11 +52,6 @@ let process_config_line l =
 	    begin
 	      setl := v::!setl;
 	      r (s = "1" || s = "t" || s = "true");
-	      if v = "testnet" && !Config.testnet then (*** if testnet, then change some default values ***)
-		begin
-		  if not (List.mem "port" !setl) then Config.port := 20804;
-		  if not (List.mem "seed" !setl) then Config.seed := "68324ba252550a4cb02b7279cf398b9994c0c39f"; (*** last 20 bytes of hash of bitcoin block 378800 ***)
-		end;
 	      raise Done
 	    end
 	  )
@@ -127,7 +121,13 @@ let datadir_from_command_line () =
     if String.length arg > 9 && arg.[0] = '-' then
       try
 	if String.sub arg 0 9 = "-datadir=" then
-	  Config.datadir := String.sub arg 9 (String.length arg - 9)
+	  Config.datadir := String.sub arg 9 (String.length arg - 9);
+	if arg = "-testnet" || arg = "-testnet=1" then (*** if testnet, then change some default values ***)
+          begin
+            Config.testnet := true;
+            if not (List.mem "port" !setl) then Config.port := 20804;
+            if not (List.mem "seed" !setl) then Config.seed := "68324ba252550a4cb02b7279cf398b9994c0c39f"; (*** last 20 bytes of hash of bitcoin block 378800 ***)
+          end
       with Not_found -> ()
   done;;
 
