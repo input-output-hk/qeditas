@@ -12,12 +12,12 @@ open Block;;
 open Net;;
 open Setconfig;;
 
-(* Code for the staking process, intended to be started and controlled by qeditasd *)
-let stakelog = open_out_gen [Open_append;Open_creat] 0o600 (Filename.concat (Ctre.datadir()) "qstakelog");;
+datadir_from_command_line();; (*** if -datadir=... is on the command line, then set Config.datadir so we can find the config file ***)
+process_config_file();;
+process_config_args();; (*** settings on the command line shadow those in the config file ***)
 
-datadir_from_command_line(); (*** if -datadir=... is on the command line, then set Config.datadir so we can find the config file ***)
-process_config_file();
-process_config_args(); (*** settings on the command line shadow those in the config file ***)
+(* Code for the staking process, intended to be started and controlled by qeditasd *)
+let stakelog = open_out_gen [Open_append;Open_creat] 0o600 (Filename.concat (Ctre.datadir()) "qstake.log");;
 
 set_binary_mode_in stdin true;;
 set_binary_mode_out stdout true;;
