@@ -135,16 +135,17 @@ let main () =
 	      (fun (stkaddr,h,bday,obl,v,corrstrtrmassets,corrstrdocassets) ->
 		if !staking then
 		  let mtar = mult_big_int !tar (coinage !blkh bday obl (incrstake v)) in
+		  let ntar = mult_big_int !tar (coinage !blkh bday obl v) in
 		  output_string stakelog ("stktm := " ^ (Int64.to_string !stktm) ^ "\nh := " ^ (Hash.hashval_hexstring h) ^ "\n");
 		  let (m3,m2,m1,m0) = !sm in
 		  output_string stakelog ("sm := (" ^ (Int64.to_string m3) ^ "," ^ (Int64.to_string m2) ^ "," ^ (Int64.to_string m1) ^ "," ^ (Int64.to_string m0) ^ ")\n");
-		  output_string stakelog ("tar := " ^ (string_of_big_int !tar) ^ "\n");
+		  output_string stakelog ("ntar   := " ^ (string_of_big_int ntar) ^ "\n");
 		  output_string stakelog ("hitval := " ^ (string_of_big_int (hitval !stktm h !sm)) ^ "\n");
 		  flush stakelog;
 		(*** first check if it would be a hit with some storage component: ***)
 		  if lt_big_int (hitval !stktm h !sm) mtar then
 		  begin (*** if so, then check if it's a hit without some storage component ***)
-		    if lt_big_int (hitval !stktm h !sm) !tar then
+		    if lt_big_int (hitval !stktm h !sm) ntar then
 		      begin
 			output_string stakelog "staked\n"; flush stakelog;
 			staking := false;
