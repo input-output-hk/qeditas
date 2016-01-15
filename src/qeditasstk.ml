@@ -4,6 +4,8 @@
 
 (* Code for the staking process, intended to be started and controlled by qeditasd *)
 
+let stakelog = open_out_gen [Open_append;Open_creat] 0x600 "qstakelog";;
+
 open Big_int;;
 open Ser;;
 open Hash;;
@@ -133,11 +135,17 @@ let main () =
 	      (fun (stkaddr,h,bday,obl,v,corrstrtrmassets,corrstrdocassets) ->
 		if !staking then
 		  let mtar = mult_big_int !tar (coinage !blkh bday obl (incrstake v)) in
+		  output_string stakelog ("stktm := " ^ (Int64.to_string !stktm) ^ "\nh := " ^ (Hash.hashval_hexstring h) ^ "\n");
+		  let (m3,m2,m1,m0) = !sm in
+		  output_string stakelog ("sm := (" ^ (Int64.to_string m3) ^ "," ^ (Int64.to_string m2) ^ "," ^ (Int64.to_string m1) ^ "," ^ (Int64.to_string m0) ^ ")");
+		  output_string stakelog ("tar := " ^ (string_of_big_int !tar));
+		  flush stakelog;
 		(*** first check if it would be a hit with some storage component: ***)
 		  if lt_big_int (hitval !stktm h !sm) mtar then
 		  begin (*** if so, then check if it's a hit without some storage component ***)
 		    if lt_big_int (hitval !stktm h !sm) !tar then
 		      begin
+			output_string stakelog "staked\n"; flush stakelog;
 			staking := false;
 			output_byte stdout 72; (*** Report Pure Stake Hit ***)
 			let c = (stdout,None) in
@@ -194,3 +202,4 @@ try
   main()
 with Stop -> ();;
 
+close_out stakelog;;
