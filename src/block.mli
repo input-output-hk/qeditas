@@ -116,6 +116,9 @@ val txl_of_block : block -> tx list
 val retarget : big_int -> int32 -> big_int
 val cumul_stake : big_int -> big_int -> int32 -> big_int
 
+val latesttht : ttree option ref
+val latestsigt : stree option ref
+
 val valid_block : ttree option -> stree option -> int64 -> block -> bool
 
 val blockheader_succ_a : int32 -> int64 -> targetinfo -> blockheader -> bool

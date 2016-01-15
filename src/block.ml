@@ -641,6 +641,9 @@ let check_poforfeit blkh ((bhd1,bhs1),(bhd2,bhs2),bhl1,bhl2,v,fal) tr =
     else
       false
 
+let latesttht : ttree option ref = ref None
+let latestsigt : stree option ref = ref None
+
 let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
   let ((bhd,bhs),bd) = b in
   (*** The header is valid. ***)
@@ -854,9 +857,13 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
   (*** Originally I added totalfees to the out_cost, but this was wrong since the totalfees are in the stake output which is already counted in out_cost. I don't really need totalfees to be explicit. ***)
   out_cost outpl = Int64.add (asset_value_sum al) (Int64.add (rewfn blkh) forfeitval)
     &&
-  bhd.newtheoryroot = ottree_hashroot (txout_update_ottree outpl tht)
+  let newtht = txout_update_ottree outpl tht in
+  latesttht := newtht;
+  bhd.newtheoryroot = ottree_hashroot newtht
     &&
-  bhd.newsignaroot = ostree_hashroot (txout_update_ostree outpl sigt)
+  let newsigt = txout_update_ostree outpl sigt in
+  latestsigt := newsigt;
+  bhd.newsignaroot = ostree_hashroot newsigt
 
 let valid_block tht sigt blkh (b:block) =
   let ((bhd,_),_) = b in

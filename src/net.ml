@@ -49,6 +49,16 @@ let lookup_sigtree sigroot =
   | None -> None
   | Some(r) -> Some(Hashtbl.find sigtree r)
 
+let add_thytree thyroot otht =
+  match thyroot,otht with
+  | Some(r),Some(tht) -> if not (Hashtbl.mem thytree r) then Hashtbl.add thytree r tht
+  | _,_ -> ()
+
+let add_sigtree sigroot osigt =
+  match sigroot,osigt with
+  | Some(r),Some(sigt) -> if not (Hashtbl.mem sigtree r) then Hashtbl.add sigtree r sigt
+  | _,_ -> ()
+
 let rec insertnewdelayed (tm,n) btnl =
   match btnl with
   | [] -> [(tm,n)]
@@ -173,8 +183,10 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization =
 		let blk = (blkh1,blkdel) in
 		if known_thytree_p thyroot && known_sigtree_p sigroot then (*** these should both be known if the parent block has been validated ***)
 		  if valid_block (lookup_thytree thyroot) (lookup_sigtree sigroot) blkhght blk then
-		    begin
+		    begin (*** if valid_block succeeds, then latesttht and latestsigt will be set to the transformed theory tree and signature tree ***)
 		      validated := Some(true);
+		      add_thytree blkhd1.newtheoryroot !latesttht;
+		      add_sigtree blkhd1.newsignaroot !latestsigt;
 		    end
 		  else
 		    begin
@@ -257,6 +269,28 @@ let init_headers () =
     end
   else
     ()
+
+let rec find_best_validated_block_from fromnode bestcumulstk =
+  let BlocktreeNode(_,_,_,_,_,_,_,cumulstk,_,validatedp,blklistp,succl) = fromnode in
+  if not !blklistp && !validatedp = Some(true) then
+    begin
+      let newbestcumulstk = ref
+	(if gt_big_int cumulstk bestcumulstk then
+	  begin
+	    bestnode := fromnode;
+	    cumulstk
+	  end
+	else
+	  bestcumulstk)
+      in
+      List.iter
+	(fun (_,childnode) ->
+	  newbestcumulstk := find_best_validated_block_from childnode !newbestcumulstk)
+	!succl;
+      !newbestcumulstk
+    end
+  else
+    bestcumulstk
   
 let qednetmain initfn preloopfn =
   sethungsignalhandler();
