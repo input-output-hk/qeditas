@@ -939,8 +939,9 @@ let save_hashed_ctree r fh a (tr:ctree) =
   let c = seo_ctree seoc tr (ch,None) in
   seocf c;
   close_out ch;
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " adddatafromfile qctreeabbrev " ^ hh ^ " " ^ (hashval_hexstring a) ^ " " ^ fn) in
-  ignore (Unix.close_process_in qednetch)
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " adddatafromfile qctreeabbrev " ^ hh ^ " " ^ fn) in
+  ignore (Unix.close_process_in qednetch);
+  Sys.remove fn
 
 let get_ctree_abbrev h =
   let hh = hashval_hexstring h in
