@@ -18,6 +18,7 @@ type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval 
 val genesisblocktreenode : blocktree
 val lastcheckpointnode : blocktree ref
 val bestnode : blocktree ref
+val eq_node : blocktree -> blocktree -> bool
 val find_best_validated_block_from : blocktree -> big_int -> big_int
 val is_recent_staker : hashval -> blocktree -> int -> bool
 
