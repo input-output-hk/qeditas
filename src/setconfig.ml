@@ -99,8 +99,10 @@ let process_config_line l =
     with Done -> ()
   end
 
+let datadir () = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir
+
 let process_config_file () =
-  let fn = Filename.concat !Config.datadir "qeditas.conf" in
+  let fn = Filename.concat (datadir()) "qeditas.conf" in
   if Sys.file_exists fn then
     begin
       let ch = open_in fn in

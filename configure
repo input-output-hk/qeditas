@@ -29,6 +29,9 @@ fi
 if [ ! -d $DATADIR ]; then
     echo "$DATADIR is not a directory; create it first or give an existing directory with -datadir=<dir>"
 fi
+if [ ! -d $DATADIR/testnet ]; then
+  mkdir $DATADIR/testnet
+fi
 echo let datadir = ref \"$DATADIR\" > src/config.ml
 echo let testnet = ref false >> src/config.ml
 echo let staking = ref false >> src/config.ml

@@ -240,7 +240,7 @@ let process_command r =
 	if not (Tx.tx_valid tau) then raise (Failure "invalid tx");
 	let txid = Tx.hashtx tau in
 	Printf.printf "Txid: %s\n" (hashval_hexstring txid); flush stdout;
-	let fn = Filename.concat !Config.datadir "recenttxs" in
+	let fn = Filename.concat (datadir()) "recenttxs" in
 	if Sys.file_exists fn then
 	  begin
 	    let ch = open_out_gen [Open_wronly;Open_binary;Open_append] 0o644 fn in
@@ -290,7 +290,7 @@ let process_command r =
 	    txin;
 	  (*** don't worry about sout for now; it's needed for publications ***)
 	  if not (!sin2 = sin && !sout2 = sout) then
-	    let fn = Filename.concat !Config.datadir "recenttxs" in
+	    let fn = Filename.concat (datadir()) "recenttxs" in
 	    let ch = open_out_gen [Open_wronly;Open_binary;Open_append] 0o644 fn in
 	    seocf (seo_prod seo_hashval Tx.seo_stx seoc (txid,((txin,txout),(!sin2,!sout2))) (ch,None));
 	    close_out ch
@@ -303,7 +303,7 @@ let process_command r =
 	load_recenttxs();
 	try
 	  let stau = Hashtbl.find recenttxs txid in
-	  let fn = Filename.concat !Config.datadir "txpool" in
+	  let fn = Filename.concat (datadir()) "txpool" in
 	  if Sys.file_exists fn then
 	    begin
 	      let ch = open_out_gen [Open_wronly;Open_binary;Open_append] 0o644 fn in

@@ -3,8 +3,7 @@
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 (* Code for the staking process, intended to be started and controlled by qeditasd *)
-
-let stakelog = open_out_gen [Open_append;Open_creat] 0o600 "qstakelog";;
+let stakelog = open_out_gen [Open_append;Open_creat] 0o600 (Filename.concat (Ctre.datadir()) "qstakelog");;
 
 open Big_int;;
 open Ser;;

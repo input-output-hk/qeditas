@@ -13,6 +13,7 @@ open Tx
 open Config
 
 let qednetd () = if !testnet then (!qednetdexec ^ " -testnet") else !qednetdexec
+let datadir () = if !testnet then (Filename.concat !datadir "testnet") else !datadir
 
 let intention_minage = 144L
 
@@ -934,7 +935,7 @@ let save_hashed_ctree r fh a (tr:ctree) =
 	ignore (Unix.close_process_in qednetch);
   end;
   let ha = hashval_hexstring a in
-  let fn = Filename.concat !datadir ha in
+  let fn = Filename.concat (datadir()) ha in
   let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
   let c = seo_ctree seoc tr (ch,None) in
   seocf c;

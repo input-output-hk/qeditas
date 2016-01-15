@@ -21,7 +21,7 @@ let storagetrmassets = ref []
 let storagedocassets = ref []
 
 let load_currentframe () =
-  let framefn = Filename.concat !Config.datadir "currentframe" in
+  let framefn = Filename.concat (datadir()) "currentframe" in
   if not (Sys.file_exists framefn) then
     (*** default frame, the one used for the initial distribution; only supporting this frame for now; FAbbrev(FBin(FBin(f,f),FAll)) where f is FAbbrev(FBin^8(FAbbrev(FBin^8(FAll)))) ***)
     let (fr,_) = Ctre.sei_frame Ser.seis ("\249\178m\219\150m\219\182\180",9,None,0,0) in
@@ -33,7 +33,7 @@ let load_currentframe () =
     fr
 
 let save_currentframe fr =
-  let framefn = Filename.concat !Config.datadir "currentframe" in
+  let framefn = Filename.concat (datadir()) "currentframe" in
   let s = open_out_bin framefn in
   let _ = seocf (seo_frame seoc fr (s,None)) in
   close_out s
@@ -41,7 +41,7 @@ let save_currentframe fr =
 let recenttxs : (hashval,Tx.stx) Hashtbl.t = Hashtbl.create 100
 
 let load_recenttxs () =
-  let fn = Filename.concat !Config.datadir "recenttxs" in
+  let fn = Filename.concat (datadir()) "recenttxs" in
   if Sys.file_exists fn then
     let ch = open_in_bin fn in
     try
@@ -58,7 +58,7 @@ let load_recenttxs () =
 let txpool : (hashval,Tx.stx) Hashtbl.t = Hashtbl.create 100
 
 let load_txpool () =
-  let fn = Filename.concat !Config.datadir "txpool" in
+  let fn = Filename.concat (datadir()) "txpool" in
   if Sys.file_exists fn then
     let ch = open_in_bin fn in
     try
@@ -73,7 +73,7 @@ let load_txpool () =
 	close_in ch;;
 
 let load_wallet () =
-  let wallfn = Filename.concat !Config.datadir "wallet" in
+  let wallfn = Filename.concat (datadir()) "wallet" in
   if not (Sys.file_exists wallfn) then
     let s = open_out_bin wallfn in
     begin
@@ -121,7 +121,7 @@ let load_wallet () =
 	close_in s
 
 let save_wallet () =
-  let wallfn = Filename.concat !Config.datadir "wallet" in
+  let wallfn = Filename.concat (datadir()) "wallet" in
   let s = open_out_bin wallfn in
   List.iter
     (fun (k,b,_,_,_,_) ->
@@ -146,7 +146,7 @@ let save_wallet () =
   close_out s
 
 let append_wallet f =
-  let wallfn = Filename.concat !Config.datadir "wallet" in
+  let wallfn = Filename.concat (datadir()) "wallet" in
   let s = open_out_gen [Open_append;Open_wronly;Open_binary] 0x660 wallfn in
   f s;
   close_out s

@@ -154,7 +154,7 @@ let rec processblockvalidation vl =
       | None -> (v,f)::vr2
 
 let add_to_headers_file h =
-  let fn = !Config.datadir ^ "/headers" in
+  let fn = Filename.concat (datadir()) "headers" in
   let f = open_out_gen [Open_append;Open_creat] 0o440 fn in
   output_string f (h ^ "\n");
   close_out f
@@ -307,7 +307,7 @@ and process_new_header h initialization =
     ()
 
 let init_headers () =
-  let fn = !Config.datadir ^ "/headers" in
+  let fn = Filename.concat (datadir()) "headers" in
   if Sys.file_exists fn then
     let f = open_in fn in
     begin
@@ -343,7 +343,7 @@ let rec find_best_validated_block_from fromnode bestcumulstk =
 
 let publish_stx txh stx1 =
   let txhh = hashval_hexstring txh in
-  let fn = Filename.concat !Config.datadir ("t" ^ txhh) in
+  let fn = Filename.concat (datadir()) ("t" ^ txhh) in
   let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
   let c = seo_stx seoc stx1 (ch,None) in
   seocf c;
@@ -355,7 +355,7 @@ let publish_stx txh stx1 =
 
 let publish_block bhh (bh,bd) =
   let bhhh = hashval_hexstring bhh in
-  let fn = Filename.concat !Config.datadir ("h" ^ bhhh) in
+  let fn = Filename.concat (datadir()) ("h" ^ bhhh) in
   let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
   let c = seo_blockheader seoc bh (ch,None) in
   seocf c;
@@ -372,7 +372,7 @@ let publish_block bhh (bh,bd) =
       bd.blockdelta_stxl
   in
   let bdh = (bd.stakeoutput,bd.forfeiture,bd.prevledgergraft,stxhl) in
-  let fn = Filename.concat !Config.datadir ("d" ^ bhhh) in
+  let fn = Filename.concat (datadir()) ("d" ^ bhhh) in
   let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
   let c = seo_blockdeltah seoc bdh (ch,None) in
   seocf c;
