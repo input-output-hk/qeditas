@@ -49,8 +49,8 @@ let send_assets_to_staker tostkr c n =
     (fun (k,b,(x,y),w,h,alpha) ->
       Printf.printf "about to get assets from %s for staking\n" alpha; flush stdout;
       if not (is_recent_staker h n 6) then
-	match ctree_addr (hashval_p2pkh_addr h) c with
-	| (Some(CLeaf(_,hl)),_) ->
+	match ctree_addr (hashval_p2pkh_addr h) c None with
+	| (Some(hl),_) ->
 	    reasontostake := true;
 	    hlist_insertstakingassets tostkr h (nehlist_hlist hl)
 	| _ -> ())
@@ -62,8 +62,8 @@ let send_assets_to_staker tostkr c n =
       let (q,_,_,_,_,_) = beta in
       if not p && not q then (*** only p2pkh can stake ***)
 	if not (is_recent_staker (x4,x3,x2,x1,x0) n 6) then
-	  match ctree_addr (payaddr_addr alpha) c with
-	  | (Some(CLeaf(_,hl)),_) ->
+	  match ctree_addr (payaddr_addr alpha) c None with
+	  | (Some(hl),_) ->
 	      reasontostake := true;
 	      hlist_insertstakingassets tostkr (x4,x3,x2,x1,x0) (nehlist_hlist hl)
 	  | _ -> ())
@@ -111,12 +111,10 @@ let start_staking () =
     else
       begin
 	Printf.printf "should stake on top of current best block, height %Ld, hash %s\n" blkhght (match prevblkh with Some(bh) -> (hashval_hexstring bh) | None -> "(genesis)"); flush stdout;
-	let ca = lookup_frame_ctree_root_abbrev !localframehash currledgerroot in
-Printf.printf "stst 2b\n"; flush stdout;
 	let (fromstkr,tostkr,stkerr) = Unix.open_process_full stkexec [||] in
 	stakingproccomm := Some(fromstkr,tostkr,stkerr);
 	Commands.stakingassets := [];
-	if send_assets_to_staker tostkr (CAbbrev(currledgerroot,ca)) best then
+	if send_assets_to_staker tostkr (CHash(currledgerroot)) best then
 	  let (csm1,fsm1,tar1) = tinfo in
 	  let csm2 = stakemod_pushbit (stakemod_lastbit fsm1) csm1 in
 	  let tar2 = retarget tar1 deltm in
@@ -195,9 +193,6 @@ let main () =
 	max_target := shift_left_big_int unit_big_int 255; (*** make the max_target much higher (so difficulty can be easier for testing) ***)
 	genesistarget := shift_left_big_int unit_big_int 248; (*** make the genesistarget much higher (so difficulty can be easier for testing) ***)
       end;
-    Printf.printf "Loading current frame\n"; flush stdout;
-    localframe := Commands.load_currentframe();
-    localframehash := hashframe !localframe;
     Printf.printf "Loading wallet\n"; flush stdout;
     Commands.load_wallet();
     let initfn () = () in
@@ -239,7 +234,7 @@ Printf.printf "h3\n"; flush stdout;
 Printf.printf "h4\n"; flush stdout;
 			      let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))] in
 			      let coinstk : tx = ([(alpha2,aid)],stkoutl) in
-			      let prevc = Some(CAbbrev(prevledgerroot,lookup_frame_ctree_root_abbrev !localframehash prevledgerroot)) in
+			      let prevc = Some(CHash(prevledgerroot)) in
 			      let octree_ctree c =
 				match c with
 				| Some(c) -> c

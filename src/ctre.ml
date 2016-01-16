@@ -177,98 +177,9 @@ let nehlist_lookup_neg_prop_owner hl =
   | NehCons(_,hr) -> hlist_lookup_neg_prop_owner hr
   | _ -> false
 
-type frame =
-  | FHash
-  | FAbbrev of frame
-  | FAll
-  | FLeaf of bool list * int option
-  | FBin of frame * frame
-
-type rframe =
-  | RFHash
-  | RFAll
-  | RFLeaf of bool list * int option
-  | RFBin of rframe * rframe
-
-let bin_rframe frl frr =
-  if frl = RFAll && frr = RFAll then
-    RFAll
-  else
-    RFBin(frl,frr)
-
-(***
- normalize_frame reduces a frame to a form for sharing with peers.
- FAbbrev nodes are removed since abbrevs are for local storage,
- FBin(FAll,FAll) are reduced to FAll.
- As a consequence, every frame that is designed to keep up with the
- whole ctree will normalize to FAll.
- ***)
-let rec normalize_frame fr =
-  match fr with
-  | FHash -> RFHash
-  | FAll -> RFAll
-  | FAbbrev(fr1) -> normalize_frame fr1
-  | FLeaf(bl,i) -> RFLeaf(bl,i)
-  | FBin(frl,frr) -> bin_rframe (normalize_frame frl) (normalize_frame frr)
-
-let split_rframe fr =
-  match fr with
-  | RFBin(frl,frr) -> (Some(frl),Some(frr))
-  | RFLeaf(false::bl,i) -> (Some(RFLeaf(bl,i)),None)
-  | RFLeaf(true::bl,i) -> (None,Some(RFLeaf(bl,i)))
-  | _ -> (None,None)
-
-(***
- rframe_lub combines two normalized rframes to give a normalized rframe
- describing what at least one of the two rframes stores.
- This is used so a node can describe what parts of the ledger tree it can ask its peers about.
- ***)
-let rec rframe_lub fr1 fr2 =
-  match (fr1,fr2) with
-  | (RFHash,_) -> fr2
-  | (_,RFHash) -> fr1
-  | (RFAll,_) -> RFAll
-  | (_,RFAll) -> RFAll
-  | (RFLeaf(bl1,Some(i1)),RFLeaf(bl2,Some(i2))) when bl1 = bl2 -> RFLeaf(bl1,Some(max i1 i2))
-  | (RFLeaf(bl1,None),RFLeaf(bl2,_)) when bl1 = bl2 -> RFLeaf(bl1,None)
-  | (RFLeaf(bl1,_),RFLeaf(bl2,None)) when bl1 = bl2 -> RFLeaf(bl2,None)
-  | _ ->
-    match (split_rframe fr1,split_rframe fr2) with
-    | ((None,None),_) -> fr2
-    | (_,(None,None)) -> fr1
-    | ((Some(fr1l),Some(fr1r)),(Some(fr2l),Some(fr2r))) ->
-      bin_rframe (rframe_lub fr1l fr2l) (rframe_lub fr1r fr2r)
-    | ((None,Some(fr1r)),(Some(fr2l),Some(fr2r))) ->
-      bin_rframe fr2l (rframe_lub fr1r fr2r)
-    | ((Some(fr1l),None),(Some(fr2l),Some(fr2r))) ->
-      bin_rframe (rframe_lub fr1l fr2l) fr2r
-    | ((Some(fr1l),Some(fr1r)),(None,Some(fr2r))) ->
-      bin_rframe fr1l (rframe_lub fr1r fr2r)
-    | ((None,Some(fr1r)),(None,Some(fr2r))) ->
-      RFBin(RFHash,rframe_lub fr1r fr2r)
-    | ((Some(fr1l),None),(None,Some(fr2r))) ->
-      bin_rframe fr1l fr2r
-    | ((Some(fr1l),Some(fr1r)),(Some(fr2l),None)) ->
-      bin_rframe (rframe_lub fr1l fr2l) fr1r
-    | ((None,Some(fr1r)),(Some(fr2l),None)) ->
-      bin_rframe fr2l fr1r
-    | ((Some(fr1l),None),(Some(fr2l),None)) ->
-      RFBin(rframe_lub fr1l fr2l,RFHash)
-
-let rec hashframe fr =
-  match fr with
-  | FHash -> hashint32 196l
-  | FAbbrev(fr1) -> hashtag (hashframe fr1) 197l
-  | FAll -> hashint32 198l
-  | FLeaf(bl,None) -> hashtag (hashbitseq bl) 199l
-  | FLeaf(bl,Some(i)) -> hashtag (hashpair (hashbitseq bl) (hashint32 (Int32.of_int i))) 200l
-  | FBin(frl,frr) when frl = frr -> let frlh = hashframe frl in hashtag (hashpair frlh frlh) 201l
-  | FBin(frl,frr) -> hashtag (hashpair (hashframe frl) (hashframe frr)) 201l
-
 type ctree =
   | CLeaf of bool list * nehlist
   | CHash of hashval
-  | CAbbrev of hashval * hashval
   | CLeft of ctree
   | CRight of ctree
   | CBin of ctree * ctree
@@ -278,7 +189,6 @@ let rec print_ctree_r c n =
   match c with
   | CLeaf(bl,hl) -> Printf.printf "Leaf\n"
   | CHash(h) -> Printf.printf "H %s\n" (hashval_hexstring h)
-  | CAbbrev(hr,ha) -> Printf.printf "A %s %s\n" (hashval_hexstring hr) (hashval_hexstring ha)
   | CLeft(c0) -> Printf.printf "L\n"; print_ctree_r c0 (n+1)
   | CRight(c1) -> Printf.printf "R\n"; print_ctree_r c1 (n+1)
   | CBin(c0,c1) -> Printf.printf "B\n"; print_ctree_r c0 (n+1); print_ctree_r c1 (n+1)
@@ -547,7 +457,6 @@ let rec print_ctree_all_r c n br =
   match c with
   | CLeaf(bl,hl) -> Printf.printf "Leaf %s\n" (addr_qedaddrstr (bitseq_addr ((List.rev br) @ bl))); print_hlist (nehlist_hlist hl)
   | CHash(h) -> Printf.printf "H %s\n" (hashval_hexstring h)
-  | CAbbrev(hr,ha) -> Printf.printf "A %s %s\n" (hashval_hexstring hr) (hashval_hexstring ha)
   | CLeft(c0) -> Printf.printf "L\n"; print_ctree_all_r c0 (n+1) (false::br)
   | CRight(c1) -> Printf.printf "R\n"; print_ctree_all_r c1 (n+1) (true::br)
   | CBin(c0,c1) -> Printf.printf "B\n"; print_ctree_all_r c0 (n+1) (false::br); print_ctree_all_r c1 (n+1) (true::br)
@@ -571,7 +480,6 @@ let rec ctree_hashroot c =
 	)
 	bl (nehlist_hashroot hl)
   | CHash(h) -> h
-  | CAbbrev(hr,ha) -> hr
   | CLeft(c0) -> hashopair1 (ctree_hashroot c0) None
   | CRight(c1) -> hashopair2 None (ctree_hashroot c1)
   | CBin(c0,c1) -> hashopair1 (ctree_hashroot c0) (Some (ctree_hashroot c1))
@@ -591,7 +499,6 @@ let rec hashctree c =
   match c with
   | CLeaf(bl,hl) -> hashtag (hashpair (hashbitseq bl) (hashnehlist hl)) 141l
   | CHash(h) -> hashtag h 142l
-  | CAbbrev(hr,ha) -> hashtag (hashpair hr ha) 143l
   | CLeft(c0) -> hashtag (hashctree c0) 144l
   | CRight(c1) -> hashtag (hashctree c1) 145l
   | CBin(c0,c1) -> hashtag (hashpair (hashctree c0) (hashctree c1)) 146l
@@ -600,7 +507,6 @@ let rec ctree_numnodes c =
   match c with
   | CLeaf(_,_) -> 1
   | CHash(_) -> 1
-  | CAbbrev(_,_) -> 1
   | CLeft(c) -> 1 + ctree_numnodes c
   | CRight(c) -> 1 + ctree_numnodes c
   | CBin(c0,c1) -> 1 + ctree_numnodes c0 + ctree_numnodes c1
@@ -705,111 +611,15 @@ let sei_nehlist i c =
     let (hr,c) = sei_hlist i c in
     (NehCons(a,hr),c)
 
-(***
- (2016) serialization of frames changed to recognize FBin where both sides are the same; otherwise the size
- of the serialization is unnecessarily large
- ***)
-let rec seo_frame o fr c =
-  match fr with
-  | FHash -> (* 00 *)
-      o 2 0 c
-  | FAbbrev(fra) -> (* 01 0 *)
-      let c = o 3 1 c in
-      seo_frame o fra c
-  | FAll -> (* 01 1 *)
-      o 3 5 c
-  | FLeaf(bl,io) -> (* 10 *)
-      let c = o 2 2 c in
-      let c = seo_list seo_bool o bl c in
-      seo_option seo_varint o
-	(match io with
-	| Some(i) -> Some(Int64.of_int i)
-	| None -> None)
-	c
-  | FBin(frl,frr) when frl = frr -> (* 11 0 *)
-      let c = o 3 3 c in
-      seo_frame o frl c
-  | FBin(frl,frr) -> (* 11 1 *)
-      let c = o 3 7 c in
-      let c = seo_frame o frl c in
-      let c = seo_frame o frr c in
-      c
-
-let rec sei_frame i c =
-  let (x,c) = i 2 c in
-  if x = 0 then
-    (FHash,c)
-  else if x = 1 then
-    let (y,c) = i 1 c in
-    if y = 0 then
-      let (fra,c) = sei_frame i c in
-      (FAbbrev(fra),c)
-    else
-      (FAll,c)
-  else if x = 2 then
-    let (bl,c) = sei_list sei_bool i c in
-    let (io,c) = sei_option sei_varint i c in
-    let io2 = (match io with Some(i) -> Some(Int64.to_int i) | None -> None) in
-    (FLeaf(bl,io2),c)
-  else
-    let (y,c) = i 1 c in
-    if y = 0 then
-      let (fru,c) = sei_frame i c in
-      (FBin(fru,fru),c)
-    else
-      let (frl,c) = sei_frame i c in
-      let (frr,c) = sei_frame i c in
-      (FBin(frl,frr),c)
-
-let rec seo_rframe o fr c =
-  match fr with
-  | RFAll -> (* 00 *)
-      o 2 0 c
-  | RFHash -> (* 01 *)
-      o 2 1 c
-  | RFLeaf(bl,io) -> (* 10 *)
-      let c = o 2 2 c in
-      let c = seo_list seo_bool o bl c in
-      seo_option seo_varint o
-	(match io with
-	| Some(i) -> Some(Int64.of_int i)
-	| None -> None)
-	c
-  | RFBin(frl,frr) -> (* 11 *)
-      let c = o 2 3 c in
-      let c = seo_rframe o frl c in
-      let c = seo_rframe o frr c in
-      c
-
-let rec sei_rframe i c =
-  let (x,c) = i 2 c in
-  if x = 0 then
-    (RFAll,c)
-  else if x = 1 then
-    (RFHash,c)
-  else if x = 2 then
-    let (bl,c) = sei_list sei_bool i c in
-    let (io,c) = sei_option sei_varint i c in
-    let io2 = (match io with Some(i) -> Some(Int64.to_int i) | None -> None) in
-    (RFLeaf(bl,io2),c)
-  else
-    let (frl,c) = sei_rframe i c in
-    let (frr,c) = sei_rframe i c in
-    (RFBin(frl,frr),c)
-
 let rec seo_ctree o tr c =
   match tr with
   | CLeaf(bl,hl) -> (* 00 *)
       let c = o 2 0 c in
       let c = seo_list seo_bool o bl c in
       seo_nehlist o hl c
-  | CHash(h) -> (* 01 0 *)
-      let c = o 3 1 c in
+  | CHash(h) -> (* 01 *)
+      let c = o 2 1 c in
       seo_hashval o h c
-  | CAbbrev(hr,ha) -> (* 01 1 *)
-      let c = o 3 5 c in
-      let c = seo_hashval o hr c in
-      seo_hashval o ha c
   | CLeft(trl) -> (* 10 0 *)
       let c = o 3 2 c in
       let c = seo_ctree o trl c in
@@ -831,13 +641,8 @@ let rec sei_ctree i c =
     let (hl,c) = sei_nehlist i c in
     (CLeaf(bl,hl),c)
   else if x = 1 then
-    let (y,c) = i 1 c in
     let (h,c) = sei_hashval i c in
-    if y = 0 then
-      (CHash(h),c)
-    else
-      let (ha,c) = sei_hashval i c in
-      (CAbbrev(h,ha),c)
+    (CHash(h),c)
   else if x = 2 then
     let (y,c) = i 1 c in
     let (tr,c) = sei_ctree i c in
@@ -904,85 +709,196 @@ let ensure_dir_exists d =
 exception FoundHashval of hashval
 exception GettingRemoteData
 
-let lookup_frame_ctree_root_abbrev fh r =
-  let h = hashpair r fh in
-  let hh = hashval_hexstring h in
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qrootfrmabbr " ^ hh) in
-  try
-    let cd = input_line qednetch in
-    ignore (Unix.close_process_in qednetch);
-    begin
-      try
-	hexstring_hashval cd
-      with _ ->
-        raise (Failure ("could not understand ctree abbrev hashval corresponding to root-frame pair " ^ hh))
-    end
-  with _ -> (*** request it and fail ***)
-    let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qrootfrmabbr " ^ hh) (Unix.environment()) in
-    ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
-(*    raise (Failure ("could not find abbrev corresponding to root-frame pair " ^ hh ^ "; requesting from peers")) *)
-    raise GettingRemoteData
-
-let save_hashed_ctree r fh a (tr:ctree) =
-  let h = hashpair r fh in
-  let hh = hashval_hexstring h in
-  begin
-    try
-      ignore (lookup_frame_ctree_root_abbrev fh r)
-    with
-    | _ ->
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qrootfrmabbr " ^ hh ^ " " ^ (hashval_hexstring a)) in
-	ignore (Unix.close_process_in qednetch);
-  end;
-  let ha = hashval_hexstring a in
-  let fn = Filename.concat (datadir()) ha in
-  let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
-  let c = seo_ctree seoc tr (ch,None) in
-  seocf c;
-  close_out ch;
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " adddatafromfile qctreeabbrev " ^ hh ^ " " ^ fn) in
+let exists_data_db tp h =
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qhcons " ^ h) in
+  let l = input_line qednetch in
   ignore (Unix.close_process_in qednetch);
-  Sys.remove fn
+  l = "exists"
 
-let get_ctree_abbrev h =
+let rec save_hlist_elements hl =
+  match hl with
+  | HCons(a,hr) ->
+      let h = save_hlist_elements hr in
+      let r =
+	match h with
+	| None -> hashtag (hashasset a) 3l
+	| Some(k) -> hashtag (hashpair (hashasset a) k) 4l
+      in
+      let rh = hashval_hexstring r in
+      if exists_data_db "qhcons" rh then
+	Some(r)
+      else
+	let strb = Buffer.create 100 in
+	let c = seo_asset seosb a (strb,None) in
+	let c = seo_option seo_hashval seosb h c in
+	seosbf c;
+	let sh = string_hexstring (Buffer.contents strb) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qhcons " ^ rh ^ " " ^ sh) in
+	ignore (Unix.close_process_in qednetch);
+	Some(r)
+  | HNil -> None
+  | HHash(r) -> Some(r)
+
+let save_nehlist_elements hl =
+  match hl with
+  | NehCons(a,hr) ->
+      let h = save_hlist_elements hr in
+      let r = 
+	match h with
+	| None -> hashtag (hashasset a) 3l
+	| Some(k) -> hashtag (hashpair (hashasset a) k) 4l
+      in
+      let rh = hashval_hexstring r in
+      if exists_data_db "qhcons" rh then
+	r
+      else
+	let strb = Buffer.create 100 in
+	let c = seo_asset seosb a (strb,None) in
+	let c = seo_option seo_hashval seosb h c in
+	seosbf c;
+	let sh = string_hexstring (Buffer.contents strb) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qhcons " ^ rh ^ " " ^ sh) in
+	ignore (Unix.close_process_in qednetch);
+	r
+  | NehHash(r) -> r
+
+let rec save_ctree_elements tr =
+  match tr with
+  | CLeaf(bl,hl) -> (* 00 *)
+      let h = save_nehlist_elements hl in
+      let r = List.fold_right
+	  (fun b h ->
+	    if b then
+	      hashopair2 None h
+	    else
+	      hashopair1 h None
+	  )
+	  bl h
+      in
+      let rh = hashval_hexstring r in
+      if exists_data_db "qctree" rh then
+	r
+      else
+	let strb = Buffer.create 100 in
+	let c = seosb 2 0 (strb,None) in
+	let c = seo_list seo_bool seosb bl c in
+	let c = seo_hashval seosb h c in
+	seosbf c;
+	let sh = string_hexstring (Buffer.contents strb) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qctree " ^ rh ^ " " ^ sh) in
+	ignore (Unix.close_process_in qednetch);
+	r
+  | CLeft(trl) -> (* 01 *)
+      let hl = save_ctree_elements trl in
+      let r = hashopair1 hl None in
+      let rh = hashval_hexstring r in
+      if exists_data_db "qctree" rh then
+	r
+      else
+	let strb = Buffer.create 100 in
+	let c = seosb 2 1 (strb,None) in
+	let c = seo_hashval seosb hl c in
+	seosbf c;
+	let sh = string_hexstring (Buffer.contents strb) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qctree " ^ rh ^ " " ^ sh) in
+	ignore (Unix.close_process_in qednetch);
+	r
+  | CRight(trr) -> (* 10 *)
+      let hr = save_ctree_elements trr in
+      let r = hashopair2 None hr in
+      let rh = hashval_hexstring r in
+      if exists_data_db "qctree" rh then
+	r
+      else
+	let strb = Buffer.create 100 in
+	let c = seosb 2 2 (strb,None) in
+	let c = seo_hashval seosb hr c in
+	seosbf c;
+	let sh = string_hexstring (Buffer.contents strb) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qctree " ^ rh ^ " " ^ sh) in
+	ignore (Unix.close_process_in qednetch);
+	r
+  | CBin(trl,trr) -> (* 11 *)
+      let hl = save_ctree_elements trl in
+      let hr = save_ctree_elements trr in
+      let r = hashopair1 hl (Some(hr)) in
+      let rh = hashval_hexstring r in
+      if exists_data_db "qctree" rh then
+	r
+      else
+	let strb = Buffer.create 100 in
+	let c = seosb 2 3 (strb,None) in
+	let c = seo_hashval seosb hl c in
+	let c = seo_hashval seosb hr c in
+	seosbf c;
+	let sh = string_hexstring (Buffer.contents strb) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qctree " ^ rh ^ " " ^ sh) in
+	ignore (Unix.close_process_in qednetch);
+	r
+  | CHash(r) -> r
+
+let get_hcons_element h =
   let hh = hashval_hexstring h in
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qctreeabbrev " ^ hh) in
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qhcons " ^ hh) in
   try
     let cd = input_line qednetch in
     ignore (Unix.close_process_in qednetch);
     begin
       try
 	let ch = hexstring_string cd in
-	let (c,_) = sei_ctree seis (ch,String.length ch,None,0,0) in
-	c
+	let (a,c) = sei_asset seis (ch,String.length ch,None,0,0) in
+	let (k,c) = sei_option sei_hashval seis c in
+	(a,k)
       with _ ->
-	raise (Failure ("could not understand ctree abbrev " ^ hh))
+	raise (Failure ("could not understand hcons " ^ hh))
     end
   with _ -> (*** request it and fail ***)
-    let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qctreeabbrev " ^ hh) (Unix.environment()) in
+    let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qhcons " ^ hh) (Unix.environment()) in
     ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
-(*    raise (Failure ("could not resolve a needed ctree abbrev " ^ hh ^ "; requesting from peers")) *)
+(*    raise (Failure ("could not resolve a needed hcons " ^ hh ^ "; requesting from peers")) *)
     raise GettingRemoteData
 
-(*** saving frames in the database using sharing, since otherwise they are unnecessarily large ***)
-let get_frame_abbrev h =
+let get_hlist_element h =
+  match get_hcons_element h with
+  | (a,Some(k)) -> HCons(a,HHash(k))
+  | (a,None) -> HCons(a,HNil)
+
+let get_nehlist_element h =
+  match get_hcons_element h with
+  | (a,Some(k)) -> NehCons(a,HHash(k))
+  | (a,None) -> NehCons(a,HNil)
+
+let get_ctree_element h =
   let hh = hashval_hexstring h in
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qframe " ^ hh) in
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qctree " ^ hh) in
   try
     let cd = input_line qednetch in
     ignore (Unix.close_process_in qednetch);
     begin
       try
 	let ch = hexstring_string cd in
-	let (c,_) = sei_frame seis (ch,String.length ch,None,0,0) in
-	c
+	let (x,c) = seis 2 (ch,String.length ch,None,0,0) in
+	if x = 0 then
+	  let (bl,c) = sei_list sei_bool seis c in
+	  let (h,c) = sei_hashval seis c in
+	  CLeaf(bl,NehHash(h))
+	else if x = 1 then
+	  let (h,c) = sei_hashval seis c in
+	  CLeft(CHash(h))
+	else if x = 2 then
+	  let (h,c) = sei_hashval seis c in
+	  CRight(CHash(h))
+	else
+	  let (hl,c) = sei_hashval seis c in
+	  let (hr,c) = sei_hashval seis c in
+	  CBin(CHash(hl),CHash(hr))
       with _ ->
-	raise (Failure ("could not understand frame " ^ hh))
+	raise (Failure ("could not understand ctree " ^ hh))
     end
   with _ -> (*** request it and fail ***)
-    let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qframe " ^ hh) (Unix.environment()) in
+    let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qctree " ^ hh) (Unix.environment()) in
     ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
-(*    raise (Failure ("could not resolve a needed frame " ^ hh ^ "; requesting from peers")) *)
+(*    raise (Failure ("could not resolve a needed ctree " ^ hh ^ "; requesting from peers")) *)
     raise GettingRemoteData
 
 let rec octree_S_inv c =
@@ -990,8 +906,6 @@ let rec octree_S_inv c =
   | None -> (None,None)
   | Some(CHash(h)) ->
       raise Not_found
-  | Some(CAbbrev(hr,ha)) ->
-      octree_S_inv (Some(get_ctree_abbrev ha))
   | Some(CLeaf([],hl)) ->
       raise Not_found
   | Some(CLeaf(false::bl,hl)) -> (Some(CLeaf(bl,hl)),None)
@@ -1058,256 +972,46 @@ let rec txl_octree_trans bh txl c =
   | (tx::txr) -> txl_octree_trans bh txr (tx_octree_trans bh tx c)
   | [] -> c
 
-let rec ctree_pre bl c d =
+let rec expand_hlist hl z =
+  match hl,z with
+  | _,Some(i) when i <= 0 ->
+      begin
+	match hlist_hashroot hl with
+	| Some(h) -> HHash(h)
+	| None -> HNil
+      end
+  | HNil,_ -> HNil
+  | HHash(h),_ -> expand_hlist (get_hlist_element h) z
+  | HCons(a,hr),None -> HCons(a,expand_hlist hr None)
+  | HCons(a,hr),Some(i) -> HCons(a,expand_hlist hr (Some(i-1)))
+
+let rec expand_nehlist hl z =
+  match hl,z with
+  | _,Some(i) when i <= 0 -> NehHash(nehlist_hashroot hl)
+  | NehHash(h),_ -> expand_nehlist (get_nehlist_element h) z
+  | NehCons(a,hr),None -> NehCons(a,expand_hlist hr None)
+  | NehCons(a,hr),Some(i) -> NehCons(a,expand_hlist hr (Some(i-1)))
+
+let rec ctree_pre bl c d z =
   match bl with
-  | [] -> (Some(c),d)
+  | [] ->
+      begin
+	match c with
+	| CLeaf([],hl) -> (Some(expand_nehlist hl z),d)
+	| _ -> (None,d)
+      end
   | (b::br) ->
       match c with
-      | CLeaf(bl2,hl) -> if bl = bl2 then (Some(c),d) else (None,d)
-      | CLeft(c0) -> if b then (None,d) else ctree_pre br c0 (d+1)
-      | CRight(c1) -> if b then ctree_pre br c1 (d+1) else (None,d)
-      | CBin(c0,c1) -> if b then ctree_pre br c1 (d+1) else ctree_pre br c0 (d+1)
-      | CAbbrev(hr,ha) -> ctree_pre bl (get_ctree_abbrev ha) d
-      | _ ->
-	  raise Not_found
+      | CLeaf(bl2,hl) -> if bl = bl2 then (Some(expand_nehlist hl z),d) else (None,d)
+      | CLeft(c0) -> if b then (None,d) else ctree_pre br c0 (d+1) z
+      | CRight(c1) -> if b then ctree_pre br c1 (d+1) z else (None,d)
+      | CBin(c0,c1) -> if b then ctree_pre br c1 (d+1) z else ctree_pre br c0 (d+1) z
+      | CHash(h) -> ctree_pre bl (get_ctree_element h) d z
 
-let ctree_addr alpha c =
-  ctree_pre (addr_bitseq alpha) c 0
+let ctree_addr alpha c z =
+  ctree_pre (addr_bitseq alpha) c 0 z
 
 exception InsufficientInformation
-
-let rec frame_filter_hlist i hl =
-  if i > 0 then
-    begin
-      match hl with
-      | HHash(h) -> raise InsufficientInformation
-      | HNil -> HNil
-      | HCons(a,hr) -> HCons(a,frame_filter_hlist (i-1) hr)
-    end
-  else
-    match hlist_hashroot hl with
-    | Some(h) -> HHash(h)
-    | None -> HNil
-
-let frame_filter_nehlist i hl =
-  if i > 0 then
-    begin
-      match hl with
-      | NehHash(h) -> raise InsufficientInformation
-      | NehCons(a,hr) -> NehCons(a,frame_filter_hlist (i-1) hr)
-    end
-  else
-    NehHash(nehlist_hashroot hl)  
-
-let rec frame_filter_leaf bl i c =
-  match c with
-  | CHash(_) -> raise InsufficientInformation
-  | CAbbrev(hr,ha) -> frame_filter_leaf bl i (get_ctree_abbrev ha)
-  | CLeaf(bl2,hl) ->
-      if bl = bl2 then
-	begin
-	  match i with
-	  | Some(i) -> CLeaf(bl2,frame_filter_nehlist i hl)
-	  | None -> c
-	end
-      else
-	CLeaf(bl2,frame_filter_nehlist 0 hl)
-  | CLeft(c0) ->
-      begin
-	match bl with
-	| (false::br) ->
-	    begin
-	      match frame_filter_leaf br i c0 with
-	      | CLeaf(br2,hl2) -> CLeaf(false::br2,hl2)
-	      | c2 -> CLeft(c2)
-	    end
-	| (true::br) -> CLeft(CHash(ctree_hashroot c0))
-	| [] -> raise (Failure "frame level problem")
-      end
-  | CRight(c1) ->
-      begin
-	match bl with
-	| (false::br) -> CRight(CHash(ctree_hashroot c1))
-	| (true::br) ->
-	    begin
-	      match frame_filter_leaf br i c1 with
-	      | CLeaf(br2,hl2) -> CLeaf(true::br2,hl2)
-	      | c2 -> CRight(c2)
-	    end
-	| [] -> raise (Failure "frame level problem")
-      end
-  | CBin(c0,c1) ->
-      begin
-	match bl with
-	| (false::br) -> CBin(frame_filter_leaf br i c0,CHash(ctree_hashroot c1))
-	| (true::br) -> CBin(CHash(ctree_hashroot c0),frame_filter_leaf br i c1)
-	| [] -> raise (Failure "frame level problem")
-      end
-
-let rec frame_hlist_bitseq f bl =
-  match f with
-  | FLeaf(bl2,i) -> if bl = bl2 then i else Some(0)
-  | FAll -> None
-  | FHash -> Some(0)
-  | FAbbrev(fc) -> frame_hlist_bitseq fc bl
-  | FBin(f0,f1) ->
-      match bl with
-      | (false::br) -> frame_hlist_bitseq f0 br
-      | (true::br) -> frame_hlist_bitseq f1 br
-      | [] -> raise (Failure "frame vs. leaf level problem")
-
-let rec ctree_expand_all_abbrevs c =
-  match c with
-  | CHash(_) -> raise InsufficientInformation
-  | CAbbrev(hr,ha) -> ctree_expand_all_abbrevs (get_ctree_abbrev ha)
-  | CLeft(cl) -> CLeft(ctree_expand_all_abbrevs cl)
-  | CRight(cr) -> CRight(ctree_expand_all_abbrevs cr)
-  | CBin(cl,cr) -> CBin(ctree_expand_all_abbrevs cl,ctree_expand_all_abbrevs cr)
-  | _ -> c
-
-let rec frame_filter_ctree f c =
-  match f with
-  | FHash -> CHash(ctree_hashroot c)
-  | FAbbrev(fc) ->
-      begin
-	let hr = ctree_hashroot c in
-	let fch = hashframe fc in
-	try
-	  let ha2 = lookup_frame_ctree_root_abbrev fch hr in
-	  CAbbrev(hr,ha2)
-	with Not_found ->
-	  let c2 = frame_filter_ctree fc c in
-	  let a2 = hashctree c2 in
-	  save_hashed_ctree hr fch a2 c2;
-	  CAbbrev(hr,a2)
-      end
-  | FAll -> ctree_expand_all_abbrevs c
-  | FLeaf(bl,i) ->
-      frame_filter_leaf bl i c
-  | FBin(f0,f1) ->
-      match c with
-      | CHash(h) -> raise InsufficientInformation
-      | CLeft(c0) -> CLeft(frame_filter_ctree f0 c0)
-      | CRight(c1) -> CRight(frame_filter_ctree f1 c1)
-      | CBin(c0,c1) ->
-	  let c0f =
-	    try
-	      frame_filter_ctree f0 c0
-	    with GettingRemoteData ->
-	      ignore (frame_filter_ctree f1 c1); (*** only make this call in case more getdata requests need to be sent ***)
-	      raise GettingRemoteData
-	  in
-	  let c1f = frame_filter_ctree f1 c1 in
-	  CBin(c0f,c1f)
-      | CLeaf(false::bl,hl) -> (*** Leaves pass over FHash, but uses the FAbbrev to determine the abstraction to use for hl ***)
-	  begin
-	    match frame_hlist_bitseq f0 bl with
-	    | Some(i) -> CLeaf(false::bl,frame_filter_nehlist i hl)
-	    | None -> c
-	  end
-      | CLeaf(true::bl,hl) -> (*** Leaves pass over FHash, but uses the FAbbrev to determine the abstraction to use for hl ***)
-	  begin
-	    match frame_hlist_bitseq f1 bl with
-	    | Some(i) -> CLeaf(true::bl,frame_filter_nehlist i hl)
-	    | None -> c
-	  end
-      | CLeaf([],hl) -> raise (Failure "frame vs. ctree level problem")
-      | CAbbrev(cr,ca) -> frame_filter_ctree f (get_ctree_abbrev ca)
-
-let frame_filter_octree fr oc =
-  match oc with
-  | Some(c) -> Some(frame_filter_ctree fr c)
-  | None -> None
-
-let rec rframe_filter_leaf bl i c =
-  match c with
-  | CLeaf(bl2,hl) ->
-      if bl = bl2 then
-	begin
-	  match i with
-	  | Some(i) -> CLeaf(bl2,frame_filter_nehlist i hl)
-	  | None -> c
-	end
-      else
-	CLeaf(bl2,frame_filter_nehlist 0 hl)
-  | CLeft(c0) ->
-      begin
-	match bl with
-	| (false::br) ->
-	    begin
-	      match rframe_filter_leaf br i c0 with
-	      | CLeaf(br2,hl2) -> CLeaf(false::br2,hl2)
-	      | c2 -> CLeft(c2)
-	    end
-	| (true::br) -> CLeft(CHash(ctree_hashroot c0))
-	| [] -> raise (Failure "frame level problem")
-      end
-  | CRight(c1) ->
-      begin
-	match bl with
-	| (false::br) -> CRight(CHash(ctree_hashroot c1))
-	| (true::br) ->
-	    begin
-	      match rframe_filter_leaf br i c1 with
-	      | CLeaf(br2,hl2) -> CLeaf(true::br2,hl2)
-	      | c2 -> CRight(c2)
-	    end
-	| [] -> raise (Failure "frame level problem")
-      end
-  | CBin(c0,c1) ->
-      begin
-	match bl with
-	| (false::br) -> CBin(rframe_filter_leaf br i c0,CHash(ctree_hashroot c1))
-	| (true::br) -> CBin(CHash(ctree_hashroot c0),rframe_filter_leaf br i c1)
-	| [] -> raise (Failure "frame level problem")
-      end
-  | CAbbrev(cr,ca) -> rframe_filter_leaf bl i (get_ctree_abbrev ca)
-  | _ -> c
-
-let rec rframe_hlist_bitseq f bl =
-  match f with
-  | RFLeaf(bl2,i) -> if bl = bl2 then i else Some(0)
-  | RFAll -> None
-  | RFHash -> Some(0)
-  | RFBin(f0,f1) ->
-      match bl with
-      | (false::br) -> rframe_hlist_bitseq f0 br
-      | (true::br) -> rframe_hlist_bitseq f1 br
-      | [] -> raise (Failure "frame vs. leaf level problem")
-
-let rec rframe_filter_ctree f c =
-  match f with
-  | RFHash -> CHash(ctree_hashroot c)
-  | RFAll -> c
-  | RFLeaf(bl,i) ->
-      rframe_filter_leaf bl i c
-  | RFBin(f0,f1) ->
-      match c with
-      | CLeft(c0) -> CLeft(rframe_filter_ctree f0 c0)
-      | CRight(c1) -> CRight(rframe_filter_ctree f1 c1)
-      | CBin(c0,c1) -> CBin(rframe_filter_ctree f0 c0,rframe_filter_ctree f1 c1)
-      | CLeaf(false::bl,hl) -> (*** Leaves pass over FHash, but uses the FAbbrev to determine the abstraction to use for hl ***)
-	  begin
-	    match rframe_hlist_bitseq f0 bl with
-	    | Some(i) -> CLeaf(false::bl,frame_filter_nehlist i hl)
-	    | None -> c
-	  end
-      | CLeaf(true::bl,hl) -> (*** Leaves pass over FHash, but uses the FAbbrev to determine the abstraction to use for hl ***)
-	  begin
-	    match rframe_hlist_bitseq f1 bl with
-	    | Some(i) -> CLeaf(true::bl,frame_filter_nehlist i hl)
-	    | None -> c
-	  end
-      | CLeaf([],hl) -> raise (Failure "frame vs. ctree level problem")
-      | CAbbrev(cr,ca) -> rframe_filter_ctree f (get_ctree_abbrev ca)
-      | _ ->
-	  Printf.printf "FBin matched *strange ctree\n"; print_ctree c; flush stdout;
-	  c
-
-let rframe_filter_octree fr oc =
-  match oc with
-  | Some(c) -> Some(rframe_filter_ctree fr c)
-  | None -> None
 
 (*** archive_unused_ctrees/remove_unused_ctrees:
     c1 is the ctree at blockheight blkh and c2 is the ctree at blockheight blkh+1.
@@ -1324,9 +1028,6 @@ let add_to_archive ch blkh ha =
 
 let rec process_unused_ctrees_1 a c =
    match c with
-   | CAbbrev(hr,ha) ->
-     process_unused_ctrees_1 a (get_ctree_abbrev ha);
-     a ha
    | CLeft(cl) ->
      process_unused_ctrees_1 a cl
    | CRight(cr) ->
@@ -1338,18 +1039,9 @@ let rec process_unused_ctrees_1 a c =
 
 let rec process_unused_ctrees_2 a c1 c2 =
    match c1 with
-   | CAbbrev(hr,ha) ->
-      begin
-        match c2 with
-        | CAbbrev(hr2,ha2) when hr = hr2 && ha = ha2 -> ()
-        | _ ->
-          process_unused_ctrees_2 a (get_ctree_abbrev ha) c2;
-          a ha
-      end
    | CLeft(c1l) ->
      begin
        match c2 with
-       | CAbbrev(hr,ha) -> process_unused_ctrees_2 a c1 (get_ctree_abbrev ha)
        | CLeft(c2l) -> process_unused_ctrees_2 a c1l c2l
        | CBin(c2l,c2r) -> process_unused_ctrees_2 a c1l c2l
        | CLeaf((b::bl),hl) when not b -> process_unused_ctrees_2 a c1l (CLeaf(bl,hl))
@@ -1358,7 +1050,6 @@ let rec process_unused_ctrees_2 a c1 c2 =
    | CRight(c1r) ->
      begin
        match c2 with
-       | CAbbrev(hr,ha) -> process_unused_ctrees_2 a c1 (get_ctree_abbrev ha)
        | CRight(c2r) -> process_unused_ctrees_2 a c1r c2r
        | CBin(c2l,c2r) -> process_unused_ctrees_2 a c1r c2r
        | CLeaf((b::bl),hl) when b -> process_unused_ctrees_2 a c1r (CLeaf(bl,hl))
@@ -1367,7 +1058,6 @@ let rec process_unused_ctrees_2 a c1 c2 =
    | CBin(c1l,c1r) ->
      begin
        match c2 with
-       | CAbbrev(hr,ha) -> process_unused_ctrees_2 a c1 (get_ctree_abbrev ha)
        | CLeft(c2l) ->
          process_unused_ctrees_2 a c1l c2l;
          process_unused_ctrees_1 a c1r
@@ -1436,7 +1126,6 @@ let rec ctree_full_approx_addr tr bl =
   | CLeaf(br,hl) when br = bl -> nehlist_full_approx hl
   | CLeaf(_,_) -> true (*** fully approximates because we know it's empty ***)
   | CHash(_) -> false
-  | CAbbrev(hr,ha) -> ctree_full_approx_addr (get_ctree_abbrev ha) bl
   | CLeft(trl) ->
       begin
 	match bl with
@@ -1461,7 +1150,6 @@ let rec ctree_supports_addr tr bl =
   match tr with
   | CLeaf(_,_) -> true
   | CHash(_) -> false
-  | CAbbrev(hr,ha) -> ctree_supports_addr (get_ctree_abbrev ha) bl
   | CLeft(trl) ->
       begin
 	match bl with
@@ -1487,7 +1175,6 @@ let rec ctree_supports_asset a tr bl =
   | CLeaf(br,hl) when br = bl -> in_nehlist a hl
   | CLeaf(_,_) -> false
   | CHash(h) -> false
-  | CAbbrev(hr,ha) -> ctree_supports_asset a (get_ctree_abbrev ha) bl
   | CLeft(trl) ->
       begin
 	match bl with
@@ -1513,7 +1200,6 @@ let rec ctree_lookup_asset k tr bl =
   | CLeaf(br,hl) when br = bl -> nehlist_lookup_asset k hl
   | CLeaf(_,_) -> None
   | CHash(h) -> None
-  | CAbbrev(hr,ha) -> ctree_lookup_asset k (get_ctree_abbrev ha) bl
   | CLeft(trl) ->
       begin
 	match bl with
@@ -1539,7 +1225,6 @@ let rec ctree_lookup_addr_assets tr bl =
   | CLeaf(br,hl) when br = bl -> (nehlist_hlist hl)
   | CLeaf(_,_) -> HNil
   | CHash(h) -> HNil
-  | CAbbrev(hr,ha) -> ctree_lookup_addr_assets (get_ctree_abbrev ha) bl
   | CLeft(trl) ->
       begin
 	match bl with
@@ -1565,7 +1250,6 @@ let rec ctree_lookup_marker tr bl =
   | CLeaf(br,hl) when br = bl -> nehlist_lookup_marker hl
   | CLeaf(_,_) -> None
   | CHash(h) -> None
-  | CAbbrev(hr,ha) -> ctree_lookup_marker (get_ctree_abbrev ha) bl
   | CLeft(trl) ->
       begin
 	match bl with
@@ -2068,13 +1752,11 @@ let rec ctree_singlebranch_lub bl hl c =
 let rec ctree_lub c1 c2 =
   match c1 with
   | CHash(_) -> c2
-  | CAbbrev(hr,ha) -> ctree_lub (get_ctree_abbrev ha) c2
   | CLeaf(bl1,hl1) -> ctree_singlebranch_lub bl1 hl1 c2
   | CLeft(c10) ->
       begin
 	match c2 with
 	| CHash(_) -> c1
-	| CAbbrev(hr,ha) -> ctree_lub c1 (get_ctree_abbrev ha)
 	| CLeaf(bl2,hl2) -> ctree_singlebranch_lub bl2 hl2 c1
 	| CLeft(c20) -> CLeft (ctree_lub c10 c20)
 	| _ -> raise (Failure "no lub for incompatible ctrees")
@@ -2083,7 +1765,6 @@ let rec ctree_lub c1 c2 =
       begin
 	match c2 with
 	| CHash(_) -> c1
-	| CAbbrev(hr,ha) -> ctree_lub c1 (get_ctree_abbrev ha)
 	| CLeaf(bl2,hl2) -> ctree_singlebranch_lub bl2 hl2 c1
 	| CRight(c21) -> CRight (ctree_lub c11 c21)
 	| _ -> raise (Failure "no lub for incompatible ctrees")
@@ -2092,7 +1773,6 @@ let rec ctree_lub c1 c2 =
       begin
 	match c2 with
 	| CHash(_) -> c1
-	| CAbbrev(hr,ha) -> ctree_lub c1 (get_ctree_abbrev ha)
 	| CBin(c20,c21) -> CBin(ctree_lub c10 c20,ctree_lub c11 c21)
 	| _ -> raise (Failure "no lub for incompatible ctrees")
       end
@@ -2173,8 +1853,6 @@ let rec ctree_reduce_to_min_support n inpl outpl full c =
 		       (strip_bitseq_true0 outpl)
 		       (strip_bitseq_true0 full)
 		       c1)
-	  | CAbbrev(hr,ha) ->
-	      ctree_reduce_to_min_support n inpl outpl full (get_ctree_abbrev ha)
 	  | CHash(h) -> (*** If we reach this point, the ctree does not support the tx, contrary to assumption. ***)
 	      raise (Failure("ctree does not support the tx"))
 	  | _ -> c
@@ -2253,37 +1931,6 @@ let rec get_txl_supporting_octree txl oc =
       | Some(c) -> Some(CHash(ctree_hashroot c))
       | None -> None
 
-let localframe = ref FHash
-let localframehash = ref (hashframe FHash)
-
-let wrap_frame fr =
-  match fr with
-  | FAbbrev(_) -> fr
-  | _ -> FAbbrev(fr)
-
-let rec frame_add_leaf_r fr bl io =
-  match fr with
-  | FHash -> FLeaf(bl,io)
-  | FAbbrev(fr) -> FAbbrev(frame_add_leaf_r fr bl io)
-  | FAll -> FAll (*** leaf is already fully exposed ***)
-  | FLeaf(cl,jo) ->
-      begin
-	match (bl,cl) with
-	| (false::br,false::cr) -> FBin(frame_add_leaf_r (FLeaf(cr,jo)) br io,FHash)
-	| (false::br,true::cr) -> FBin(FLeaf(br,io),FLeaf(cr,jo))
-	| (true::br,false::cr) -> FBin(FLeaf(cr,jo),FLeaf(br,io))
-	| (true::br,true::cr) -> FBin(FHash,frame_add_leaf_r (FLeaf(cr,jo)) br io)
-	| ([],_) -> raise (Failure "bitseq for frame_add_leaf_r was too short")
-	| (_,[]) -> raise (Failure "ill formed leaf node in frame")
-      end
-  | FBin(frl,frr) ->
-      match bl with
-      | (false::br) -> FBin(frame_add_leaf_r frl br io,frr)
-      | (true::br) -> FBin(frl,frame_add_leaf_r frr br io)
-      | [] -> raise (Failure "bitseq for frame_add_leaf_r was too short")
-
-let frame_add_leaf fr alpha io = frame_add_leaf_r fr (addr_bitseq alpha) io
-
 let rec bitseq_prefix bl cl =
   match bl with
   | [] -> true
@@ -2295,136 +1942,4 @@ let rec bitseq_prefix bl cl =
 	    bitseq_prefix br cr
 	  else
 	    false
-
-let rec frame_set_hash_pos fr bl =
-  match fr with
-  | FAbbrev(fr) -> FAbbrev(frame_set_hash_pos fr bl)
-  | FLeaf(cl,jo) ->
-      if bitseq_prefix bl cl then
-	FHash
-      else
-	FLeaf(cl,jo)
-  | FHash -> 
-      begin
-	match bl with
-	| (false::br) -> FBin(frame_set_hash_pos FHash br,FHash)
-	| (true::br) -> FBin(FHash,frame_set_hash_pos FHash br)
-	| [] -> FHash
-      end
-  | FAll -> 
-      begin
-	match bl with
-	| (false::br) -> FBin(frame_set_hash_pos FAll br,FAll)
-	| (true::br) -> FBin(FAll,frame_set_hash_pos FAll br)
-	| [] -> FHash
-      end
-  | FBin(frl,frr) ->
-      match bl with
-      | (false::br) -> FBin(frame_set_hash_pos frl br,frr)
-      | (true::br) -> FBin(frl,frame_set_hash_pos frr br)
-      | [] -> FHash
-
-let frame_set_abbrev_pos fr bl =
-  match bl with
-  | [] -> wrap_frame fr
-  | (b::br) ->
-      match fr with
-      | FAbbrev(fr) -> FAbbrev(frame_set_hash_pos fr bl)
-      | FLeaf(_,_) -> fr (*** do not split a leaf in order to include an abbrev ***)
-      | FHash -> fr (*** do not expose the contents abstracted by a hash to include an abbrev ***)
-      | FAll ->
-	  if b then
-	    FBin(FAll,frame_set_hash_pos FAll br)
-	  else
-	    FBin(frame_set_hash_pos FAll br,FAll)
-      | FBin(frl,frr) ->
-	  if b then
-	    FBin(frl,frame_set_hash_pos frr br)
-	  else
-	    FBin(frame_set_hash_pos frl br,frr)
-
-let rec frame_set_abbrev_level fr n =
-  if n > 0 then
-    match fr with
-    | FAbbrev(fr) -> FAbbrev(frame_set_abbrev_level fr n)
-    | FLeaf(_,_) -> fr (*** do not split a leaf in order to include an abbrev ***)
-    | FHash -> fr (*** do not expose the contents abstracted by a hash to include an abbrev ***)
-    | FAll ->
-	let fr1 = frame_set_abbrev_level FAll (n-1) in
-	FBin(fr1,fr1)
-    | FBin(frl,frr) ->
-	FBin(frame_set_abbrev_level frl (n-1),frame_set_abbrev_level frr (n-1))
-  else
-    wrap_frame fr
-
-let rec frame_set_all_pos fr bl =
-  match fr with
-  | FAll -> FAll
-  | FAbbrev(fr) -> FAbbrev(frame_set_all_pos fr bl)
-  | FHash -> 
-      begin
-	match bl with
-	| (false::br) -> FBin(frame_set_all_pos FHash br,FHash)
-	| (true::br) -> FBin(FHash,frame_set_all_pos FHash br)
-	| [] -> FAll
-      end
-  | FLeaf(cl,jo) ->
-      begin
-	match (bl,cl) with
-	| (false::br,false::cr) -> FBin(frame_set_all_pos (FLeaf(cr,jo)) br,FHash)
-	| (false::br,true::cr) -> FBin(FAll,FLeaf(cr,jo))
-	| (true::br,false::cr) -> FBin(FLeaf(cr,jo),FAll)
-	| (true::br,true::cr) -> FBin(FHash,frame_set_all_pos (FLeaf(cr,jo)) br)
-	| ([],_) -> raise (Failure "bitseq for frame_set_all_pos was too short")
-	| (_,[]) -> raise (Failure "ill formed leaf node in frame")
-      end
-  | FBin(frl,frr) ->
-      match bl with
-      | (false::br) -> FBin(frame_set_all_pos frl br,frr)
-      | (true::br) -> FBin(frl,frame_set_all_pos frr br)
-      | [] -> FAll
-
-let rec build_rframe_to_req f c =
-  match (f,c) with
-  | (FHash,_) -> raise Not_found
-  | (FAbbrev(fc),_) -> build_rframe_to_req fc c
-  | (_,CHash(_)) -> normalize_frame f
-  | (_,CAbbrev(_,ha)) -> build_rframe_to_req f (get_ctree_abbrev ha)
-  | (FAll,CLeaf(_,hl)) -> if nehlist_full_approx hl then raise Not_found else RFAll
-  | (FAll,CLeft(cl)) -> RFBin(build_rframe_to_req FAll cl,RFHash)
-  | (FAll,CRight(cr)) -> RFBin(RFHash,build_rframe_to_req FAll cr)
-  | (FAll,CBin(cl,cr)) ->  RFBin(build_rframe_to_req FAll cl,build_rframe_to_req FAll cr)
-  | (FLeaf(bl,io),CLeaf(cl,hl)) when bl = cl -> if nehlist_full_approx hl then raise Not_found else RFLeaf(bl,io)
-  | (FLeaf(bl,io),CLeaf(cl,hl)) -> raise Not_found (*** in this case we know enough to know there is no leaf at bl (i.e., the 'leaf' is empty) ***)
-  | (FLeaf(false::bl,io),CLeft(cl)) -> RFBin(build_rframe_to_req (FLeaf(bl,io)) cl,RFHash)
-  | (FLeaf(_,io),CLeft(cl)) -> raise Not_found
-  | (FLeaf(true::bl,io),CRight(cr)) -> RFBin(RFHash,build_rframe_to_req (FLeaf(bl,io)) cr)
-  | (FLeaf(_,io),CRight(cr)) -> raise Not_found
-  | (FLeaf(false::bl,io),CBin(cl,cr)) -> RFBin(build_rframe_to_req (FLeaf(bl,io)) cl,RFHash)
-  | (FLeaf(true::bl,io),CBin(cl,cr)) -> RFBin(RFHash,build_rframe_to_req (FLeaf(bl,io)) cr)
-  | (FLeaf(_,_),CBin(_,_)) -> raise Not_found
-  | (FBin(fl,fr),CLeaf(false::bl,hl)) -> RFBin(build_rframe_to_req fl (CLeaf(bl,hl)),RFHash)
-  | (FBin(fl,fr),CLeaf(true::bl,hl)) -> RFBin(RFHash,build_rframe_to_req fr (CLeaf(bl,hl)))
-  | (FBin(fl,fr),CLeaf([],hl)) -> raise Not_found (*** shouldn't happen ***)
-  | (FBin(fl,fr),CLeft(cl)) -> RFBin(build_rframe_to_req fl cl,RFHash)
-  | (FBin(fl,fr),CRight(cr)) -> RFBin(RFHash,build_rframe_to_req fr cr)
-  | (FBin(fl,fr),CBin(cl,cr)) ->
-      try
-	RFBin(build_rframe_to_req fl cl,RFHash)
-      with Not_found ->
-	RFBin(RFHash,build_rframe_to_req fr cr)
-
-let rec split_rframe_for_reqs n f =
-  if n > 0 then
-    match f with
-    | RFHash -> [f]
-    | RFLeaf(_,_) -> [f]
-    | RFAll ->
-	let rfl = split_rframe_for_reqs (n-1) RFAll in
-	(List.map (fun f -> RFBin(f,RFHash)) rfl) @ (List.map (fun f -> RFBin(RFHash,f)) rfl)
-    | RFBin(fl,fr) ->
-	(List.map (fun f -> RFBin(f,RFHash)) (split_rframe_for_reqs (n-1) fl))
-	@ (List.map (fun f -> RFBin(RFHash,f)) (split_rframe_for_reqs (n-1) fr))
-  else
-    [f]
 

@@ -22,8 +22,6 @@ val storagedocassets : (pubaddr * hashval * hashval option * pdoc * hashval * ha
 val recenttxs : (hashval,Tx.stx) Hashtbl.t
 val txpool : (hashval,Tx.stx) Hashtbl.t
 
-val load_currentframe : unit -> frame
-val save_currentframe : frame -> unit
 val load_recenttxs : unit -> unit
 val load_txpool : unit -> unit
 val load_wallet : unit -> unit

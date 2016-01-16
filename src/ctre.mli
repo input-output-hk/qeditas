@@ -26,26 +26,9 @@ val nehlist_hlist : nehlist -> hlist
 
 val nehlist_hashroot : nehlist -> hashval
 
-type frame =
-  | FHash
-  | FAbbrev of frame
-  | FAll
-  | FLeaf of bool list * int option
-  | FBin of frame * frame
-
-type rframe =
-  | RFHash
-  | RFAll
-  | RFLeaf of bool list * int option
-  | RFBin of rframe * rframe
-
-val normalize_frame : frame -> rframe
-val rframe_lub : rframe -> rframe -> rframe
-
 type ctree =
   | CLeaf of bool list * nehlist
   | CHash of hashval
-  | CAbbrev of hashval * hashval
   | CLeft of ctree
   | CRight of ctree
   | CBin of ctree * ctree
@@ -63,15 +46,13 @@ exception GettingRemoteData
 val remove_hashed_ctree : hashval -> unit
 val archive_unused_ctrees : int64 -> ctree -> ctree -> unit
 val remove_unused_ctrees : ctree -> ctree -> unit
-val ctree_pre : bool list -> ctree -> int -> ctree option * int
-val ctree_addr : addr -> ctree -> ctree option * int
-val frame_filter_ctree : frame -> ctree -> ctree
-val frame_filter_octree : frame -> ctree option -> ctree option
-val rframe_filter_ctree : rframe -> ctree -> ctree
-val rframe_filter_octree : rframe -> ctree option -> ctree option
-val lookup_frame_ctree_root_abbrev : hashval -> hashval -> hashval
-val get_ctree_abbrev : hashval -> ctree
-val get_frame_abbrev : hashval -> frame
+val save_hlist_elements : hlist -> hashval option
+val save_nehlist_elements : nehlist -> hashval
+val save_ctree_elements : ctree -> hashval
+val get_hlist_element : hashval -> hlist
+val get_nehlist_element : hashval -> nehlist
+val get_ctree_element : hashval -> ctree
+val ctree_addr : addr -> ctree -> int option -> nehlist option * int
 
 val strip_bitseq_true : (bool list * 'a) list -> (bool list * 'a) list
 val strip_bitseq_false : (bool list * 'a) list -> (bool list * 'a) list
@@ -97,12 +78,6 @@ val sei_hlist : (int -> 'a -> int * 'a) -> 'a -> hlist * 'a
 val seo_nehlist : (int -> int -> 'a -> 'a) -> nehlist -> 'a -> 'a
 val sei_nehlist : (int -> 'a -> int * 'a) -> 'a -> nehlist * 'a
 
-val seo_frame : (int -> int -> 'a -> 'a) -> frame -> 'a -> 'a
-val sei_frame : (int -> 'a -> int * 'a) -> 'a -> frame * 'a
-
-val seo_rframe : (int -> int -> 'a -> 'a) -> rframe -> 'a -> 'a
-val sei_rframe : (int -> 'a -> int * 'a) -> 'a -> rframe * 'a
-
 val seo_ctree : (int -> int -> 'a -> 'a) -> ctree -> 'a -> 'a
 val sei_ctree : (int -> 'a -> int * 'a) -> 'a -> ctree * 'a
 
@@ -111,15 +86,3 @@ val print_hlist_to_buffer : Buffer.t -> int64 -> hlist -> unit
 val print_ctree : ctree -> unit
 val print_ctree_all : ctree -> unit
 
-val localframe : frame ref
-val localframehash : hashval ref
-val wrap_frame : frame -> frame
-val hashframe : frame -> hashval
-val frame_add_leaf : frame -> addr -> int option -> frame
-val frame_set_hash_pos : frame -> bool list -> frame
-val frame_set_abbrev_pos : frame -> bool list -> frame
-val frame_set_abbrev_level : frame -> int -> frame
-val frame_set_all_pos : frame -> bool list -> frame
-
-val build_rframe_to_req : frame -> ctree -> rframe
-val split_rframe_for_reqs : int -> rframe -> rframe list

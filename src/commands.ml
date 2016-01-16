@@ -20,6 +20,7 @@ let stakingassets = ref []
 let storagetrmassets = ref []
 let storagedocassets = ref []
 
+(***
 let load_currentframe () =
   let framefn = Filename.concat (datadir()) "currentframe" in
   if not (Sys.file_exists framefn) then
@@ -37,6 +38,7 @@ let save_currentframe fr =
   let s = open_out_bin framefn in
   let _ = seocf (seo_frame seoc fr (s,None)) in
   close_out s
+***)
   
 let recenttxs : (hashval,Tx.stx) Hashtbl.t = Hashtbl.create 100
 
@@ -352,15 +354,15 @@ let importwatchbtcaddr a =
 
 let rec printassets_a ctr =
   try
-    let al1 = List.map (fun (k,b,(x,y),w,h,z) -> (z,Ctre.ctree_addr (hashval_p2pkh_addr h) ctr)) !walletkeys in
-    let al2 = List.map (fun (h,z,scr) -> (z,Ctre.ctree_addr (hashval_p2sh_addr h) ctr)) !walletp2shs in
-    let al3 = List.map (fun (alpha,beta,(x,y),recid,fcomp,esg) -> let alpha2 = payaddr_addr alpha in (alpha2,Ctre.ctree_addr alpha2 ctr)) !walletendorsements in
-    let al4 = List.map (fun alpha -> (alpha,Ctre.ctree_addr alpha ctr)) !walletwatchaddrs in
+    let al1 = List.map (fun (k,b,(x,y),w,h,z) -> (z,Ctre.ctree_addr (hashval_p2pkh_addr h) ctr None)) !walletkeys in
+    let al2 = List.map (fun (h,z,scr) -> (z,Ctre.ctree_addr (hashval_p2sh_addr h) ctr None)) !walletp2shs in
+    let al3 = List.map (fun (alpha,beta,(x,y),recid,fcomp,esg) -> let alpha2 = payaddr_addr alpha in (alpha2,Ctre.ctree_addr alpha2 ctr None)) !walletendorsements in
+    let al4 = List.map (fun alpha -> (alpha,Ctre.ctree_addr alpha ctr None)) !walletwatchaddrs in
     Printf.printf "Controlled p2pkh assets:\n";
     List.iter
       (fun (z,x) ->
 	match x with
-	| (Some(Ctre.CLeaf(_,hl)),_) ->
+	| (Some(hl),_) ->
 	    Printf.printf "%s:\n" z;
 	    Ctre.print_hlist (Ctre.nehlist_hlist hl)
 	| (None,_) ->
@@ -373,7 +375,7 @@ let rec printassets_a ctr =
     List.iter
       (fun (z,x) ->
 	match x with
-	| (Some(Ctre.CLeaf(_,hl)),_) ->
+	| (Some(hl),_) ->
 	    Printf.printf "%s:\n" z;
 	    Ctre.print_hlist (Ctre.nehlist_hlist hl)
 	| (None,_) ->
@@ -386,7 +388,7 @@ let rec printassets_a ctr =
     List.iter
       (fun (alpha2,x) ->
 	match x with
-	| (Some(Ctre.CLeaf(_,hl)),_) ->
+	| (Some(hl),_) ->
 	    Printf.printf "%s:\n" (addr_qedaddrstr alpha2);
 	    Ctre.print_hlist (Ctre.nehlist_hlist hl)
 	| (None,_) ->
@@ -399,7 +401,7 @@ let rec printassets_a ctr =
     List.iter
       (fun (alpha,x) ->
 	match x with
-	| (Some(Ctre.CLeaf(_,hl)),_) ->
+	| (Some(hl),_) ->
 	    Printf.printf "%s:\n" (addr_qedaddrstr alpha);
 	    Ctre.print_hlist (Ctre.nehlist_hlist hl)
 	| (None,_) ->
@@ -414,11 +416,9 @@ let rec printassets_a ctr =
     printassets_a ctr
   
 let printassets () =
-  let cr = hexstring_hashval !Config.currledgerroot in
-  Printf.printf "localframehash %s cr %s\n" (hashval_hexstring !localframehash) (hashval_hexstring cr); flush stdout;
-  let ca = lookup_frame_ctree_root_abbrev cr !localframehash in
-  Printf.printf "ca %s\n" (hashval_hexstring ca); flush stdout;
-  let ctr = Ctre.CAbbrev(cr,ca) in
+  let BlocktreeNode(_,_,_,_,_,ledgerroot,_,_,_,_,_,_,_,_) = !bestnode in
+  Printf.printf "cr %s\n" (hashval_hexstring ledgerroot); flush stdout;
+  let ctr = Ctre.CHash(ledgerroot) in
   printassets_a ctr
 
     
