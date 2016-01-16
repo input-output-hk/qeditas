@@ -275,11 +275,7 @@ Printf.printf "h5\n"; flush stdout;
 				| None -> raise (Failure "ctree should not have become empty")
 			      in
 			      let (prevcforheader,cgr) = factor_inputs_ctree_cgraft [(alpha2,aid)] prevcforblock in
-			      let (newcr,newca) =
-				match frame_filter_ctree (wrap_frame !localframe) !dync with
-				| CAbbrev(cr,ca) -> (cr,ca)
-				| _ -> raise (Failure "frame_filter_ctree was given a wrapped frame but did not return an abbrev")
-			      in
+			      let newcr = save_ctree_elements !dync in
 			      let bhdnew : blockheaderdata
 				  = { prevblockhash = pbhh;
 				      newtheoryroot = None; (*** leave this as None for now ***)

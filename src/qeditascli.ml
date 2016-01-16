@@ -59,6 +59,7 @@ The address is only watched, not controlled.");
 ("btctoqedaddr",1,Some 1,"btctoqedaddr <Bitcoin address>","Give the Qeditas pay address corresponding to the given Bitcoin address. The wallet is not affected.");
 ("printassets",0,Some 0,"printassets","Print the assets held at the addresses in the wallet.
 This may include addresses that are only watched, not controlled.");
+(***
 ("frameallpos",1,None,"frameallpos [position ... position]","Give positions at which the local frame should keep up with all of the ledger tree beneath the position.
 Positions are specified with strings consisting of 0s and 1s.");
 ("framehashpos",1,None,"framehashpos [position ... position]","Give positions at which the local frame should not keep up with the ledger tree beneath the position,
@@ -77,6 +78,7 @@ referring to the file.");
 ("frameaddrs",1,None,"frameaddrs [<address> ... <address>] [n]","Change the local frame (if necessary) to ensure that the leaves of the ledger tree corresponding
 to the addresses are kept up with. If the last argument is an integer n, then only the first n
 assets of those leaves are kept up with, with the remaining assets summarized by a hash root.");
+***)
 ("createrawtransaction",2,None,"createrawtransaction <input> ... <input> out <output> ... <output>","Create a transaction with the specified inputs and outputs.
 Each <input> is specified by giving <address>:<assetid>.
 An <assetid> is a 40 character hex string indicating the hash associated with the asset.
@@ -320,8 +322,6 @@ let process_command r =
 	  raise (Failure "Unknown tx")
       end
   | [c] when c = "printassets" ->
-      localframe := load_currentframe();
-      localframehash := hashframe !localframe;
       load_wallet();
       printassets()
   | [c;w] when c = "importprivkey" ->
@@ -341,6 +341,7 @@ let process_command r =
       importwatchbtcaddr a
   | [c;a] when c = "btctoqedaddr" ->
       btctoqedaddr a
+(***
   | (c::pl) when c = "frameallpos" ->
       localframe := load_currentframe();
       List.iter (fun p -> localframe := frame_set_all_pos !localframe (bitstr_bitseq p)) pl;
@@ -374,7 +375,6 @@ let process_command r =
 	    List.iter (fun alpha -> localframe := frame_add_leaf !localframe (Cryptocurr.qedaddrstr_addr alpha) None) addrs;
 	    save_currentframe !localframe
       end
-(***
   | [c;scr] when c = "importp2sh" ->
       (ImportP2sh(scr),
        fun i ->

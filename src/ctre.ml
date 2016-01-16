@@ -710,7 +710,7 @@ exception FoundHashval of hashval
 exception GettingRemoteData
 
 let exists_data_db tp h =
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qhcons " ^ h) in
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " exists qhcons " ^ h) in
   let l = input_line qednetch in
   ignore (Unix.close_process_in qednetch);
   l = "exists"
