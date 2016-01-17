@@ -868,6 +868,24 @@ let get_nehlist_element h =
   | (a,Some(k)) -> NehCons(a,HHash(k))
   | (a,None) -> NehCons(a,HNil)
 
+let rec ctree_element_a tr i =
+  if i > 0 then
+    begin
+      match tr with
+      | CLeaf(_,NehHash(_)) -> true
+      | CLeft(tr0) -> ctree_element_a tr0 (i-1)
+      | CRight(tr1) -> ctree_element_a tr1 (i-1)
+      | CBin(tr0,tr1) -> ctree_element_a tr0 (i-1) && ctree_element_a tr1 (i-1)
+      | _ -> false
+    end
+  else
+    match tr with
+    | CHash(_) -> true
+    | _ -> false
+
+let ctree_element_p tr =
+  ctree_element_a tr 9
+
 let get_ctree_element h =
   let hh = hashval_hexstring h in
   let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qctree " ^ hh) in
@@ -877,21 +895,16 @@ let get_ctree_element h =
     begin
       try
 	let ch = hexstring_string cd in
-	let (x,c) = seis 2 (ch,String.length ch,None,0,0) in
-	if x = 0 then
-	  let (bl,c) = sei_list sei_bool seis c in
-	  let (h,c) = sei_hashval seis c in
-	  CLeaf(bl,NehHash(h))
-	else if x = 1 then
-	  let (h,c) = sei_hashval seis c in
-	  CLeft(CHash(h))
-	else if x = 2 then
-	  let (h,c) = sei_hashval seis c in
-	  CRight(CHash(h))
+	let (tr,c) = sei_ctree seis (ch,String.length ch,None,0,0) in
+	if ctree_element_p tr then
+	  tr
 	else
-	  let (hl,c) = sei_hashval seis c in
-	  let (hr,c) = sei_hashval seis c in
-	  CBin(CHash(hl),CHash(hr))
+	  begin
+	    Printf.printf "ctree saved with this root is not an element, removing it.\n";
+	    let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qctree " ^ hh) in
+	    ignore (Unix.close_process_in qednetch);
+	    raise (Failure("ctree saved with this root is not an element"))
+	  end
       with _ ->
 	raise (Failure ("could not understand ctree " ^ hh))
     end
