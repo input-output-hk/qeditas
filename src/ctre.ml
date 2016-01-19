@@ -75,7 +75,7 @@ let coinage blkh bday obl v =
 	else
 	  mult_big_int maximum_age_sqr (big_int_of_int64 v) (*** always at maximum age during after it is mature and until it is close to unlocked ***)
 
-type hlist = HHash of hashval | HNil | HCons of asset * hlist
+type hlist = HHash of hashval | HNil | HCons of asset * hlist | HConsH of hashval * hlist
 
 let rec hlist_hashroot hl =
   match hl with
@@ -84,16 +84,23 @@ let rec hlist_hashroot hl =
   | HCons(a,hr) ->
       begin
 	match hlist_hashroot hr with
-	| None -> Some(hashtag (hashasset a) 3l)
-	| Some(k) -> Some(hashtag (hashpair (hashasset a) k) 4l)
+	| None -> Some(hashtag (assetid a) 3l)
+	| Some(k) -> Some(hashtag (hashpair (assetid a) k) 4l)
+      end
+  | HConsH(h,hr) ->
+      begin
+	match hlist_hashroot hr with
+	| None -> Some(hashtag h 3l)
+	| Some(k) -> Some(hashtag (hashpair h k) 4l)
       end
 
-type nehlist = NehHash of hashval | NehCons of asset * hlist
+type nehlist = NehHash of hashval | NehCons of asset * hlist | NehConsH of hashval * hlist
 
 let nehlist_hlist hl =
   match hl with
   | NehHash(h) -> HHash h
   | NehCons(a,hr) -> HCons(a,hr)
+  | NehConsH(h,hr) -> HConsH(h,hr)
 
 let nehlist_hashroot hl =
   match hl with
@@ -101,80 +108,98 @@ let nehlist_hashroot hl =
   | NehCons(a,hr) ->
       begin
 	match hlist_hashroot hr with
-	| None -> hashtag (hashasset a) 3l
-	| Some(k) -> hashtag (hashpair (hashasset a) k) 4l
+	| None -> hashtag (assetid a) 3l
+	| Some(k) -> hashtag (hashpair (assetid a) k) 4l
+      end
+  | NehConsH(h,hr) ->
+      begin
+	match hlist_hashroot hr with
+	| None -> hashtag h 3l
+	| Some(k) -> hashtag (hashpair h k) 4l
       end
 
 let rec in_hlist a hl =
   match hl with
   | HCons(b,hr) when a = b -> true
   | HCons(_,hr) -> in_hlist a hr
+  | HConsH(_,hr) -> in_hlist a hr
   | _ -> false
 
 let in_nehlist a hl =
   match hl with
   | NehCons(b,hr) when a = b -> true
   | NehCons(_,hr) -> in_hlist a hr
+  | NehConsH(_,hr) -> in_hlist a hr
   | _ -> false
 
 let rec hlist_lookup_asset k hl =
   match hl with
   | HCons(a,hr) when assetid a = k -> Some(a)
   | HCons(_,hr) -> hlist_lookup_asset k hr
+  | HConsH(_,hr) -> hlist_lookup_asset k hr
   | _ -> None
 
 let nehlist_lookup_asset k hl =
   match hl with
   | NehCons(a,hr) when assetid a = k -> Some(a)
   | NehCons(_,hr) -> hlist_lookup_asset k hr
+  | NehConsH(_,hr) -> hlist_lookup_asset k hr
   | _ -> None
 
 let rec hlist_lookup_marker hl =
   match hl with
   | HCons(a,hr) when assetpre a = Marker -> Some(a)
   | HCons(_,hr) -> hlist_lookup_marker hr
+  | HConsH(_,hr) -> hlist_lookup_marker hr
   | _ -> None
 
 let nehlist_lookup_marker hl =
   match hl with
   | NehCons(a,hr) when assetpre a = Marker -> Some(a)
   | NehCons(_,hr) -> hlist_lookup_marker hr
+  | NehConsH(_,hr) -> hlist_lookup_marker hr
   | _ -> None
 
 let rec hlist_lookup_obj_owner hl =
   match hl with
   | HCons((_,_,_,OwnsObj(beta,r)),hr) -> Some(beta,r)
   | HCons(_,hr) -> hlist_lookup_obj_owner hr
+  | HConsH(_,hr) -> hlist_lookup_obj_owner hr
   | _ -> None
 
 let nehlist_lookup_obj_owner hl =
   match hl with
   | NehCons((_,_,_,OwnsObj(beta,r)),hr) -> Some(beta,r)
   | NehCons(_,hr) -> hlist_lookup_obj_owner hr
+  | NehConsH(_,hr) -> hlist_lookup_obj_owner hr
   | _ -> None
 
 let rec hlist_lookup_prop_owner hl =
   match hl with
   | HCons((_,_,_,OwnsProp(beta,r)),hr) -> Some(beta,r)
   | HCons(_,hr) -> hlist_lookup_prop_owner hr
+  | HConsH(_,hr) -> hlist_lookup_prop_owner hr
   | _ -> None
 
 let nehlist_lookup_prop_owner hl =
   match hl with
   | NehCons((_,_,_,OwnsProp(beta,r)),hr) -> Some(beta,r)
   | NehCons(_,hr) -> hlist_lookup_prop_owner hr
+  | NehConsH(_,hr) -> hlist_lookup_prop_owner hr
   | _ -> None
 
 let rec hlist_lookup_neg_prop_owner hl =
   match hl with
   | HCons((_,_,_,OwnsNegProp),hr) -> true
   | HCons(_,hr) -> hlist_lookup_neg_prop_owner hr
+  | HConsH(_,hr) -> hlist_lookup_neg_prop_owner hr
   | _ -> false
 
 let nehlist_lookup_neg_prop_owner hl =
   match hl with
   | NehCons((_,_,_,OwnsNegProp),hr) -> true
   | NehCons(_,hr) -> hlist_lookup_neg_prop_owner hr
+  | NehConsH(_,hr) -> hlist_lookup_neg_prop_owner hr
   | _ -> false
 
 type ctree =
@@ -249,6 +274,11 @@ let rec print_hlist hl =
 	Printf.printf "%s [%Ld]\n" (hashval_hexstring aid) bday;
 	print_hlist hr
       end
+  | HConsH(aid,hr) ->
+      begin
+	Printf.printf "%s *\n" (hashval_hexstring aid);
+	print_hlist hr
+      end
 
 let right_trim c s =
   let l = ref ((String.length s) - 1) in
@@ -269,7 +299,10 @@ let fraenks_string v =
 
 let rec print_hlist_to_buffer sb blkh hl =
   match hl with
-  | HHash(h) -> Printf.printf "...%s...\n" (hashval_hexstring h)
+  | HHash(h) ->
+      Buffer.add_string sb "...";
+      Buffer.add_string sb (hashval_hexstring h);
+      Buffer.add_string sb "...\n"
   | HNil -> ()
   | HCons((aid,bday,None,Currency(v)),hr) ->
       begin
@@ -451,6 +484,12 @@ let rec print_hlist_to_buffer sb blkh hl =
 	Buffer.add_string sb "] Document\n";
 	print_hlist_to_buffer sb blkh hr
       end
+  | HConsH(aid,hr) ->
+      begin
+	Buffer.add_string sb (hashval_hexstring aid);
+	Buffer.add_string sb " *\n";
+	print_hlist_to_buffer sb blkh hr
+      end
 
 let rec print_ctree_all_r c n br =
   for i = 1 to n do Printf.printf " " done;
@@ -483,25 +522,6 @@ let rec ctree_hashroot c =
   | CLeft(c0) -> hashopair1 (ctree_hashroot c0) None
   | CRight(c1) -> hashopair2 None (ctree_hashroot c1)
   | CBin(c0,c1) -> hashopair1 (ctree_hashroot c0) (Some (ctree_hashroot c1))
-
-let rec hashhlist hl =
-  match hl with
-  | HHash(h) -> hashtag h 149l
-  | HCons(a,hr) -> hashtag (hashpair (hashasset a) (hashhlist hr)) 150l
-  | HNil -> hashint32 151l
-
-let hashnehlist hl =
-  match hl with
-  | NehHash(h) -> hashtag h 147l
-  | NehCons(a,hr) -> hashtag (hashpair (hashasset a) (hashhlist hr)) 148l
-
-let rec hashctree c =
-  match c with
-  | CLeaf(bl,hl) -> hashtag (hashpair (hashbitseq bl) (hashnehlist hl)) 141l
-  | CHash(h) -> hashtag h 142l
-  | CLeft(c0) -> hashtag (hashctree c0) 144l
-  | CRight(c1) -> hashtag (hashctree c1) 145l
-  | CBin(c0,c1) -> hashtag (hashpair (hashctree c0) (hashctree c1)) 146l
 
 let rec ctree_numnodes c =
   match c with
@@ -566,39 +586,49 @@ let rec remove_assets_hlist hl spent =
 (** * serialization **)
 let rec seo_hlist o hl c =
   match hl with
-  | HHash(h) -> (* 0 0 *)
+  | HHash(h) -> (* 00 *)
       let c = o 2 0 c in
       seo_hashval o h c
-  | HNil -> (* 0 1 *)
-      let c = o 2 2 c in
+  | HNil -> (* 01 *)
+      let c = o 2 1 c in
       c
-  | HCons(a,hr) -> (* 1 *)
-      let c = o 1 1 c in
+  | HCons(a,hr) -> (* 10 *)
+      let c = o 2 2 c in
       let c = seo_asset o a c in
+      seo_hlist o hr c
+  | HConsH(aid,hr) -> (* 11 *)
+      let c = o 2 3 c in
+      let c = seo_hashval o aid c in
       seo_hlist o hr c
 
 let rec sei_hlist i c =
-  let (x,c) = i 1 c in
+  let (x,c) = i 2 c in
   if x = 0 then
-    let (x,c) = i 1 c in
-    if x = 0 then
-      let (h,c) = sei_hashval i c in
-      (HHash(h),c)
-    else
+    let (h,c) = sei_hashval i c in
+    (HHash(h),c)
+  else if x = 1 then
       (HNil,c)
-  else
+  else if x = 2 then
     let (a,c) = sei_asset i c in
     let (hr,c) = sei_hlist i c in
     (HCons(a,hr),c)
+  else
+    let (aid,c) = sei_hashval i c in
+    let (hr,c) = sei_hlist i c in
+    (HConsH(aid,hr),c)
 
 let seo_nehlist o hl c =
   match hl with
   | NehHash(h) -> (* 0 *)
       let c = o 1 0 c in
       seo_hashval o h c
-  | NehCons(a,hr) -> (* 1 *)
-      let c = o 1 1 c in
+  | NehCons(a,hr) -> (* 1 0 *)
+      let c = o 2 2 c in
       let c = seo_asset o a c in
+      seo_hlist o hr c
+  | NehConsH(aid,hr) -> (* 1 1 *)
+      let c = o 2 3 c in
+      let c = seo_hashval o aid c in
       seo_hlist o hr c
 
 let sei_nehlist i c =
@@ -607,9 +637,15 @@ let sei_nehlist i c =
     let (h,c) = sei_hashval i c in
     (NehHash(h),c)
   else
-    let (a,c) = sei_asset i c in
-    let (hr,c) = sei_hlist i c in
-    (NehCons(a,hr),c)
+    let (y,c) = i 1 c in
+    if y = 0 then
+      let (a,c) = sei_asset i c in
+      let (hr,c) = sei_hlist i c in
+      (NehCons(a,hr),c)
+    else
+      let (aid,c) = sei_hashval i c in
+      let (hr,c) = sei_hlist i c in
+      (NehConsH(aid,hr),c)
 
 let rec seo_ctree o tr c =
   match tr with
@@ -667,7 +703,12 @@ let rec reduce_hlist_to_approx al hl =
 	  | None -> raise (Failure("Impossible"))
 	end
       else
-	reduce_hlist_to_approx (List.filter (fun z -> not (z = h1)) al) hr
+	if List.mem h1 al then
+	  HCons((h1,bh1,o1,u1),reduce_hlist_to_approx (List.filter (fun z -> not (z = h1)) al) hr)
+	else
+	  HConsH(h1,reduce_hlist_to_approx al hr)
+  | HConsH(h1,hr) ->
+      HConsH(h1,reduce_hlist_to_approx al hr)
 
 let save_ctree f tr =
   let ch = open_out_bin f in
@@ -715,25 +756,60 @@ let exists_data_db tp h =
   ignore (Unix.close_process_in qednetch);
   l = "exists"
 
+(*** use a temporary file for this, since an asset might be big ***)
+let save_asset a =
+  let aid = assetid a in
+  let aidh = hashval_hexstring aid in
+  if not (exists_data_db "qasset" aidh) then
+    let fn = Filename.concat (datadir()) ("a" ^ aidh) in
+    let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
+    let c = seo_asset seoc a (ch,None) in
+    seocf c;
+    close_out ch;
+    let qednetch = Unix.open_process_in ((qednetd()) ^ " savedatafromfile qasset " ^ aidh ^ " " ^ fn) in
+    ignore (Unix.close_process_in qednetch);
+    Sys.remove fn
+
 let rec save_hlist_elements hl =
   match hl with
   | HCons(a,hr) ->
+      save_asset a;
+      let aid = assetid a in
       let h = save_hlist_elements hr in
       let r =
 	match h with
-	| None -> hashtag (hashasset a) 3l
-	| Some(k) -> hashtag (hashpair (hashasset a) k) 4l
+	| None -> hashtag aid 3l
+	| Some(k) -> hashtag (hashpair aid k) 4l
       in
       let rh = hashval_hexstring r in
       if exists_data_db "qhcons" rh then
 	Some(r)
       else
 	let strb = Buffer.create 100 in
-	let c = seo_asset seosb a (strb,None) in
+	let c = seo_hashval seosb aid (strb,None) in
 	let c = seo_option seo_hashval seosb h c in
 	seosbf c;
 	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qhcons " ^ rh ^ " " ^ sh) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qhcons " ^ rh ^ " " ^ sh) in
+	ignore (Unix.close_process_in qednetch);
+	Some(r)
+  | HConsH(aid,hr) ->
+      let h = save_hlist_elements hr in
+      let r =
+	match h with
+	| None -> hashtag aid 3l
+	| Some(k) -> hashtag (hashpair aid k) 4l
+      in
+      let rh = hashval_hexstring r in
+      if exists_data_db "qhcons" rh then
+	Some(r)
+      else
+	let strb = Buffer.create 100 in
+	let c = seo_hashval seosb aid (strb,None) in
+	let c = seo_option seo_hashval seosb h c in
+	seosbf c;
+	let sh = string_hexstring (Buffer.contents strb) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qhcons " ^ rh ^ " " ^ sh) in
 	ignore (Unix.close_process_in qednetch);
 	Some(r)
   | HNil -> None
@@ -742,22 +818,43 @@ let rec save_hlist_elements hl =
 let save_nehlist_elements hl =
   match hl with
   | NehCons(a,hr) ->
+      save_asset a;
+      let aid = assetid a in
       let h = save_hlist_elements hr in
       let r = 
 	match h with
-	| None -> hashtag (hashasset a) 3l
-	| Some(k) -> hashtag (hashpair (hashasset a) k) 4l
+	| None -> hashtag aid 3l
+	| Some(k) -> hashtag (hashpair aid k) 4l
       in
       let rh = hashval_hexstring r in
       if exists_data_db "qhcons" rh then
 	r
       else
 	let strb = Buffer.create 100 in
-	let c = seo_asset seosb a (strb,None) in
+	let c = seo_hashval seosb aid (strb,None) in
 	let c = seo_option seo_hashval seosb h c in
 	seosbf c;
 	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qhcons " ^ rh ^ " " ^ sh) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qhcons " ^ rh ^ " " ^ sh) in
+	ignore (Unix.close_process_in qednetch);
+	r
+  | NehConsH(aid,hr) ->
+      let h = save_hlist_elements hr in
+      let r = 
+	match h with
+	| None -> hashtag aid 3l
+	| Some(k) -> hashtag (hashpair aid k) 4l
+      in
+      let rh = hashval_hexstring r in
+      if exists_data_db "qhcons" rh then
+	r
+      else
+	let strb = Buffer.create 100 in
+	let c = seo_hashval seosb aid (strb,None) in
+	let c = seo_option seo_hashval seosb h c in
+	seosbf c;
+	let sh = string_hexstring (Buffer.contents strb) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qhcons " ^ rh ^ " " ^ sh) in
 	ignore (Unix.close_process_in qednetch);
 	r
   | NehHash(r) -> r
@@ -785,7 +882,7 @@ let rec save_ctree_elements tr =
 	let c = seo_hashval seosb h c in
 	seosbf c;
 	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qctree " ^ rh ^ " " ^ sh) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qctree " ^ rh ^ " " ^ sh) in
 	ignore (Unix.close_process_in qednetch);
 	r
   | CLeft(trl) -> (* 01 *)
@@ -800,7 +897,7 @@ let rec save_ctree_elements tr =
 	let c = seo_hashval seosb hl c in
 	seosbf c;
 	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qctree " ^ rh ^ " " ^ sh) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qctree " ^ rh ^ " " ^ sh) in
 	ignore (Unix.close_process_in qednetch);
 	r
   | CRight(trr) -> (* 10 *)
@@ -815,7 +912,7 @@ let rec save_ctree_elements tr =
 	let c = seo_hashval seosb hr c in
 	seosbf c;
 	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qctree " ^ rh ^ " " ^ sh) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qctree " ^ rh ^ " " ^ sh) in
 	ignore (Unix.close_process_in qednetch);
 	r
   | CBin(trl,trr) -> (* 11 *)
@@ -832,10 +929,30 @@ let rec save_ctree_elements tr =
 	let c = seo_hashval seosb hr c in
 	seosbf c;
 	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " adddata qctree " ^ rh ^ " " ^ sh) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qctree " ^ rh ^ " " ^ sh) in
 	ignore (Unix.close_process_in qednetch);
 	r
   | CHash(r) -> r
+
+let get_asset h =
+  let hh = hashval_hexstring h in
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qasset " ^ hh) in
+  try
+    let cd = input_line qednetch in
+    ignore (Unix.close_process_in qednetch);
+    begin
+      try
+	let ch = hexstring_string cd in
+	let (a,c) = sei_asset seis (ch,String.length ch,None,0,0) in
+	a
+      with _ ->
+	raise (Failure ("could not understand asset " ^ hh))
+    end
+  with _ -> (*** request it and fail ***)
+    let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qasset " ^ hh) (Unix.environment()) in
+    ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
+(*    raise (Failure ("could not resolve a needed asset " ^ hh ^ "; requesting from peers")) *)
+    raise GettingRemoteData
 
 let get_hcons_element h =
   let hh = hashval_hexstring h in
@@ -846,9 +963,9 @@ let get_hcons_element h =
     begin
       try
 	let ch = hexstring_string cd in
-	let (a,c) = sei_asset seis (ch,String.length ch,None,0,0) in
+	let (aid,c) = sei_hashval seis (ch,String.length ch,None,0,0) in
 	let (k,c) = sei_option sei_hashval seis c in
-	(a,k)
+	(aid,k)
       with _ ->
 	raise (Failure ("could not understand hcons " ^ hh))
     end
@@ -860,13 +977,13 @@ let get_hcons_element h =
 
 let get_hlist_element h =
   match get_hcons_element h with
-  | (a,Some(k)) -> HCons(a,HHash(k))
-  | (a,None) -> HCons(a,HNil)
+  | (aid,Some(k)) -> HConsH(aid,HHash(k))
+  | (aid,None) -> HConsH(aid,HNil)
 
 let get_nehlist_element h =
   match get_hcons_element h with
-  | (a,Some(k)) -> NehCons(a,HHash(k))
-  | (a,None) -> NehCons(a,HNil)
+  | (aid,Some(k)) -> NehConsH(aid,HHash(k))
+  | (aid,None) -> NehConsH(aid,HNil)
 
 let rec ctree_element_a tr i =
   if i > 0 then
@@ -960,6 +1077,7 @@ let rec tx_octree_trans_ n inpl outpl c =
       | HNil -> None
       | HHash(h) -> Some(CLeaf([],NehHash(h)))
       | HCons(a,hr) -> Some(CLeaf([],NehCons(a,hr)))
+      | HConsH(aid,hr) -> Some(CLeaf([],NehConsH(aid,hr)))
     end
 
 let add_vout bh txh outpl =
@@ -997,6 +1115,8 @@ let rec expand_hlist hl z =
   | HHash(h),_ -> expand_hlist (get_hlist_element h) z
   | HCons(a,hr),None -> HCons(a,expand_hlist hr None)
   | HCons(a,hr),Some(i) -> HCons(a,expand_hlist hr (Some(i-1)))
+  | HConsH(aid,hr),None -> HCons(get_asset aid,expand_hlist hr None)
+  | HConsH(aid,hr),Some(i) -> HCons(get_asset aid,expand_hlist hr (Some(i-1)))
 
 let rec expand_nehlist hl z =
   match hl,z with
@@ -1004,6 +1124,8 @@ let rec expand_nehlist hl z =
   | NehHash(h),_ -> expand_nehlist (get_nehlist_element h) z
   | NehCons(a,hr),None -> NehCons(a,expand_hlist hr None)
   | NehCons(a,hr),Some(i) -> NehCons(a,expand_hlist hr (Some(i-1)))
+  | NehConsH(aid,hr),None -> NehCons(get_asset aid,expand_hlist hr None)
+  | NehConsH(aid,hr),Some(i) -> NehCons(get_asset aid,expand_hlist hr (Some(i-1)))
 
 let rec ctree_pre bl c d z =
   match bl with
@@ -1125,14 +1247,16 @@ let ctree_rights_balanced tr alpha ownr rtot1 rtot2 rtot3 outpl =
 
 let rec hlist_full_approx hl =
   match hl with
-  | HHash(_) -> false
   | HNil -> true
   | HCons(a,hr) -> hlist_full_approx hr
+  | HConsH(_,_) -> false
+  | HHash(_) -> false
 
 let nehlist_full_approx hl =
   match hl with
-  | NehHash(_) -> false
   | NehCons(a,hr) -> hlist_full_approx hr
+  | NehConsH(_,_) -> false
+  | NehHash(_) -> false
 
 let rec ctree_full_approx_addr tr bl =
   match tr with
@@ -1726,19 +1850,36 @@ let rec hlist_lub hl1 hl2 =
   match hl1 with
   | HNil -> HNil
   | HHash(_) -> hl2
-  | HCons(h1,hr1) ->
+  | HCons(a1,hr1) ->
+      begin
+	match hl2 with
+	| HNil -> raise (Failure "incompatible hlists")
+	| HHash(_) -> hl1
+	| HCons(_,hr2) -> HCons(a1,hlist_lub hr1 hr2)
+	| HConsH(_,hr2) -> HCons(a1,hlist_lub hr1 hr2)
+      end
+  | HConsH(h1,hr1) ->
       match hl2 with
       | HNil -> raise (Failure "incompatible hlists")
       | HHash(_) -> hl1
-      | HCons(_,hr2) -> HCons(h1,hlist_lub hr1 hr2)
+      | HCons(a2,hr2) -> HCons(a2,hlist_lub hr1 hr2)
+      | HConsH(_,hr2) -> HConsH(h1,hlist_lub hr1 hr2)
 
 let nehlist_lub hl1 hl2 =
   match hl1 with
   | NehHash(_) -> hl2
-  | NehCons(h1,hr1) ->
+  | NehCons(a1,hr1) ->
+      begin
+	match hl2 with
+	| NehHash(_) -> hl1
+	| NehCons(_,hr2) -> NehCons(a1,hlist_lub hr1 hr2)
+	| NehConsH(_,hr2) -> NehCons(a1,hlist_lub hr1 hr2)
+      end
+  | NehConsH(h1,hr1) ->
       match hl2 with
       | NehHash(_) -> hl1
-      | NehCons(_,hr2) -> NehCons(h1,hlist_lub hr1 hr2)
+      | NehCons(a2,hr2) -> NehCons(a2,hlist_lub hr1 hr2)
+      | NehConsH(_,hr2) -> NehConsH(h1,hlist_lub hr1 hr2)
 
 let rec ctreeLinv c =
   match c with

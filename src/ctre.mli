@@ -16,11 +16,11 @@ val reward_locktime : int64 -> int64
 
 val coinage : int64 -> int64 -> obligation -> int64 -> big_int
 
-type hlist = HHash of hashval | HNil | HCons of asset * hlist
+type hlist = HHash of hashval | HNil | HCons of asset * hlist | HConsH of hashval * hlist
 
 val hlist_hashroot : hlist -> hashval option
 
-type nehlist = NehHash of hashval | NehCons of asset * hlist
+type nehlist = NehHash of hashval | NehCons of asset * hlist | NehConsH of hashval * hlist
 
 val nehlist_hlist : nehlist -> hlist
 
@@ -33,7 +33,6 @@ type ctree =
   | CRight of ctree
   | CBin of ctree * ctree
 
-val hashctree : ctree -> hashval
 val ctree_hashroot : ctree -> hashval
 val octree_hashroot : ctree option -> hashval option
 
