@@ -2025,7 +2025,11 @@ let rec ctree_reduce_to_min_support n inpl outpl full c =
 	  if inpl = [] then
 	    CLeaf([],NehHash(nehlist_hashroot hl))
 	  else
-	    CLeaf([],NehCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) (List.map (fun (_,k) -> k) inpl)) hr))
+	    let aidl = List.filter (fun z -> not (z = h)) (List.map (fun (_,k) -> k) inpl) in
+	    if List.mem h aidl then
+	      CLeaf([],NehCons((h,bh,o,u),hlist_reduce_to_min_support aidl hr))
+	    else
+	      CLeaf([],NehConsH(h,hlist_reduce_to_min_support aidl hr))
       | _ -> raise (Failure "impossible")
     end
   else (*** At this point we are necessarily at a leaf. However, if the full hlist is not here, then it will not be fully supported. Not checking since we assume c supported before calling reduce_to_min. ***)
