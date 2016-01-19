@@ -1950,7 +1950,12 @@ let rec hlist_reduce_to_min_support aidl hl =
       begin
 	match hl with
 	| HCons((h,bh,o,u),hr) ->
-	    HCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr)
+	    if List.mem h aidl then
+	      HCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr)
+	    else
+	      HConsH(h,hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr)
+	| HConsH(h,hr) ->
+	    HConsH(h,hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr)
 	| _ -> hl
       end
 
