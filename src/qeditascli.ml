@@ -59,6 +59,7 @@ The address is only watched, not controlled.");
 ("btctoqedaddr",1,Some 1,"btctoqedaddr <Bitcoin address>","Give the Qeditas pay address corresponding to the given Bitcoin address. The wallet is not affected.");
 ("printassets",0,Some 0,"printassets","Print the assets held at the addresses in the wallet.
 This may include addresses that are only watched, not controlled.");
+("stop",0,Some 0,"stop","Stop Qeditas and the associated Qednet process");
 (***
 ("frameallpos",1,None,"frameallpos [position ... position]","Give positions at which the local frame should keep up with all of the ledger tree beneath the position.
 Positions are specified with strings consisting of 0s and 1s.");
@@ -321,6 +322,9 @@ let process_command r =
 	with Not_found ->
 	  raise (Failure "Unknown tx")
       end
+  | [c] when c = "stop" ->
+      let qednetch = Unix.open_process_in ((qednetd()) ^ " stop") in
+      ignore (Unix.close_process_in qednetch)
   | [c] when c = "printassets" ->
       load_wallet();
       printassets()
