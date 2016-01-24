@@ -2011,8 +2011,8 @@ let rec ctree_reduce_to_min_support n inpl outpl full c =
 		       (strip_bitseq_true0 outpl)
 		       (strip_bitseq_true0 full)
 		       c1)
-	  | CHash(h) -> (*** If we reach this point, the ctree does not support the tx, contrary to assumption. ***)
-	      raise (Failure("ctree does not support the tx"))
+	  | CHash(h) -> (*** changed to expand in this case; so the name of the function is misleading ***)
+	      ctree_reduce_to_min_support n inpl outpl full (get_ctree_element h)
 	  | _ -> c
 	end
     end
