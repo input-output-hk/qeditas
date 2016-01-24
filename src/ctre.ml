@@ -1034,8 +1034,7 @@ let get_ctree_element h =
 let rec octree_S_inv c =
   match c with
   | None -> (None,None)
-  | Some(CHash(h)) ->
-      raise Not_found
+  | Some(CHash(h)) -> octree_S_inv (Some(get_ctree_element h))
   | Some(CLeaf([],hl)) ->
       raise Not_found
   | Some(CLeaf(false::bl,hl)) -> (Some(CLeaf(bl,hl)),None)
