@@ -44,9 +44,8 @@ val new_assets : int64 -> addr -> addr_preasset list -> hashval -> int32 -> asse
 val remove_assets : asset list -> hashval list -> asset list
 val get_spent : addr -> addr_assetid list -> hashval list
 val add_vout : int64 -> hashval -> addr_preasset list -> int32 -> addr_asset list
-val preasset_value : preasset -> int64 option
-val asset_value : asset -> int64 option
-val asset_value_sum : asset list -> int64
+val asset_value : int64 -> asset -> int64 option
+val asset_value_sum : int64 -> asset list -> int64
 val output_signaspec_uses_objs : addr_preasset list -> (termaddr * termaddr) list
 val output_signaspec_uses_props : addr_preasset list -> (termaddr * termaddr) list
 val output_doc_uses_objs : addr_preasset list -> (termaddr * termaddr) list

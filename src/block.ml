@@ -855,7 +855,7 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
   let aal = ctree_lookup_input_assets inpl tr in
   let al = List.map (fun (_,a) -> a) aal in
   (*** Originally I added totalfees to the out_cost, but this was wrong since the totalfees are in the stake output which is already counted in out_cost. I don't really need totalfees to be explicit. ***)
-  out_cost outpl = Int64.add (asset_value_sum al) (Int64.add (rewfn blkh) forfeitval)
+  out_cost outpl = Int64.add (asset_value_sum blkh al) (Int64.add (rewfn blkh) forfeitval)
     &&
   let newtht = txout_update_ottree outpl tht in
   latesttht := newtht;

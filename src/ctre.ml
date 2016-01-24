@@ -1838,7 +1838,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
     )
     aal;
   (*** finally, return the number of currency units created or destroyed ***)
-  Int64.sub (out_cost outpl) (asset_value_sum al)
+  Int64.sub (out_cost outpl) (asset_value_sum blkh al)
 
 let ctree_supports_tx tht sigt blkh tx tr =
   let (inpl,outpl) = tx in
