@@ -220,13 +220,9 @@ Printf.printf "h1\n"; flush stdout;
 Printf.printf "h2\n"; flush stdout;
 			    if check_hit_b blkh bday obl v csm1 tar1 stktm aid alpha None then (*** confirm the staking process is correct ***)
 			      let BlocktreeNode(_,_,pbhh,pbthyroot,pbsigroot,_,pbtinfo,pbdeltm,pbtmstamp,cs,blkhght,_,_,_) = n in
-			      let deltm = Int64.to_int32 (Int64.sub stktm pbtmstamp) in
+			      let deltm = if blkh = 1L then 600l else Int64.to_int32 (Int64.sub stktm pbtmstamp) in
 			      let newrandbit = rand_bit() in
 Printf.printf "h3\n"; flush stdout;
-			      let csm2 = stakemod_pushbit (stakemod_lastbit fsm1) csm1 in
-			      let fsm2 = stakemod_pushbit newrandbit fsm1 in
-			      let tar2 = retarget tar1 deltm in
-Printf.printf "h4\n"; flush stdout;
 			      let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))] in
 			      let coinstk : tx = ([(alpha2,aid)],stkoutl) in
 			      let prevc = Some(CHash(prevledgerroot)) in
@@ -281,7 +277,7 @@ Printf.printf "h5\n"; flush stdout;
 				      stored = None;
 				      timestamp = stktm;
 				      deltatime = deltm;
-				      tinfo = (csm2,fsm2,tar2);
+				      tinfo = (csm1,fsm1,tar1);
 				      prevledger = prevcforheader
 				    }
 			      in
@@ -323,8 +319,15 @@ Printf.printf "h5\n"; flush stdout;
 				    raise (Failure("Was staking for " ^ Cryptocurr.addr_qedaddrstr (hashval_p2pkh_addr alpha) ^ " but have neither the private key nor an appropriate endorsement for it."))
 			      in
 			      let bhnew = (bhdnew,bhsnew) in
-			      if not (valid_blockheader blkhght bhnew && blockheader_succ_a pbdeltm pbtmstamp pbtinfo bhnew) then
+			      if not (valid_blockheader blkhght bhnew) then
 				raise (Failure("Incorrect block header from staking; bug; not publishing it"));
+			      let eq_tinfo (x,y,z) (u,v,w) =
+				x = u && y = v && eq_big_int z w
+			      in
+			      if blkhght = 1L && not (bhdnew.prevblockhash = None && ctree_hashroot bhdnew.prevledger = !genesisledgerroot && eq_tinfo bhdnew.tinfo (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) && bhdnew.deltatime = 600l) then
+				raise (Failure("Invalid Genesis Block Header"));
+			      if blkhght > 1L && not (blockheader_succ_a pbdeltm pbtmstamp (csm1,fsm1,tar1) bhnew) then
+				raise (Failure("Invalid Successor Block Header"));
 			      Printf.printf "Including %d txs in block\n" (List.length !otherstxs);
 			      let forf = None in (*** leave this as None for now; should check for double signing ***)
 			      let bdnew : blockdelta =

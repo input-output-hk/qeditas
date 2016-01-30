@@ -197,10 +197,13 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization =
           ignore (Unix.close_process_in qednetch)
         end
       else if valid_blockheader blkhght blkh1 && blockheader_succ_a deltm tmstamp tinfo blkh1 then
-        let (_,_,tar1) = blkhd1.tinfo in
+        let (csm1,fsm1,tar1) = blkhd1.tinfo in
+	let csm2 = stakemod_pushbit (stakemod_lastbit fsm1) csm1 in
+	let fsm2 = stakemod_pushbit false fsm1 in (** the new bit doesn't matter here **)
+	let tar2 = retarget tar1 blkhd1.deltatime in
         let newcumulstake = cumul_stake prevcumulstk tar1 blkhd1.deltatime in
 	let validated = ref None in
-        let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],prevblkh,blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,blkhd1.tinfo,blkhd1.deltatime,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
+        let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],prevblkh,blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,(csm2,fsm2,tar2),blkhd1.deltatime,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
         begin (*** add it as a leaf, indicate that we want the block delta to validate it, and check if it's the best ***)
           succl := (hh,newnode)::!succl;
 	  record_recent_staker blkhd1.stakeaddr prevnode 6;
