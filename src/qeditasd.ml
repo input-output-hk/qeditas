@@ -363,8 +363,8 @@ Printf.printf "h5\n"; flush stdout;
 			stop_staking();
 		    | None -> ()
 	      with
-	      | _ ->
-		  Printf.printf "Exception thrown while trying to read from the staking process.\nKilling staker\n";
+	      | exc ->
+		  Printf.printf "Exception thrown while trying to read from the staking process.\n%s\nKilling staker\n" (Printexc.to_string exc);
 		  stop_staking();
 	end;
       if !Config.staking then
