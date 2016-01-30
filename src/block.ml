@@ -565,7 +565,7 @@ let valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v) =
 	  | Some(_,_,_,DocPublication(_,_,_,_)) -> true
 	  | _ -> false
 	end
-  end  
+  end
 
 let valid_blockheader blkh (bhd,bhs) =
   match ctree_lookup_asset bhd.stakeassetid bhd.prevledger (addr_bitseq (p2pkhaddr_addr bhd.stakeaddr)) with
