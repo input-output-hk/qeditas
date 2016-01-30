@@ -1963,6 +1963,19 @@ let rec hlist_reduce_to_min_support aidl hl =
 	| _ -> hl
       end
 
+let rec get_full_hlist hl =
+  match hl with
+  | HNil -> HNil
+  | HCons(a,hr) -> HCons(a,get_full_hlist hr)
+  | HConsH(h,hr) -> HCons(get_asset h,get_full_hlist hr)
+  | HHash(h) -> get_full_hlist (get_hlist_element h)
+
+let rec get_full_nehlist hl =
+  match hl with
+  | NehCons(a,hr) -> NehCons(a,get_full_hlist hr)
+  | NehConsH(h,hr) -> NehCons(get_asset h,get_full_hlist hr)
+  | NehHash(h) -> get_full_nehlist (get_nehlist_element h)
+      
 let rec ctree_reduce_to_min_support n inpl outpl full c =
   if n > 0 then
     begin
@@ -2024,20 +2037,48 @@ let rec ctree_reduce_to_min_support n inpl outpl full c =
   else if full = [] then
     begin
       match c with
-      | CLeaf([],NehHash(_)) -> c
+      | CLeaf([],NehHash(h)) -> 
+	  if inpl = [] then
+	    c
+	  else
+	    let aidl = List.map (fun (_,k) -> k) inpl in
+	    begin
+	      match get_nehlist_element h with
+	      | NehConsH(aid,hr) ->
+		  if List.mem aid aidl then
+		    let a = get_asset aid in
+		    CLeaf([],NehCons(a,hlist_reduce_to_min_support (List.filter (fun z -> not (z = aid)) aidl) hr))
+		  else
+		    CLeaf([],NehConsH(aid,hlist_reduce_to_min_support aidl hr))
+	      | _ -> raise (Failure "impossible")
+	    end
       | CLeaf([],(NehCons((h,bh,o,u),hr) as hl)) ->
 	  if inpl = [] then
 	    CLeaf([],NehHash(nehlist_hashroot hl))
 	  else
-	    let aidl = List.filter (fun z -> not (z = h)) (List.map (fun (_,k) -> k) inpl) in
+	    let aidl = List.map (fun (_,k) -> k) inpl in
 	    if List.mem h aidl then
-	      CLeaf([],NehCons((h,bh,o,u),hlist_reduce_to_min_support aidl hr))
+	      CLeaf([],NehCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr))
+	    else
+	      CLeaf([],NehConsH(h,hlist_reduce_to_min_support aidl hr))
+      | CLeaf([],(NehConsH(h,hr) as hl)) ->
+	  if inpl = [] then
+	    CLeaf([],NehHash(nehlist_hashroot hl))
+	  else
+	    let aidl = List.map (fun (_,k) -> k) inpl in
+	    if List.mem h aidl then
+	      let a = get_asset h in
+	      CLeaf([],NehCons(a,hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr))
 	    else
 	      CLeaf([],NehConsH(h,hlist_reduce_to_min_support aidl hr))
       | _ -> raise (Failure "impossible")
     end
-  else (*** At this point we are necessarily at a leaf. However, if the full hlist is not here, then it will not be fully supported. Not checking since we assume c supported before calling reduce_to_min. ***)
-    c
+  else
+    begin
+      match c with
+      | CLeaf([],hl) -> CLeaf([],get_full_nehlist hl)
+      | _ -> raise (Failure "impossible")
+    end
 
 let octree_reduce_to_min_support inpl outpl full oc =
   match oc with
