@@ -1952,9 +1952,14 @@ let rec hlist_reduce_to_min_support aidl hl =
 	    if List.mem h aidl then
 	      HCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr)
 	    else
-	      HConsH(h,hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr)
-	| HConsH(h,hr) ->
-	    HConsH(h,hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr)
+	      HConsH(h,hlist_reduce_to_min_support aidl hr)
+	| HConsH(h,hr) -> (*** lookup asset if needed ***)
+	    if List.mem h aidl then
+	      HCons(get_asset h,hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr)
+	    else
+	      HConsH(h,hlist_reduce_to_min_support aidl hr)
+	| HHash(h) -> (*** do a partial lookup ***)
+	    hlist_reduce_to_min_support aidl (get_hlist_element h)
 	| _ -> hl
       end
 
