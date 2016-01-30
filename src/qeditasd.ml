@@ -321,10 +321,10 @@ Printf.printf "h5\n"; flush stdout;
 			      let bhnew = (bhdnew,bhsnew) in
 			      if not (valid_blockheader blkhght bhnew) then
 				raise (Failure("Incorrect block header from staking; bug; not publishing it"));
-			      let eq_tinfo (x,y,z) (u,v,w) =
-				x = u && y = v && eq_big_int z w
+			      let equ_tinfo (x,(y3,y2,y1,y0),z) (u,(v3,v2,v1,v0),w) =
+				x = u && y3 = v3 && y2 = v2 && y1 = v1 && Int64.logand y0 (Int64.lognot 1L) = Int64.logand v0 (Int64.lognot 1L) && eq_big_int z w
 			      in
-			      if blkhght = 1L && not (bhdnew.prevblockhash = None && ctree_hashroot bhdnew.prevledger = !genesisledgerroot && eq_tinfo bhdnew.tinfo (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) && bhdnew.deltatime = 600l) then
+			      if blkhght = 1L && not (bhdnew.prevblockhash = None && ctree_hashroot bhdnew.prevledger = !genesisledgerroot && equ_tinfo bhdnew.tinfo (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) && bhdnew.deltatime = 600l) then
 				raise (Failure("Invalid Genesis Block Header"));
 			      if blkhght > 1L && not (blockheader_succ_a pbdeltm pbtmstamp (csm1,fsm1,tar1) bhnew) then
 				raise (Failure("Invalid Successor Block Header"));
