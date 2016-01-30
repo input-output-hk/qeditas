@@ -623,7 +623,7 @@ let seo_nehlist o hl c =
       let c = o 1 0 c in
       seo_hashval o h c
   | NehCons(a,hr) -> (* 1 0 *)
-      let c = o 2 2 c in
+      let c = o 2 1 c in
       let c = seo_asset o a c in
       seo_hlist o hr c
   | NehConsH(aid,hr) -> (* 1 1 *)
