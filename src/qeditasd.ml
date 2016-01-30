@@ -116,19 +116,17 @@ let start_staking () =
 	Commands.stakingassets := [];
 	if send_assets_to_staker tostkr (CHash(currledgerroot)) best then
 	  let (csm1,fsm1,tar1) = tinfo in
-	  let csm2 = stakemod_pushbit (stakemod_lastbit fsm1) csm1 in
-	  let tar2 = retarget tar1 deltm in
 	  begin
 	    output_byte tostkr 66; (*** send the staking process the block height, the target, the stake modifier and the next allowed timestamp ***)
 	    seocf (seo_int64 seoc blkhght (tostkr,None));
-	    seocf (seo_big_int_256 seoc tar2 (tostkr,None));
-	    seocf (seo_stakemod seoc csm2 (tostkr,None));
+	    seocf (seo_big_int_256 seoc tar1 (tostkr,None));
+	    seocf (seo_stakemod seoc csm1 (tostkr,None));
 	    output_byte tostkr 116;
 	    seocf (seo_int64 seoc (Int64.add 1L tmstamp) (tostkr,None));
 	    output_byte tostkr 83; (*** start staking ***)
 	    flush tostkr;
 	    Printf.printf "staking on top of current best block, height %Ld, hash %s\n" blkhght (match prevblkh with Some(bh) -> (hashval_hexstring bh) | None -> "(genesis)"); flush stdout;
-	    currstaking := Some(blkhght,prevcumulstk,currledgerroot,best,(csm2,fsm1,tar2))
+	    currstaking := Some(blkhght,prevcumulstk,currledgerroot,best,(csm1,fsm1,tar1))
 	  end
 	else
 	  begin
@@ -216,21 +214,18 @@ let main () =
 		      try
 			let (_,_,bday,obl,v) = List.find (fun (_,h,_,_,_) -> h = aid) !Commands.stakingassets in
 			match !currstaking with
-			| Some(blkh,cs,prevledgerroot,n,(csm,fsmprev,tar)) ->
+			| Some(blkh,cs,prevledgerroot,n,(csm1,fsm1,tar1)) ->
 Printf.printf "h1\n"; flush stdout;
 			    stop_staking();
 Printf.printf "h2\n"; flush stdout;
-			    if check_hit_b blkh bday obl v csm tar stktm aid alpha None then (*** confirm the staking process is correct ***)
+			    if check_hit_b blkh bday obl v csm1 tar1 stktm aid alpha None then (*** confirm the staking process is correct ***)
 			      let BlocktreeNode(_,_,pbhh,pbthyroot,pbsigroot,_,pbtinfo,pbdeltm,pbtmstamp,cs,blkhght,_,_,_) = n in
+			      let deltm = Int64.to_int32 (Int64.sub stktm pbtmstamp) in
 			      let newrandbit = rand_bit() in
 Printf.printf "h3\n"; flush stdout;
-			      let fsm = stakemod_pushbit newrandbit fsmprev in
-			      let (csm,fsm,tar) =
-				if blkh = 1L then
-				  (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
-				else
-				  (csm,fsm,tar)
-			      in
+			      let csm2 = stakemod_pushbit (stakemod_lastbit fsm1) csm1 in
+			      let fsm2 = stakemod_pushbit newrandbit fsm1 in
+			      let tar2 = retarget tar1 deltm in
 Printf.printf "h4\n"; flush stdout;
 			      let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))] in
 			      let coinstk : tx = ([(alpha2,aid)],stkoutl) in
@@ -285,8 +280,8 @@ Printf.printf "h5\n"; flush stdout;
 				      stakeassetid = aid;
 				      stored = None;
 				      timestamp = stktm;
-				      deltatime = Int64.to_int32 (Int64.sub stktm pbtmstamp);
-				      tinfo = (csm,fsm,tar);
+				      deltatime = deltm;
+				      tinfo = (csm2,fsm2,tar2);
 				      prevledger = prevcforheader
 				    }
 			      in
@@ -341,7 +336,7 @@ Printf.printf "h5\n"; flush stdout;
 			      in
 			      if not (valid_block (lookup_thytree pbthyroot) (lookup_sigtree pbsigroot) blkhght (bhnew,bdnew)) then
 				raise (Failure("Incorrect block from staking; bug; not publishing it"));
-			      let csnew = cumul_stake cs tar bhdnew.deltatime in
+			      let csnew = cumul_stake cs tar1 bhdnew.deltatime in
 			      waitingblock := Some(stktm,blkhght,bhdnewh,bhnew,bdnew,csnew,n);
 			| None -> (*** error, but ignore for now ***)
 			    Printf.printf "creating block error\n"; flush stdout;
