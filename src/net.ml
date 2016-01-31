@@ -20,11 +20,11 @@ let sigtree : (hashval,Mathdata.stree) Hashtbl.t = Hashtbl.create 1000;;
 type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * int32 * int64 * big_int * int64 * bool option ref * bool ref * (hashval * blocktree) list ref
 
 let genesistimestamp = 1452875010L;;
-let genesisblocktreenode = BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),600l,genesistimestamp,zero_big_int,1L,ref (Some(true)),ref false,ref []);;
+let genesisblocktreenode = ref (BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),600l,genesistimestamp,zero_big_int,1L,ref (Some(true)),ref false,ref []));;
 
-let lastcheckpointnode = ref genesisblocktreenode;;
+let lastcheckpointnode = ref !genesisblocktreenode;;
 
-let bestnode = ref genesisblocktreenode;;
+let bestnode = ref !genesisblocktreenode;;
 
 let eq_node n1 n2 =
   let BlocktreeNode(_,_,pbh1,_,_,_,_,_,_,_,_,_,_,_) = n1 in
@@ -32,10 +32,15 @@ let eq_node n1 n2 =
   pbh1 = pbh2
 
 let blkheadernode : (hashval option,blocktree) Hashtbl.t = Hashtbl.create 1000;;
-Hashtbl.add blkheadernode None genesisblocktreenode;;
 let orphanblkheaders : (hashval option,blockheader) Hashtbl.t = Hashtbl.create 1000;;
 let earlyblocktreenodes : (int64 * blocktree) list ref = ref [];;
 let tovalidatelist : (bool option ref * (unit -> unit)) list ref = ref [];;
+
+let initblocktree () =
+  genesisblocktreenode := BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),600l,genesistimestamp,zero_big_int,1L,ref (Some(true)),ref false,ref []);
+  lastcheckpointnode := !genesisblocktreenode;
+  bestnode := !genesisblocktreenode;
+  Hashtbl.add blkheadernode None !genesisblocktreenode
 
 let known_thytree_p thyroot =
   match thyroot with

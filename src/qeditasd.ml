@@ -191,6 +191,7 @@ let main () =
 	max_target := shift_left_big_int unit_big_int 255; (*** make the max_target much higher (so difficulty can be easier for testing) ***)
 	genesistarget := shift_left_big_int unit_big_int 248; (*** make the genesistarget much higher (so difficulty can be easier for testing) ***)
       end;
+    initblocktree();
     Printf.printf "Loading wallet\n"; flush stdout;
     Commands.load_wallet();
     let initfn () = () in

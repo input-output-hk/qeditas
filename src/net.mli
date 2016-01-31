@@ -15,9 +15,10 @@ val input_byte_nohang : in_channel -> float -> int option
 
 type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * int32 * int64 * big_int * int64 * bool option ref * bool ref * (hashval * blocktree) list ref
 
-val genesisblocktreenode : blocktree
+val genesisblocktreenode : blocktree ref
 val lastcheckpointnode : blocktree ref
 val bestnode : blocktree ref
+val initblocktree : unit -> unit
 val eq_node : blocktree -> blocktree -> bool
 val find_best_validated_block_from : blocktree -> big_int -> big_int
 val is_recent_staker : hashval -> blocktree -> int -> bool
