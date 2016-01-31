@@ -32,8 +32,13 @@ let rec factor_ctree_cgraft n inpl outpl full c =
   if n > 0 then
     begin
       if inpl = [] && outpl = [] && full = [] then
-	let ch = ctree_hashroot c in
-	(CHash(ch),[(ch,c)])
+	begin
+	  match c with
+	  | CHash(_) -> (c,[]) (*** leave this implicit ***)
+	  | _ ->
+	      let ch = ctree_hashroot c in
+	      (CHash(ch),[(ch,c)])
+	end
       else
 	begin
 	  match c with
