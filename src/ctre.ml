@@ -904,8 +904,8 @@ let rec save_ctree_elements_a tr i =
 	let rh = hashval_hexstring r in
 	(CLeft(trl2),r)
     | CRight(trr) ->
-	let (trr2,hl) = save_ctree_elements_a trr (i-1) in
-	let r = hashopair1 hl None in
+	let (trr2,hr) = save_ctree_elements_a trr (i-1) in
+	let r = hashopair2 None hr in
 	let rh = hashval_hexstring r in
 	(CRight(trr2),r)
     | CBin(trl,trr) ->
