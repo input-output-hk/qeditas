@@ -581,6 +581,11 @@ let rec remove_assets_hlist hl spent =
 	remove_assets_hlist hr spent
       else
 	HCons(a,remove_assets_hlist hr spent)
+  | HConsH(h,hr) ->
+      if List.mem h spent then
+	remove_assets_hlist hr spent
+      else
+	HConsH(h,remove_assets_hlist hr spent)
   | _ -> hl
 
 (** * serialization **)
