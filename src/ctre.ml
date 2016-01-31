@@ -864,80 +864,56 @@ let save_nehlist_elements hl =
 	r
   | NehHash(r) -> r
 
-let rec save_ctree_elements tr =
-  match tr with
-  | CLeaf(bl,hl) -> (* 00 *)
-      let h = save_nehlist_elements hl in
-      let r = List.fold_right
-	  (fun b h ->
-	    if b then
-	      hashopair2 None h
-	    else
-	      hashopair1 h None
-	  )
-	  bl h
-      in
-      let rh = hashval_hexstring r in
-      if exists_data_db "qctree" rh then
-	r
-      else
-	let strb = Buffer.create 100 in
-	let c = seosb 2 0 (strb,None) in
-	let c = seo_list seo_bool seosb bl c in
-	let c = seo_hashval seosb h c in
-	seosbf c;
-	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qctree " ^ rh ^ " " ^ sh) in
-	ignore (Unix.close_process_in qednetch);
-	r
-  | CLeft(trl) -> (* 01 *)
-      let hl = save_ctree_elements trl in
-      let r = hashopair1 hl None in
-      let rh = hashval_hexstring r in
-      if exists_data_db "qctree" rh then
-	r
-      else
-	let strb = Buffer.create 100 in
-	let c = seosb 2 1 (strb,None) in
-	let c = seo_hashval seosb hl c in
-	seosbf c;
-	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qctree " ^ rh ^ " " ^ sh) in
-	ignore (Unix.close_process_in qednetch);
-	r
-  | CRight(trr) -> (* 10 *)
-      let hr = save_ctree_elements trr in
-      let r = hashopair2 None hr in
-      let rh = hashval_hexstring r in
-      if exists_data_db "qctree" rh then
-	r
-      else
-	let strb = Buffer.create 100 in
-	let c = seosb 2 2 (strb,None) in
-	let c = seo_hashval seosb hr c in
-	seosbf c;
-	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qctree " ^ rh ^ " " ^ sh) in
-	ignore (Unix.close_process_in qednetch);
-	r
-  | CBin(trl,trr) -> (* 11 *)
-      let hl = save_ctree_elements trl in
-      let hr = save_ctree_elements trr in
-      let r = hashopair1 hl (Some(hr)) in
-      let rh = hashval_hexstring r in
-      if exists_data_db "qctree" rh then
-	r
-      else
-	let strb = Buffer.create 100 in
-	let c = seosb 2 3 (strb,None) in
-	let c = seo_hashval seosb hl c in
-	let c = seo_hashval seosb hr c in
-	seosbf c;
-	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qctree " ^ rh ^ " " ^ sh) in
-	ignore (Unix.close_process_in qednetch);
-	r
-  | CHash(r) -> r
+let rec save_ctree_elements_a tr i =
+  if i > 0 then
+    match tr with
+    | CLeaf(bl,hl) ->
+	let h = save_nehlist_elements hl in
+	let r = List.fold_right
+	    (fun b h ->
+	      if b then
+		hashopair2 None h
+	      else
+		hashopair1 h None
+	    )
+	    bl h
+	in
+	let tr2 = CLeaf(bl,NehHash(h)) in
+	(tr2,r)
+    | CLeft(trl) ->
+	let (trl2,hl) = save_ctree_elements_a trl (i-1) in
+	let r = hashopair1 hl None in
+	let rh = hashval_hexstring r in
+	(CLeft(trl2),r)
+    | CRight(trr) ->
+	let (trr2,hl) = save_ctree_elements_a trr (i-1) in
+	let r = hashopair1 hl None in
+	let rh = hashval_hexstring r in
+	(CRight(trr2),r)
+    | CBin(trl,trr) ->
+	let (trl2,hl) = save_ctree_elements_a trl (i-1) in
+	let (trr2,hr) = save_ctree_elements_a trr (i-1) in
+	let r = hashopair1 hl (Some(hr)) in
+	let rh = hashval_hexstring r in
+	(CBin(trl2,trr2),r)
+    | CHash(r) -> (tr,r)
+  else
+    let (tre,r) = save_ctree_elements_a tr 9 in
+    let rh = hashval_hexstring r in
+    if exists_data_db "qctree" rh then
+      (CHash(r),r)
+    else
+      let strb = Buffer.create 100 in
+      let c = seo_ctree seosb tre (strb,None) in
+      seosbf c;
+      let sh = string_hexstring (Buffer.contents strb) in
+      let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qctree " ^ rh ^ " " ^ sh) in
+      ignore (Unix.close_process_in qednetch);
+      (CHash(r),r)
+    
+let save_ctree_elements tr =
+  let (tre,r) = save_ctree_elements_a tr 9 in
+  r
 
 let get_asset h =
   let hh = hashval_hexstring h in
