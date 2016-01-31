@@ -864,6 +864,24 @@ let save_nehlist_elements hl =
 	r
   | NehHash(r) -> r
 
+let rec ctree_element_a tr i =
+  if i > 0 then
+    begin
+      match tr with
+      | CLeaf(_,NehHash(_)) -> true
+      | CLeft(tr0) -> ctree_element_a tr0 (i-1)
+      | CRight(tr1) -> ctree_element_a tr1 (i-1)
+      | CBin(tr0,tr1) -> ctree_element_a tr0 (i-1) && ctree_element_a tr1 (i-1)
+      | _ -> false
+    end
+  else
+    match tr with
+    | CHash(_) -> true
+    | _ -> false
+
+let ctree_element_p tr =
+  ctree_element_a tr 9
+
 let rec save_ctree_elements_a tr i =
   if i > 0 then
     match tr with
@@ -1011,24 +1029,6 @@ let load_nehlist_element h =
   match load_hcons_element h with
   | (aid,Some(k)) -> NehConsH(aid,HHash(k))
   | (aid,None) -> NehConsH(aid,HNil)
-
-let rec ctree_element_a tr i =
-  if i > 0 then
-    begin
-      match tr with
-      | CLeaf(_,NehHash(_)) -> true
-      | CLeft(tr0) -> ctree_element_a tr0 (i-1)
-      | CRight(tr1) -> ctree_element_a tr1 (i-1)
-      | CBin(tr0,tr1) -> ctree_element_a tr0 (i-1) && ctree_element_a tr1 (i-1)
-      | _ -> false
-    end
-  else
-    match tr with
-    | CHash(_) -> true
-    | _ -> false
-
-let ctree_element_p tr =
-  ctree_element_a tr 9
 
 let rec ctree_super_element_a tr i =
   if i > 0 then
