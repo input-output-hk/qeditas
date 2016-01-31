@@ -959,6 +959,22 @@ let get_asset h =
 (*    raise (Failure ("could not resolve a needed asset " ^ hh ^ "; requesting from peers")) *)
     raise GettingRemoteData
 
+let load_asset h =
+  let hh = hashval_hexstring h in
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qasset " ^ hh) in
+  try
+    let cd = input_line qednetch in
+    ignore (Unix.close_process_in qednetch);
+    begin
+      try
+	let ch = hexstring_string cd in
+	let (a,c) = sei_asset seis (ch,String.length ch,None,0,0) in
+	a
+      with _ ->
+	raise (Failure ("could not understand asset " ^ hh))
+    end
+  with _ -> raise Not_found
+
 let get_hcons_element h =
   let hh = hashval_hexstring h in
   let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qhcons " ^ hh) in
@@ -990,6 +1006,33 @@ let get_nehlist_element h =
   | (aid,Some(k)) -> NehConsH(aid,HHash(k))
   | (aid,None) -> NehConsH(aid,HNil)
 
+let load_hcons_element h =
+  let hh = hashval_hexstring h in
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qhcons " ^ hh) in
+  try
+    let cd = input_line qednetch in
+    ignore (Unix.close_process_in qednetch);
+    begin
+      try
+	let ch = hexstring_string cd in
+	let (aid,c) = sei_hashval seis (ch,String.length ch,None,0,0) in
+	let (k,c) = sei_option sei_hashval seis c in
+	(aid,k)
+      with _ ->
+	raise (Failure ("could not understand hcons " ^ hh))
+    end
+  with _ -> raise Not_found
+
+let load_hlist_element h =
+  match load_hcons_element h with
+  | (aid,Some(k)) -> HConsH(aid,HHash(k))
+  | (aid,None) -> HConsH(aid,HNil)
+
+let load_nehlist_element h =
+  match load_hcons_element h with
+  | (aid,Some(k)) -> NehConsH(aid,HHash(k))
+  | (aid,None) -> NehConsH(aid,HNil)
+
 let rec ctree_element_a tr i =
   if i > 0 then
     begin
@@ -1007,6 +1050,39 @@ let rec ctree_element_a tr i =
 
 let ctree_element_p tr =
   ctree_element_a tr 9
+
+let rec ctree_super_element_a tr i =
+  if i > 0 then
+    begin
+      match tr with
+      | CLeaf(_,_) -> true
+      | CLeft(tr0) -> ctree_super_element_a tr0 (i-1)
+      | CRight(tr1) -> ctree_super_element_a tr1 (i-1)
+      | CBin(tr0,tr1) -> ctree_super_element_a tr0 (i-1) && ctree_super_element_a tr1 (i-1)
+      | _ -> false
+    end
+  else
+    true
+
+(*** A 'superelement' is a ctree with enough information to reduce to an element. ***)
+let ctree_super_element_p tr =
+  ctree_super_element_a tr 9
+
+let rec super_element_to_element_a tr i =
+  if i > 0 then
+    begin
+      match tr with
+      | CLeaf(bl,hl) -> CLeaf(bl,NehHash(nehlist_hashroot hl))
+      | CLeft(tr0) -> CLeft(super_element_to_element_a tr0 (i-1))
+      | CRight(tr1) -> CRight(super_element_to_element_a tr1 (i-1))
+      | CBin(tr0,tr1) -> CBin(super_element_to_element_a tr0 (i-1),super_element_to_element_a tr1 (i-1))
+      | _ -> raise (Failure("not a super-element"))
+    end
+  else
+    CHash(ctree_hashroot tr)
+
+let super_element_to_element tr =
+  super_element_to_element_a tr 9
 
 let get_ctree_element h =
   let hh = hashval_hexstring h in
@@ -1035,6 +1111,30 @@ let get_ctree_element h =
     ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
 (*    raise (Failure ("could not resolve a needed ctree " ^ hh ^ "; requesting from peers")) *)
     raise GettingRemoteData
+
+let load_ctree_element h =
+  let hh = hashval_hexstring h in
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qctree " ^ hh) in
+  try
+    let cd = input_line qednetch in
+    ignore (Unix.close_process_in qednetch);
+    begin
+      try
+	let ch = hexstring_string cd in
+	let (tr,c) = sei_ctree seis (ch,String.length ch,None,0,0) in
+	if ctree_element_p tr then
+	  tr
+	else
+	  begin
+	    Printf.printf "ctree saved with this root is not an element, removing it.\n";
+	    let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qctree " ^ hh) in
+	    ignore (Unix.close_process_in qednetch);
+	    raise (Failure("ctree saved with this root is not an element"))
+	  end
+      with _ ->
+	raise (Failure ("could not understand ctree " ^ hh))
+    end
+  with _ -> raise Not_found
 
 let rec octree_S_inv c =
   match c with
@@ -1941,6 +2041,30 @@ let octree_lub oc1 oc2 =
       Some(ctree_lub c1 c2)
   | (None,None) -> None
   | _ -> raise (Failure "no lub for incompatible octrees")
+
+let rec load_expanded_ctree_a c i =
+  if i > 0 then
+    begin
+      match c with
+      | CLeft(tr0) -> CLeft(load_expanded_ctree_a tr0 (i-1))
+      | CRight(tr1) -> CRight(load_expanded_ctree_a tr1 (i-1))
+      | CBin(tr0,tr1) -> CBin(load_expanded_ctree_a tr0 (i-1),load_expanded_ctree_a tr1 (i-1))
+      | _ -> c
+    end
+  else
+    load_expanded_ctree c
+and load_expanded_ctree c =
+  try
+    let c2 = load_expanded_ctree_a c 9 in
+    let r = ctree_hashroot c2 in
+    let ce = load_ctree_element r in
+    ctree_lub c2 ce
+  with Not_found -> c
+
+let load_expanded_octree c =
+  match c with
+  | Some(c) -> Some(load_expanded_ctree c)
+  | None -> None
 
 let rec hlist_reduce_to_min_support aidl hl =
   match aidl with

@@ -67,6 +67,9 @@ val txl_octree_trans : int64 -> tx list -> ctree option -> ctree option
 
 val octree_lub : ctree option -> ctree option -> ctree option
 
+val load_expanded_ctree : ctree -> ctree
+val load_expanded_octree : ctree option -> ctree option
+
 val full_needed : addr_preasset list -> bool list list
 val get_tx_supporting_octree : tx -> ctree option -> ctree option
 val get_txl_supporting_octree : tx list -> ctree option -> ctree option

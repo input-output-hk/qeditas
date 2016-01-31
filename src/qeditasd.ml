@@ -226,7 +226,7 @@ Printf.printf "h2\n"; flush stdout;
 Printf.printf "h3\n"; flush stdout;
 			      let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))] in
 			      let coinstk : tx = ([(alpha2,aid)],stkoutl) in
-			      let prevc = Some(CHash(prevledgerroot)) in
+			      let prevc = load_expanded_octree (get_tx_supporting_octree coinstk (Some(CHash(prevledgerroot)))) in
 			      let octree_ctree c =
 				match c with
 				| Some(c) -> c
