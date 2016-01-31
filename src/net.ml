@@ -83,6 +83,9 @@ exception Hung
 let sethungsignalhandler () =
   Sys.set_signal Sys.sigalrm (Sys.Signal_handle (fun _ -> raise Hung));;
 
+let setsigpipeignore () =
+  Sys.set_signal Sys.sigpipe Sys.Signal_ignore;;
+
 let input_byte_nohang c tm =
   try
     ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = tm });
@@ -391,6 +394,7 @@ let publish_block bhh (bh,bd) =
 
 let qednetmain initfn preloopfn =
   sethungsignalhandler();
+  setsigpipeignore();
   Printf.printf "Starting qednetd\n"; flush stdout;
   let (qednetch1,qednetch2,qednetch3) = Unix.open_process_full (qednetd()) (Unix.environment()) in
   Printf.printf "Init headers\n"; flush stdout;
