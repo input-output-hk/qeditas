@@ -899,16 +899,19 @@ let rec save_ctree_elements_a tr i =
     | CHash(r) -> (tr,r)
   else
     let (tre,r) = save_ctree_elements_a tr 9 in
-    let rh = hashval_hexstring r in
-    if exists_data_db "qctree" rh then
-      (CHash(r),r)
+    if ctree_element_p tre then (*** make sure it's an element before saving it ***)
+      let rh = hashval_hexstring r in
+      if exists_data_db "qctree" rh then
+	(CHash(r),r)
+      else
+	let strb = Buffer.create 100 in
+	let c = seo_ctree seosb tre (strb,None) in
+	seosbf c;
+	let sh = string_hexstring (Buffer.contents strb) in
+	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qctree " ^ rh ^ " " ^ sh) in
+	ignore (Unix.close_process_in qednetch);
+	(CHash(r),r)
     else
-      let strb = Buffer.create 100 in
-      let c = seo_ctree seosb tre (strb,None) in
-      seosbf c;
-      let sh = string_hexstring (Buffer.contents strb) in
-      let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qctree " ^ rh ^ " " ^ sh) in
-      ignore (Unix.close_process_in qednetch);
       (CHash(r),r)
     
 let save_ctree_elements tr =
