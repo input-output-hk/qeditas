@@ -1,4 +1,4 @@
-(* Copyright (c) 2015 The Qeditas developers *)
+(* Copyright (c) 2015-2016 The Qeditas developers *)
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
@@ -678,7 +678,7 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
      | _ -> (*** stake has the default obligation ***)
 	 begin (*** the first output is optionally the stake with the default obligation (not a reward, immediately spendable) with all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for at least reward_locktime many blocks ***)
 	   match bd.stakeoutput with
-	   | (alpha2,(None,Currency(v2)))::remouts ->
+	   | (alpha2,(_,Currency(v2)))::remouts -> (*** allow the staker to choose the new obligation for the staked asset [Feb 2016] ***)
 	       begin
 		 alpha2 = stkaddr
 		   &&
