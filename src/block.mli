@@ -1,4 +1,4 @@
-(* Copyright (c) 2015 The Qeditas developers *)
+(* Copyright (c) 2015-2016 The Qeditas developers *)
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
@@ -28,6 +28,9 @@ val stakemod_lastbit : stakemod -> bool
 val stakemod_firstbit : stakemod -> bool
 
 type targetinfo = stakemod * stakemod * big_int
+
+val seo_targetinfo : (int -> int -> 'a -> 'a) -> targetinfo -> 'a -> 'a
+val sei_targetinfo : (int -> 'a -> int * 'a) -> 'a -> targetinfo * 'a
 
 val rewfn : int64 -> int64
 val hitval : int64 -> hashval -> stakemod -> big_int
