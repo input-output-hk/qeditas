@@ -1,4 +1,4 @@
-(* Copyright (c) 2015 The Qeditas developers *)
+(* Copyright (c) 2015-2016 The Qeditas developers *)
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
@@ -929,11 +929,11 @@ let rec save_ctree_elements_a tr i =
 	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qctree " ^ rh ^ " " ^ sh) in
 	ignore (Unix.close_process_in qednetch);
 	(CHash(r),r)
-    else
+    else (*** if it isn't an element (presumably because it's only approximating an element) then return the hash root only ***)
       (CHash(r),r)
     
 let save_ctree_elements tr =
-  let (tre,r) = save_ctree_elements_a tr 9 in
+  let (tre,r) = save_ctree_elements_a tr 0 in
   r
 
 let get_asset h =
@@ -1077,7 +1077,7 @@ let get_ctree_element h =
 	  tr
 	else
 	  begin
-	    Printf.printf "ctree saved with this root is not an element, removing it.\n";
+	    Printf.printf "ctree saved with root %s is not an element, removing it.\n" hh;
 	    let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qctree " ^ hh) in
 	    ignore (Unix.close_process_in qednetch);
 	    raise (Failure("ctree saved with this root is not an element"))
