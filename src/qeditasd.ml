@@ -17,6 +17,7 @@ open Setconfig;;
 
 let currstaking : (int64 * big_int * hashval * blocktree * (stakemod * stakemod * big_int)) option ref = ref None;;
 let waitingblock : (int64 * int64 * hashval * blockheader * blockdelta * big_int * blocktree) option ref = ref None;;
+let alreadystakedon : (hashval option,unit) Hashtbl.t = Hashtbl.create 1000;;
 
 let compute_recid (r,s) k =
   match smulp k _g with
@@ -86,55 +87,59 @@ let stop_staking () =
       currstaking := None
   | None -> ();;
 
-let waitingonvalidationsince = ref None;;
-
 let start_staking () =
   stop_staking(); (*** stop staking first, if necessary ***)
   let stkexec = Filename.concat (Filename.dirname (Sys.argv.(0))) "qeditasstk" in
   let stkexec = if !Config.testnet then (stkexec ^ " -testnet=1") else stkexec in
   try
     let best = !bestnode in
-    let BlocktreeNode(_,_,prevblkh,thyroot,sigroot,currledgerroot,tinfo,deltm,tmstamp,prevcumulstk,blkhght,validated,blacklisted,succl) = best in
-    if !blacklisted || !validated = Some(false) then
-      ignore (find_best_validated_block_from !lastcheckpointnode zero_big_int)
-    else if !validated = None then
+    if Hashtbl.mem alreadystakedon (node_prevblockhash best) then
       begin
-	match !waitingonvalidationsince with
-	| None -> waitingonvalidationsince := Some(Unix.time())
-	| Some(tm) ->
+        Printf.printf "Already staked on current best node; not restarting staking\n"; flush stdout;
+        raise Not_found
+      end;
+    let BlocktreeNode(_,_,prevblkh,thyroot,sigroot,currledgerroot,prevtinfo,currtinfo,deltm,tmstamp,prevcumulstk,blkhght,validated,blacklisted,succl) = best in
+    if !blacklisted then
+      ignore (find_best_validated_block_from !lastcheckpointnode zero_big_int)
+    else
+      match !validated with
+      | Waiting(tm) ->
+        begin
 	    if Unix.time() > tm +. 60.0 then
 	      begin (*** give up and switch to staking on best validated node ***)
-		waitingonvalidationsince := None;
+                Printf.printf "Current best header was not validated after 60 seconds, so finding best previous block to stake on.\n"; flush stdout;
 		ignore (find_best_validated_block_from !lastcheckpointnode zero_big_int)
 	      end
-      end
-    else
-      begin
-	Printf.printf "should stake on top of current best block, height %Ld, hash %s\n" blkhght (match prevblkh with Some(bh) -> (hashval_hexstring bh) | None -> "(genesis)"); flush stdout;
-	let (fromstkr,tostkr,stkerr) = Unix.open_process_full stkexec [||] in
-	stakingproccomm := Some(fromstkr,tostkr,stkerr);
-	Commands.stakingassets := [];
-	if send_assets_to_staker tostkr (CHash(currledgerroot)) best then
-	  let (csm1,fsm1,tar1) = tinfo in
-	  begin
-	    output_byte tostkr 66; (*** send the staking process the block height, the target, the stake modifier and the next allowed timestamp ***)
-	    seocf (seo_int64 seoc blkhght (tostkr,None));
-	    seocf (seo_big_int_256 seoc tar1 (tostkr,None));
-	    seocf (seo_stakemod seoc csm1 (tostkr,None));
-	    output_byte tostkr 116;
-	    seocf (seo_int64 seoc (Int64.add 1L tmstamp) (tostkr,None));
-	    output_byte tostkr 83; (*** start staking ***)
-	    flush tostkr;
-	    Printf.printf "staking on top of current best block, height %Ld, hash %s\n" blkhght (match prevblkh with Some(bh) -> (hashval_hexstring bh) | None -> "(genesis)"); flush stdout;
-	    currstaking := Some(blkhght,prevcumulstk,currledgerroot,best,(csm1,fsm1,tar1))
-	  end
-	else
-	  begin
-	    Printf.printf "No wallet assets to stake in the current ctree. Not staking at the moment.\n";
-	    flush stdout;
-	    stop_staking()
-	  end
-      end
+        end
+      | Invalid -> (*** switch to staking on best validated node ***)
+        ignore (find_best_validated_block_from !lastcheckpointnode zero_big_int)
+      | Valid ->
+        begin
+    	  Printf.printf "should stake on top of current best block, height %Ld, hash %s\n" blkhght (match prevblkh with Some(bh) -> (hashval_hexstring bh) | None -> "(genesis)"); flush stdout;
+          let (fromstkr,tostkr,stkerr) = Unix.open_process_full stkexec [||] in
+	  stakingproccomm := Some(fromstkr,tostkr,stkerr);
+	  Commands.stakingassets := [];
+	  if send_assets_to_staker tostkr (CHash(currledgerroot)) best then
+	    let (csm1,fsm1,tar1) = currtinfo in
+	    begin
+	      output_byte tostkr 66; (*** send the staking process the block height, the target, the stake modifier and the next allowed timestamp ***)
+	      seocf (seo_int64 seoc blkhght (tostkr,None));
+	      seocf (seo_big_int_256 seoc tar1 (tostkr,None));
+	      seocf (seo_stakemod seoc csm1 (tostkr,None));
+	      output_byte tostkr 116;
+	      seocf (seo_int64 seoc (Int64.add 1L tmstamp) (tostkr,None));
+	      output_byte tostkr 83; (*** start staking ***)
+	      flush tostkr;
+	      Printf.printf "staking on top of current best block, height %Ld, hash %s\n" blkhght (match prevblkh with Some(bh) -> (hashval_hexstring bh) | None -> "(genesis)"); flush stdout;
+	      currstaking := Some(blkhght,prevcumulstk,currledgerroot,best,(csm1,fsm1,tar1))
+	    end
+	  else
+	    begin
+	      Printf.printf "No wallet assets to stake in the current ctree. Not staking at the moment.\n";
+	      flush stdout;
+	      stop_staking()
+	    end
+        end
   with
   | GettingRemoteData ->
       Printf.printf "Before staking, requesting required info from peers\n"; flush stdout;
@@ -188,8 +193,8 @@ let main () =
       end;
     if !Config.testnet then
       begin
-	max_target := shift_left_big_int unit_big_int 255; (*** make the max_target much higher (so difficulty can be easier for testing) ***)
-	genesistarget := shift_left_big_int unit_big_int 248; (*** make the genesistarget much higher (so difficulty can be easier for testing) ***)
+	max_target := shift_left_big_int unit_big_int 230; (*** make the max_target higher (so difficulty can be easier for testing) ***)
+	genesistarget := shift_left_big_int unit_big_int 200; (*** make the genesistarget higher (so difficulty can be easier for testing) ***)
       end;
     initblocktree();
     Printf.printf "Loading wallet\n"; flush stdout;
@@ -216,15 +221,12 @@ let main () =
 			let (_,_,bday,obl,v) = List.find (fun (_,h,_,_,_) -> h = aid) !Commands.stakingassets in
 			match !currstaking with
 			| Some(blkh,cs,prevledgerroot,n,(csm1,fsm1,tar1)) ->
-Printf.printf "h1\n"; flush stdout;
 			    stop_staking();
-Printf.printf "h2\n"; flush stdout;
 			    if check_hit_b blkh bday obl v csm1 tar1 stktm aid alpha None then (*** confirm the staking process is correct ***)
-			      let BlocktreeNode(_,_,pbhh,pbthyroot,pbsigroot,_,pbtinfo,pbdeltm,pbtmstamp,cs,blkhght,_,_,_) = n in
+			      let BlocktreeNode(_,_,pbhh,pbthyroot,pbsigroot,_,pbprevtinfo,pbcurrtinfo,pbdeltm,pbtmstamp,cs,blkhght,_,_,_) = n in
 			      let deltm = if blkh = 1L then 600l else Int64.to_int32 (Int64.sub stktm pbtmstamp) in
 			      let newrandbit = rand_bit() in
-Printf.printf "h3\n"; flush stdout;
-			      let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))] in
+			      let stkoutl = [(alpha2,(Some(p2pkhaddr_payaddr alpha,4096L,false),Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))] in
 			      let coinstk : tx = ([(alpha2,aid)],stkoutl) in
 			      let prevc = load_expanded_octree (get_tx_supporting_octree coinstk (Some(CHash(prevledgerroot)))) in
 			      let octree_ctree c =
@@ -232,7 +234,6 @@ Printf.printf "h3\n"; flush stdout;
 				| Some(c) -> c
 				| None -> raise (Failure "tree should not be empty")
 			      in
-Printf.printf "h5\n"; flush stdout;
 			      let dync = ref (octree_ctree (tx_octree_trans blkh coinstk prevc)) in
 			      let otherstxs = ref [] in
 			      Hashtbl.iter
@@ -240,17 +241,12 @@ Printf.printf "h5\n"; flush stdout;
 				  Printf.printf "Trying to include tx %s\n" (hashval_hexstring h); flush stdout;
 				  if tx_valid (tauin,tauout) then
 				    try
-				      Printf.printf "tx valid\n"; flush stdout;
 				      let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets tauin !dync) in
-				      Printf.printf "found input assets\n"; flush stdout;
 				      if tx_signatures_valid blkh al ((tauin,tauout),sg) then
 					begin
-					  Printf.printf "signatures valid\n"; flush stdout;
 					  if ctree_supports_tx None None blkh (tauin,tauout) !dync >= 0L then
 					    begin
-					      Printf.printf "ctree supports tx\n"; flush stdout;
 					      let c = octree_ctree (tx_octree_trans blkh (tauin,tauout) (Some(!dync))) in
-					      Printf.printf "transformed ctree\n"; flush stdout;
 					      otherstxs := ((tauin,tauout),sg)::!otherstxs;
 					      dync := c
 					    end
@@ -327,7 +323,7 @@ Printf.printf "h5\n"; flush stdout;
 			      in
 			      if blkhght = 1L && not (bhdnew.prevblockhash = None && ctree_hashroot bhdnew.prevledger = !genesisledgerroot && equ_tinfo bhdnew.tinfo (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) && bhdnew.deltatime = 600l) then
 				raise (Failure("Invalid Genesis Block Header"));
-			      if blkhght > 1L && not (blockheader_succ_a pbdeltm pbtmstamp (csm1,fsm1,tar1) bhnew) then
+			      if blkhght > 1L && not (blockheader_succ_a pbdeltm pbtmstamp pbprevtinfo bhnew) then
 				raise (Failure("Invalid Successor Block Header"));
 			      Printf.printf "Including %d txs in block\n" (List.length !otherstxs);
 			      let forf = None in (*** leave this as None for now; should check for double signing ***)
@@ -377,8 +373,9 @@ Printf.printf "h5\n"; flush stdout;
 	  | Some(_,_,_,_,_,_,n) when not (eq_node n !bestnode) -> (*** if there's now a better block to stake on than the one the waiting block was staked on, forget it and restart staking ***)
 	      waitingblock := None;
 	      start_staking();
-	  | Some(stktm,blkh,bhh,bh,bd,cs,_) when Int64.of_float (Unix.time()) >= stktm ->
+	  | Some(stktm,blkh,bhh,bh,bd,cs,n) when Int64.of_float (Unix.time()) >= stktm ->
 	      publish_block bhh (bh,bd); (*** broadcast the block header, the block deltah and all txs; integrate into the tree ***)
+              Hashtbl.add alreadystakedon (node_prevblockhash n) ();
 	      waitingblock := None;
 	      start_staking(); (*** start staking again ***)
 	  | None -> (*** if there is no waiting block and we aren't staking, then restart staking ***)
@@ -387,7 +384,6 @@ Printf.printf "h5\n"; flush stdout;
 		| None ->
 		    start_staking()
 		| Some(_,_,_,n,_) -> (*** if we are staking, make sure it's still on top of the best block ***)
-Printf.printf "g1\n"; flush stdout;
 		    if not (eq_node n !bestnode) then
 		      start_staking()
 	      end

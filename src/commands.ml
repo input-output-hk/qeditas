@@ -1,4 +1,4 @@
-(* Copyright (c) 2015 The Qeditas developers *)
+(* Copyright (c) 2015-2016 The Qeditas developers *)
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
@@ -416,7 +416,7 @@ let rec printassets_a ctr =
     printassets_a ctr
   
 let printassets () =
-  let BlocktreeNode(_,_,_,_,_,ledgerroot,_,_,_,_,_,_,_,_) = !bestnode in
+  let BlocktreeNode(_,_,_,_,_,ledgerroot,_,_,_,_,_,_,_,_,_) = !bestnode in
   Printf.printf "cr %s\n" (hashval_hexstring ledgerroot); flush stdout;
   let ctr = Ctre.CHash(ledgerroot) in
   printassets_a ctr
