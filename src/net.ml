@@ -227,17 +227,19 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
              && ((blkhght = 1L && blkhd1.prevblockhash = None && ctree_hashroot blkhd1.prevledger = !genesisledgerroot && blkhd1.deltatime = 600l)
 		 || (blkhght > 1L && blockheader_succ_a deltm tmstamp prevtinfo blkh1))
       then
-        let bhh = hash_blockheaderdata blkhd1 in
-        Hashtbl.add blkheaders bhh ();
-        let (csm1,fsm1,tar1) = blkhd1.tinfo in
-	let csm2 = stakemod_pushbit (stakemod_lastbit fsm1) csm1 in
-	let fsm2 = stakemod_pushbit false fsm1 in (** the new bit doesn't matter here **)
-	let tar2 = retarget tar1 blkhd1.deltatime in
-        let newcumulstake = cumul_stake prevcumulstk tar1 blkhd1.deltatime in
-	let validated = ref (if knownvalid then Valid else Waiting(Unix.time())) in
-        let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],Some(bhh),blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,(csm1,fsm1,tar1),(csm2,fsm2,tar2),blkhd1.deltatime,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
-        begin (*** add it as a leaf, indicate that we want the block delta to validate it, and check if it's the best ***)
-	  Hashtbl.add blkheadernode (Some(bhh)) newnode;
+	begin
+          Hashtbl.add blkheaders hh ();
+	  let qednetch = Unix.open_process_in ((qednetd()) ^ " relaydata qblockheader " ^ h) in
+	  ignore (Unix.close_process_in qednetch);
+          let (csm1,fsm1,tar1) = blkhd1.tinfo in
+	  let csm2 = stakemod_pushbit (stakemod_lastbit fsm1) csm1 in
+	  let fsm2 = stakemod_pushbit false fsm1 in (** the new bit doesn't matter here **)
+	  let tar2 = retarget tar1 blkhd1.deltatime in
+          let newcumulstake = cumul_stake prevcumulstk tar1 blkhd1.deltatime in
+	  let validated = ref (if knownvalid then Valid else Waiting(Unix.time())) in
+          let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],Some(hh),blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,(csm1,fsm1,tar1),(csm2,fsm2,tar2),blkhd1.deltatime,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
+	  (*** add it as a leaf, indicate that we want the block delta to validate it, and check if it's the best ***)
+	  Hashtbl.add blkheadernode (Some(hh)) newnode;
           succl := (hh,newnode)::!succl;
 	  record_recent_staker blkhd1.stakeaddr prevnode 6;
 	  let validatefn () =
@@ -275,6 +277,8 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 		      if gt_big_int newcumulstake bestcumulstk then bestnode := newnode;
 		      add_thytree blkhd1.newtheoryroot !latesttht;
 		      add_sigtree blkhd1.newsignaroot !latestsigt;
+		      let qednetch = Unix.open_process_in ((qednetd()) ^ " relaydata qblockdeltah " ^ h) in
+		      ignore (Unix.close_process_in qednetch);
 		      (*** construct a transformed tree consisting of elements ***)
 		      let prevc = load_expanded_ctree (ctree_of_block blk) in
 		      match txl_octree_trans blkhght (txl_of_block blk) (Some(prevc)) with
@@ -428,6 +432,8 @@ let publish_block bhh (bh,bd) =
   let qednetch = Unix.open_process_in ((qednetd()) ^ " adddatafromfile qblockheader " ^ bhhh ^ " " ^ fn) in
   ignore (Unix.close_process_in qednetch);
   Sys.remove fn;
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " relaydata qblockheader " ^ bhhh) in
+  ignore (Unix.close_process_in qednetch);
   let stxhl =
     List.map
       (fun (tx1,txsg1) ->
@@ -444,7 +450,9 @@ let publish_block bhh (bh,bd) =
   close_out ch;
   let qednetch = Unix.open_process_in ((qednetd()) ^ " adddatafromfile qblockdeltah " ^ bhhh ^ " " ^ fn) in
   ignore (Unix.close_process_in qednetch);
-  Sys.remove fn
+  Sys.remove fn;
+  let qednetch = Unix.open_process_in ((qednetd()) ^ " relaydata qblockdeltah " ^ bhhh) in
+  ignore (Unix.close_process_in qednetch)
 
 let qednetmain initfn preloopfn =
   sethungsignalhandler();
