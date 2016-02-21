@@ -1,4 +1,4 @@
-(* Copyright (c) 2015 The Qeditas developers *)
+(* Copyright (c) 2015-2016 The Qeditas developers *)
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
@@ -48,6 +48,7 @@ val remove_unused_ctrees : ctree -> ctree -> unit
 val save_hlist_elements : hlist -> hashval option
 val save_nehlist_elements : nehlist -> hashval
 val save_ctree_elements : ctree -> hashval
+val save_ctree : string -> ctree -> unit
 val get_hlist_element : hashval -> hlist
 val get_nehlist_element : hashval -> nehlist
 val get_ctree_element : hashval -> ctree
