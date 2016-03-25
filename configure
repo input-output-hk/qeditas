@@ -47,6 +47,7 @@ echo let currledgerroot = ref \"a47da9044687cc40e368fbd60f404ad5b4ddd4cf\" >> sr
 echo let qednetdexec = ref \"$HOME/qednet/src/qednetd\" >> src/config.ml
 echo let ctreedatadir = ref \"/tmp/deprecated\" >> src/config.ml
 echo let chaindatadir = ref \"/tmp/deprecated\" >> src/config.ml
+echo let prompt = ref \"\> \" >> src/config.ml
 if [ $BYTECODE ]; then
     if [ $INSTALLDIR ]; then
 	echo "bytecode cannot be installed"
