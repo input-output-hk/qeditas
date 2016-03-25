@@ -226,7 +226,16 @@ let main () =
 			      let BlocktreeNode(_,_,pbhh,pbthyroot,pbsigroot,_,pbprevtinfo,pbcurrtinfo,pbdeltm,pbtmstamp,cs,blkhght,_,_,_) = n in
 			      let deltm = if blkh = 1L then 600l else Int64.to_int32 (Int64.sub stktm pbtmstamp) in
 			      let newrandbit = rand_bit() in
-			      let stkoutl = [(alpha2,(Some(p2pkhaddr_payaddr alpha,4096L,false),Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))] in
+			      let stkoutl =
+                                match obl with
+                                | None ->
+                                  if blkh < 1024L then (*** at first, default to time locking assets to stake ***)
+                                    [(alpha2,(Some(p2pkhaddr_payaddr alpha,4096L,false),Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))]
+                                  else (*** after enough time, leave stakes unlocked ***)
+                                    [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))]
+                                | Some _ ->
+                                    [(alpha2,(obl,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))]
+                              in
 			      let coinstk : tx = ([(alpha2,aid)],stkoutl) in
 			      let prevc = load_expanded_octree (get_tx_supporting_octree coinstk (Some(CHash(prevledgerroot)))) in
 			      let octree_ctree c =
