@@ -420,6 +420,34 @@ let do_command l =
   else
     (Printf.fprintf stdout "Ignoring unknown command: %s\n" l; flush stdout);;
 
+let initialize () =
+  begin
+    datadir_from_command_line(); (*** if -datadir=... is on the command line, then set Config.datadir so we can find the config file ***)
+    process_config_file();
+    process_config_args(); (*** settings on the command line shadow those in the config file ***)
+    if !Config.seed = "" && !Config.lastcheckpoint = "" then
+      begin
+	raise (Failure "Need either a seed (to validate the genesis block) or a lastcheckpoint (to start later in the blockchain); have neither")
+      end;
+    if not (!Config.seed = "") then
+      begin
+	if not (String.length !Config.seed = 40) then raise (Failure "Bad seed");
+	try
+	  set_genesis_stakemods !Config.seed
+	with
+	| Invalid_argument(_) ->
+	    raise (Failure "Bad seed")
+      end;
+    if !Config.testnet then
+      begin
+	max_target := shift_left_big_int unit_big_int 230; (*** make the max_target higher (so difficulty can be easier for testing) ***)
+	genesistarget := shift_left_big_int unit_big_int 200; (*** make the genesistarget higher (so difficulty can be easier for testing) ***)
+      end;
+    initblocktree();
+    Printf.printf "Loading wallet\n"; flush stdout;
+    Commands.load_wallet();
+  end;;
+initialize();;
 let netth = Thread.create networking () in
 let stkth = Thread.create staking () in
 while true do

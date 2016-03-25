@@ -7,7 +7,8 @@ let stringconfigvars = [
 ("chaindatadir",fun x -> Config.chaindatadir := x);
 ("seed",fun x -> Config.seed := x);
 ("lastcheckpoint",fun x -> Config.lastcheckpoint := x);
-("currledgerroot",fun x -> Config.currledgerroot := x)
+("currledgerroot",fun x -> Config.currledgerroot := x);
+("prompt",fun x -> Config.prompt := x)
 ];;
 let boolconfigvars = [
 ("staking",fun x -> Config.staking := x);
@@ -36,7 +37,7 @@ let process_config_line l =
       List.iter
 	(fun (v,r) ->
 	  let vl = String.length v in
-	  if ll > 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
+	  if ll >= 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
 	    begin
 	      setl := v::!setl;
 	      r (String.sub l (vl+1) (ll-(vl+1)));
