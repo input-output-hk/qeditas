@@ -654,10 +654,12 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
    (*** ensure that if the stake has an explicit obligation (e.g., it is borrowed for staking), then the obligation isn't changed; otherwise the staker could steal the borrowed stake; unchanged copy should be first output ***)
    begin
      match ctree_lookup_asset bhd.stakeassetid bhd.prevledger stkaddrbs with
-     | Some(_,_,Some(beta,n,_),Currency(v)) -> (*** stake may be on loan for staking ***)
+     | Some(_,_,Some(beta,n,r),Currency(v)) -> (*** stake may be on loan for staking ***)
 	 begin
 	   match bd.stakeoutput with
-	   | (alpha2,(Some(beta2,n2,r),Currency(v2)))::remouts when not r -> (*** the first output must recreate the loaned asset. It's not a reward. The remaining outputs are marked as rewards and are subject to forfeiture. ***)
+	   | (alpha2,(Some(beta2,n2,r2),Currency(v2)))::remouts -> (*** the first output must recreate the loaned asset. It's a reward iff it was already a reward. The remaining outputs are marked as rewards and are subject to forfeiture. ***)
+               r2 = r
+		 &&
 	       alpha2 = stkaddr
 		 &&
 	       beta2 = beta
