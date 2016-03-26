@@ -17,7 +17,7 @@ ocamlc -I bin -o bin/tx.cmi -c src/tx.mli
 ocamlc -I bin -o bin/ctre.cmi -c src/ctre.mli
 ocamlc -I bin -o bin/ctregraft.cmi -c src/ctregraft.mli
 ocamlc -I bin -o bin/block.cmi -c src/block.mli
-ocamlc -I bin -o bin/net.cmi -c src/net.mli
+ocamlc -I bin -I +threads -o bin/net.cmi -c src/net.mli
 ocamlc -I bin -o bin/setconfig.cmi -c src/setconfig.mli
 ocamlc -I bin -o bin/commands.cmi -c src/commands.mli
 ocamlc -I bin -o bin/config.cmo -c src/config.ml
@@ -37,9 +37,9 @@ ocamlc -I bin -o bin/tx.cmo -c src/tx.ml
 ocamlc -I bin -o bin/ctre.cmo -c src/ctre.ml
 ocamlc -I bin -o bin/ctregraft.cmo -c src/ctregraft.ml
 ocamlc -I bin -o bin/block.cmo -c src/block.ml
-ocamlc -I bin -o bin/net.cmo -c src/net.ml
 ocamlc -I bin -o bin/setconfig.cmo -c src/setconfig.ml
 ocamlc -I bin -o bin/commands.cmo -c src/commands.ml
+ocamlc -I bin -I +threads -o bin/net.cmo -c src/net.ml
 ocamlc -I bin -I +threads -o bin/qeditas.cmo -c src/qeditas.ml
 ocamlc -I bin -I +threads -o bin/qeditasbc unix.cma threads.cma nums.cma bin/config.cmo bin/ser.cmo bin/hashaux.cmo bin/sha256.cmo bin/ripemd160.cmo bin/hash.cmo bin/htree.cmo bin/mathdata.cmo bin/assets.cmo bin/secp256k1.cmo bin/cryptocurr.cmo bin/signat.cmo bin/script.cmo bin/tx.cmo bin/ctre.cmo bin/ctregraft.cmo bin/block.cmo bin/net.cmo bin/setconfig.cmo bin/commands.cmo bin/qeditas.cmo
 cd bin

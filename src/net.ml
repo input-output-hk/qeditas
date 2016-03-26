@@ -12,6 +12,667 @@ open Tx
 open Ctre
 open Block
 
+let myaddr () =
+  match !Config.ip with
+  | Some(ip) -> 
+      if !Config.ipv6 then
+	"[" ^ ip ^ "]:" ^ (string_of_int !Config.port)
+      else
+	ip ^ ":" ^ (string_of_int !Config.port)
+  | None ->
+      ""
+
+type msg =
+  | Version of int32 * int64 * int64 * string * string * int64 * string * int64 * int64 * int64 * bool * (int64 * hashval) option
+  | Verack
+  | Addr of (int64 * string) list
+  | Inv of (int * int64 * hashval) list (*** for blocks (headers, deltahs, deltas) and ctrees, include the corrsponding block height (int64) ***)
+  | GetData of (int * hashval) list
+  | MNotFound of (int * hashval) list
+  | GetBlocks of int32 * int64 * hashval option
+  | GetBlockdeltas of int32 * int64 * hashval option
+  | GetBlockdeltahs of int32 * int64 * hashval option
+  | GetHeaders of int32 * int64 * hashval option
+  | MTx of int32 * stx (*** signed tx in principle, but in practice some or all signatures may be missing ***)
+  | MBlock of int32 * block
+  | Headers of (int64 * blockheader) list
+  | MBlockdelta of int32 * hashval * blockdelta (*** the hashval is for the block header ***)
+  | MBlockdeltah of int32 * hashval * blockdeltah (*** the hashval is for the block header; the blockdeltah only has the hashes of stxs in the block ***)
+  | GetAddr
+  | Mempool
+  | Alert of string * signat
+  | Ping
+  | Pong
+  | Reject of string * int * string * string
+  | GetCTreeElement of int32 * hashval
+  | GetHListElement of int32 * hashval
+  | CTreeElement of int32 * ctree
+  | HListElement of int32 * nehlist
+  | Checkpoint of int64 * hashval
+  | AntiCheckpoint of int64 * hashval
+
+let seo_msg o m c =
+  match m with
+  | Version(vers,srvs,tm,addr_recv,addr_from,nonce,user_agent,first_header_height,first_full_height,latest_height,relay,lastchkpt) ->
+      let c = o 8 0 c in
+      let c = seo_int32 o vers c in
+      let c = seo_int64 o srvs c in
+      let c = seo_int64 o tm c in
+      let c = seo_string o addr_recv c in
+      let c = seo_string o addr_from c in
+      let c = seo_int64 o nonce c in
+      let c = seo_string o user_agent c in
+      let c = seo_int64 o first_header_height c in
+      let c = seo_int64 o first_full_height c in
+      let c = seo_int64 o latest_height c in
+      let c = seo_bool o relay c in
+      let c = seo_option (seo_prod seo_int64 seo_hashval) o lastchkpt c in
+      c
+  | Verack -> o 8 1 c
+  | Addr(addr_list) ->
+      if List.length addr_list > 1000 then raise (Failure "Cannot send more than 1000 node addresses");
+      let c = o 8 2 c in
+      let c = seo_list (seo_prod seo_int64 seo_string) o addr_list c in
+      c
+  | Inv(invl) ->
+      if List.length invl > 50000 then raise (Failure "Cannot send more than 50000 inventory items");
+      let c = o 8 3 c in
+      let c = seo_list (seo_prod3 seo_int8 seo_int64 seo_hashval) o invl c in
+      c
+  | GetData(invl) ->
+      if List.length invl > 50000 then raise (Failure "Cannot send more than 50000 data requests");
+      let c = o 8 4 c in
+      let c = seo_list (seo_prod seo_int8 seo_hashval) o invl c in
+      c
+  | MNotFound(invl) ->
+      if List.length invl > 50000 then raise (Failure "Cannot send more than 50000 'not found' replies");
+      let c = o 8 5 c in
+      let c = seo_list (seo_prod seo_int8 seo_hashval) o invl c in
+      c
+  | GetBlocks(vers,blkh,hash_stop) ->
+      let c = o 8 6 c in
+      let c = seo_int32 o vers c in
+      let c = seo_int64 o blkh c in
+      let c = seo_option seo_hashval o hash_stop c in
+      c
+  | GetBlockdeltas(vers,blkh,hash_stop) ->
+      let c = o 8 7 c in
+      let c = seo_int32 o vers c in
+      let c = seo_int64 o blkh c in
+      let c = seo_option seo_hashval o hash_stop c in
+      c
+  | GetBlockdeltahs(vers,blkh,hash_stop) ->
+      let c = o 8 8 c in
+      let c = seo_int32 o vers c in
+      let c = seo_int64 o blkh c in
+      let c = seo_option seo_hashval o hash_stop c in
+      c
+  | GetHeaders(vers,blkh,hash_stop) ->
+      let c = o 8 9 c in
+      let c = seo_int32 o vers c in
+      let c = seo_int64 o blkh c in
+      let c = seo_option seo_hashval o hash_stop c in
+      c
+  | MTx(vers,tau) ->
+      let c = o 8 10 c in
+      let c = seo_int32 o vers c in
+      let c = seo_stx o tau c in
+      c
+  | MBlock(vers,b) ->
+      let c = o 8 11 c in
+      let c = seo_int32 o vers c in
+      let c = seo_block o b c in
+      c
+  | Headers(bhl) ->
+      if List.length bhl > 1000 then raise (Failure "Cannot send more than 1000 headers");
+      let c = o 8 12 c in
+      let c = seo_list (seo_prod seo_int64 seo_blockheader) o bhl c in
+      c
+  | MBlockdelta(vers,h,del) ->
+      let c = o 8 13 c in
+      let c = seo_int32 o vers c in
+      let c = seo_hashval o h c in
+      let c = seo_blockdelta o del c in
+      c
+  | MBlockdeltah(vers,h,del) ->
+      let c = o 8 14 c in
+      let c = seo_int32 o vers c in
+      let c = seo_hashval o h c in
+      let c = seo_blockdeltah o del c in
+      c
+  | GetAddr -> o 8 15 c
+  | Mempool -> o 8 16 c
+  | Alert(m,sg) ->
+      let c = o 8 17 c in
+      let c = seo_string o m c in
+      let c = seo_signat o sg c in
+      c
+  | Ping -> o 8 18 c
+  | Pong -> o 8 19 c
+  | Reject(m,ccode,rsn,data) ->
+      let c = o 8 20 c in
+      let c = seo_string o m c in
+      let c = seo_int8 o ccode c in
+      let c = seo_string o rsn c in
+      let c = seo_string o data c in
+      c
+  | GetCTreeElement(vers,cr) ->
+      let c = o 8 21 c in
+      let c = seo_int32 o vers c in
+      let c = seo_hashval o cr c in
+      c
+  | GetHListElement(vers,hr) ->
+      let c = o 8 22 c in
+      let c = seo_int32 o vers c in
+      let c = seo_hashval o hr c in
+      c
+  | CTreeElement(vers,ctr) ->
+      let c = o 8 23 c in
+      let c = seo_int32 o vers c in
+      let c = seo_ctree o ctr c in
+      c
+  | HListElement(vers,hl) ->
+      let c = o 8 24 c in
+      let c = seo_int32 o vers c in
+      let c = seo_nehlist o hl c in
+      c
+  | Checkpoint(blkh,h) ->
+      let c = o 8 25 c in
+      let c = seo_int64 o blkh c in
+      let c = seo_hashval o h c in
+      c
+  | AntiCheckpoint(blkh,h) ->
+      let c = o 8 26 c in
+      let c = seo_int64 o blkh c in
+      let c = seo_hashval o h c in
+      c
+
+let sei_msg i c =
+  let (by,c) = i 8 c in
+  match by with
+  | 0 ->
+      let (vers,c) = sei_int32 i c in
+      let (srvs,c) = sei_int64 i c in
+      let (tm,c) = sei_int64 i c in
+      let (addr_recv,c) = sei_string i c in
+      let (addr_from,c) = sei_string i c in
+      let (nonce,c) = sei_int64 i c in
+      let (user_agent,c) = sei_string i c in
+      let (first_header_height,c) = sei_int64 i c in
+      let (first_full_height,c) = sei_int64 i c in
+      let (latest_height,c) = sei_int64 i c in
+      let (relay,c) = sei_bool i c in
+      let (lastchkpt,c) = sei_option (sei_prod sei_int64 sei_hashval) i c in
+      (Version(vers,srvs,tm,addr_recv,addr_from,nonce,user_agent,first_header_height,first_full_height,latest_height,relay,lastchkpt),c)
+  | 1 ->
+      (Verack,c)
+  | 2 ->
+      let (addr_list,c) = sei_list (sei_prod sei_int64 sei_string) i c in
+      (Addr(addr_list),c)
+  | 3 ->
+      let (invl,c) = sei_list (sei_prod3 sei_int8 sei_int64 sei_hashval) i c in
+      (Inv(invl),c)
+  | 4 ->
+      let (invl,c) = sei_list (sei_prod sei_int8 sei_hashval) i c in
+      (GetData(invl),c)
+  | 5 ->
+      let (invl,c) = sei_list (sei_prod sei_int8 sei_hashval) i c in
+      (MNotFound(invl),c)
+  | 6 ->
+      let (vers,c) = sei_int32 i c in
+      let (blkh,c) = sei_int64 i c in
+      let (hash_stop,c) = sei_option sei_hashval i c in
+      (GetBlocks(vers,blkh,hash_stop),c)
+  | 7 ->
+      let (vers,c) = sei_int32 i c in
+      let (blkh,c) = sei_int64 i c in
+      let (hash_stop,c) = sei_option sei_hashval i c in
+      (GetBlockdeltas(vers,blkh,hash_stop),c)
+  | 8 ->
+      let (vers,c) = sei_int32 i c in
+      let (blkh,c) = sei_int64 i c in
+      let (hash_stop,c) = sei_option sei_hashval i c in
+      (GetBlockdeltahs(vers,blkh,hash_stop),c)
+  | 9 ->
+      let (vers,c) = sei_int32 i c in
+      let (blkh,c) = sei_int64 i c in
+      let (hash_stop,c) = sei_option sei_hashval i c in
+      (GetHeaders(vers,blkh,hash_stop),c)
+  | 10 ->
+      let (vers,c) = sei_int32 i c in
+      let (tau,c) = sei_stx i c in
+      (MTx(vers,tau),c)
+  | 11 ->
+      let (vers,c) = sei_int32 i c in
+      let (b,c) = sei_block i c in
+      (MBlock(vers,b),c)
+  | 12 ->
+      let (bhl,c) = sei_list (sei_prod sei_int64 sei_blockheader) i c in
+      (Headers(bhl),c)
+  | 13 ->
+      let (vers,c) = sei_int32 i c in
+      let (h,c) = sei_hashval i c in
+      let (del,c) = sei_blockdelta i c in
+      (MBlockdelta(vers,h,del),c)
+  | 14 ->
+      let (vers,c) = sei_int32 i c in
+      let (h,c) = sei_hashval i c in
+      let (del,c) = sei_blockdeltah i c in
+      (MBlockdeltah(vers,h,del),c)
+  | 15 -> (GetAddr,c)
+  | 16 -> (Mempool,c)
+  | 17 ->
+      let (m,c) = sei_string i c in
+      let (sg,c) = sei_signat i c in
+      (Alert(m,sg),c)
+  | 18 -> (Ping,c)
+  | 19 -> (Pong,c)
+  | 20 ->
+      let (m,c) = sei_string i c in
+      let (ccode,c) = sei_int8 i c in
+      let (rsn,c) = sei_string i c in
+      let (data,c) = sei_string i c in
+      (Reject(m,ccode,rsn,data),c)
+  | 21 ->
+      let (vers,c) = sei_int32 i c in
+      let (cr,c) = sei_hashval i c in
+      (GetCTreeElement(vers,cr),c)
+  | 22 ->
+      let (vers,c) = sei_int32 i c in
+      let (hr,c) = sei_hashval i c in
+      (GetHListElement(vers,hr),c)
+  | 23 ->
+      let (vers,c) = sei_int32 i c in
+      let (ctr,c) = sei_ctree i c in
+      (CTreeElement(vers,ctr),c)
+  | 24 ->
+      let (vers,c) = sei_int32 i c in
+      let (ctr,c) = sei_nehlist i c in
+      (HListElement(vers,ctr),c)
+  | 25 ->
+      let (blkh,c) = sei_int64 i c in
+      let (h,c) = sei_hashval i c in
+      (Checkpoint(blkh,h),c)
+  | 26 ->
+      let (blkh,c) = sei_int64 i c in
+      let (h,c) = sei_hashval i c in
+      (AntiCheckpoint(blkh,h),c)
+  | _ ->
+      raise (Failure "Unrecognized Message Type")
+
+exception RequestRejected
+exception IllformedMsg
+
+let openlistener ip port numconns =
+  let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+  let ia = Unix.inet_addr_of_string ip in
+  Unix.bind s (Unix.ADDR_INET(ia, port));
+  Unix.listen s numconns;
+  s
+
+let connectpeer ip port =
+  let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+  let ia = Unix.inet_addr_of_string ip in
+  Unix.connect s (Unix.ADDR_INET(ia, port));
+  s
+
+let extract_ipv4 ip =
+  let x = Array.make 4 0 in
+  let j = ref 0 in
+  for i = 0 to String.length ip - 1 do
+    let c = Char.code ip.[i] in
+    if c = 46 && !j < 3 then
+      incr j
+    else if c >= 48 && c < 58 then
+      x.(!j) <- x.(!j) * 10 + (c-48)
+    else
+      raise (Failure "Not an ipv4 address")
+  done;
+  (x.(0),x.(1),x.(2),x.(3))
+
+let rec extract_ipv4_and_port ipp i l =
+  if i+2 < l then
+    if ipp.[i] = ':' then
+      (String.sub ipp 0 i,int_of_string (String.sub ipp (i+1) (l-(i+1))))
+    else
+      extract_ipv4_and_port ipp (i+1) l
+  else
+    raise (Failure "not an ipv4 address with a port number")
+
+let rec extract_ipv6_and_port ipp i l =
+  if i+3 < l then
+    if ipp.[i] = ']' then
+      if ipp.[i+1] = ':' then
+	(String.sub ipp 0 i,int_of_string (String.sub ipp (i+2) (l-(i+2))))
+      else
+	raise (Failure "not an ipv4 address with a port number")
+    else
+      extract_ipv6_and_port ipp (i+1) l
+  else
+    raise (Failure "not an ipv6 address with a port number")
+
+let extract_ip_and_port ipp =
+  let l = String.length ipp in
+  if l = 0 then
+    raise (Failure "Not an ip address with a port number")
+  else if ipp.[0] = '[' then
+    let (ip,port) = extract_ipv6_and_port ipp 1 l in
+    (ip,port,true)
+  else
+    let (ip,port) = extract_ipv4_and_port ipp 0 l in
+    (ip,port,false)
+
+let connectpeer_socks4 proxyport ip port =
+  let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+  Unix.connect s (Unix.ADDR_INET(Unix.inet_addr_loopback, proxyport));
+  let sin = Unix.in_channel_of_descr s in
+  let sout = Unix.out_channel_of_descr s in
+  set_binary_mode_in sin true;
+  set_binary_mode_out sout true;
+  output_byte sout 4;
+  output_byte sout 1;
+  (** port, big endian **)
+  output_byte sout ((port asr 8) land 255);
+  output_byte sout (port land 255);
+  (** ip **)
+  let (x0,x1,x2,x3) = extract_ipv4 ip in
+  output_byte sout x0;
+  output_byte sout x1;
+  output_byte sout x2;
+  output_byte sout x3;
+  output_byte sout 0;
+  flush sout;
+  let z = input_byte sin in
+  let cd = input_byte sin in
+  Printf.printf "%d %d\n" z cd; flush stdout;
+  if not (cd = 90) then raise RequestRejected;
+  for i = 1 to 6 do
+    ignore (input_byte sin)
+  done;
+  (s,sin,sout)
+
+type pendingcallback = PendingCallback of (msg -> pendingcallback option)
+
+type connstate = {
+    conntime : float;
+    addrfrom : string;
+    mutable alive : bool;
+    mutable lastmsgtm : float;
+    mutable pending : (hashval * bool * float * float * pendingcallback option) list;
+    mutable sentinv : (int * hashval) list;
+    mutable rinv : (int * hashval) list;
+    mutable invreq : (int * hashval) list;
+    mutable first_header_height : int64; (*** how much header history is stored at the node ***)
+    mutable first_full_height : int64; (*** how much block/ctree history is stored at the node ***)
+    mutable last_height : int64; (*** how up to date the node is ***)
+  }
+
+type preconnstate = {
+    preconntime : float;
+    mutable preaddrfrom : string;
+    mutable handshakestep : int
+  }
+
+type genconnstate = ConnState of connstate | PreConnState of preconnstate
+
+let send_msg_real c replyto m =
+  let magic = if !Config.testnet then 0x51656454l else 0x5165644dl in
+  let sb = Buffer.create 1000 in
+  seosbf (seo_msg seosb m (sb,None));
+  let ms = Buffer.contents sb in
+  let msl = String.length ms in
+  (*** Magic Number for mainnet: QedM ***)
+  seocf (seo_int32 seoc magic (c,None));
+  begin
+    match replyto with
+    | None ->
+	output_byte c 0
+    | Some(h) ->
+	output_byte c 1;
+	seocf (seo_hashval seoc h (c,None))
+  end;
+  output_byte c (Char.code ms.[0]);
+  seocf (seo_int32 seoc (Int32.of_int msl) (c,None));
+  let mh = hash160 ms in
+  seocf (seo_hashval seoc mh (c,None));
+  for j = 0 to msl-1 do
+    output_byte c (Char.code ms.[j])
+  done;
+  flush c;
+  mh
+
+let send_msg c m = send_msg_real c None m
+let send_reply c h m = send_msg_real c (Some(h)) m
+
+(***
+ Throw IllformedMsg if something's wrong with the format or if it reads the first byte but times out before reading the full message.
+ If IllformedMsg is thrown, the connection should be severed.
+ ***)
+let rec_msg c =
+  let (mag0,mag1,mag2,mag3) = if !Config.testnet then (0x51,0x65,0x64,0x54) else (0x51,0x65,0x64,0x4d) in
+  let by0 = input_byte c in
+  if not (by0 = mag0) then raise IllformedMsg;
+  try
+    let by1 = input_byte c in
+    if not (by1 = mag1) then raise IllformedMsg;
+    let by2 = input_byte c in
+    if not (by2 = mag2) then raise IllformedMsg;
+    let by3 = input_byte c in
+    if not (by3 = mag3) then raise IllformedMsg;
+    let replyto =
+      let by4 = input_byte c in
+      if by4 = 0 then (*** not a reply ***)
+	None
+      else if by4 = 1 then
+	let (h,_) = sei_hashval seic (c,None) in
+	(Some(h))
+      else
+	raise IllformedMsg
+    in
+    let comm = input_byte c in
+    let (msl,_) = sei_int32 seic (c,None) in
+    if msl > 67108863l then raise IllformedMsg;
+    let msl = Int32.to_int msl in
+    let (mh,_) = sei_hashval seic (c,None) in
+    let sb = Buffer.create msl in
+    let by0 = input_byte c in
+    if not (by0 = comm) then raise IllformedMsg;
+    Buffer.add_char sb (Char.chr by0);
+    for j = 1 to msl-1 do
+      let by = input_byte c in
+      Buffer.add_char sb (Char.chr by)
+    done;
+    let ms = Buffer.contents sb in
+    if not (mh = hash160 ms) then raise IllformedMsg;
+    let (m,_) = sei_msg seis (ms,msl,None,0,0) in
+    Some(replyto,mh,m)
+  with
+  | _ -> (*** consider it an IllformedMsg no matter what the exception raised was ***)
+      raise IllformedMsg
+
+let netth : Thread.t option ref = ref None
+let netlistenerth : Thread.t option ref = ref None
+let netseekerth : Thread.t option ref = ref None
+let netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * genconnstate ref)) list ref = ref []
+let this_nodes_nonce = ref 0L
+
+let connlistener (s,sin,sout,gcs) =
+  (*** empty for now ***)
+  while true do
+    Unix.sleep 900
+  done
+
+exception EnoughConnections
+
+let initialize_conn_accept s =
+  if List.length !netconns < !Config.maxconns then
+    begin
+      let sin = Unix.in_channel_of_descr s in
+      let sout = Unix.out_channel_of_descr s in
+      set_binary_mode_in sin true;
+      set_binary_mode_out sout true;
+      let pcs = { preconntime = Unix.time(); preaddrfrom = ""; handshakestep = 1 } in
+      let gcs = (s,sin,sout,ref (PreConnState pcs)) in
+      let cth = Thread.create connlistener gcs in
+      (* should lock netconns *)
+      netconns := (cth,gcs)::!netconns;
+      (* should unlock netconns *)
+    end
+  else
+    begin
+      Unix.close s;
+      raise EnoughConnections
+    end
+
+let initialize_conn_2 n s sin sout =
+  Printf.printf "calling 2\n"; flush stdout;
+  (*** initiate handshake ***)
+  let vers = 1l in
+  let srvs = 1L in
+  let tm = Int64.of_float(Unix.time()) in
+  let user_agent = "Qeditas-Testing-Phase" in
+  let first_header_height = 0L in
+  let first_full_height = 0L in
+  let last_height = 0L in
+  let relay = true in
+  let lastchkpt = None in
+  send_msg sout (Version(vers,srvs,tm,n,myaddr(),!this_nodes_nonce,user_agent,first_header_height,first_full_height,last_height,relay,lastchkpt));
+  let pcs = { preconntime = Unix.time(); preaddrfrom = ""; handshakestep = 2 } in
+  let gcs = (s,sin,sout,ref (PreConnState pcs)) in
+  let cth = Thread.create connlistener gcs in
+  (* should lock netconns *)
+  netconns := (cth,gcs)::!netconns
+  (* should unlock netconns *)
+
+let initialize_conn n s =
+  let sin = Unix.in_channel_of_descr s in
+  let sout = Unix.out_channel_of_descr s in
+  set_binary_mode_in sin true;
+  set_binary_mode_out sout true;
+  initialize_conn_2 n s sin sout
+
+let knownpeers : (string,int64) Hashtbl.t = Hashtbl.create 1000
+
+let peeraddr gcs =
+  match gcs with
+  | PreConnState(pcs) -> pcs.preaddrfrom (*** this may be the empty string during the handshake phase ***)
+  | ConnState(cs) -> cs.addrfrom
+
+let tryconnectpeer n =
+  if List.length !netconns >= !Config.maxconns then raise EnoughConnections;
+  try
+    ignore (List.find (fun (_,(_,_,_,gcs)) -> n = peeraddr !gcs) !netconns);
+  with Not_found ->
+    let (ip,port,v6) = extract_ip_and_port n in
+    begin
+      try
+	match !Config.socks with
+	| None ->
+	    let s = connectpeer ip port in
+	    ignore (initialize_conn n s)
+	| Some(4) ->
+	    let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
+	    ignore (initialize_conn_2 n s sin sout);
+	| Some(5) ->
+	    raise (Failure "socks5 is not yet supported")
+	| Some(z) ->
+	    raise (Failure ("socks" ^ (string_of_int z) ^ " is not yet supported"))
+      with
+      | RequestRejected ->
+	  Printf.printf "RequestRejected\n"; flush stdout;
+      | _ ->
+	  ()
+    end
+
+let fallbacknodes = [
+"172.246.252.93:20805"
+]
+
+let testnetfallbacknodes = [
+"172.246.252.93:20804"
+]
+
+let getfallbacknodes () =
+  if !Config.testnet then
+    testnetfallbacknodes
+  else
+    fallbacknodes
+
+let addknownpeer lasttm n =
+  if not (n = "") && not (n = myaddr()) && not (List.mem n (getfallbacknodes())) then
+    try
+      let oldtm = Hashtbl.find knownpeers n in
+      Hashtbl.replace knownpeers n lasttm
+    with Not_found ->
+      let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
+      if Sys.file_exists peerfn then
+	let s = open_out_gen [Open_append;Open_wronly] 0x660 peerfn in
+	output_string s n;
+	output_char s '\n';
+	output_string s (Int64.to_string lasttm);
+	output_char s '\n';
+	close_out s
+      else
+	let s = open_out peerfn in
+	output_string s n;
+	output_char s '\n';
+	output_string s (Int64.to_string lasttm);
+	output_char s '\n';
+	close_out s
+
+let getknownpeers () =
+  let cnt = ref 0 in
+  let peers = ref [] in
+  let currtm = Int64.of_float (Unix.time()) in
+  Hashtbl.iter (fun n lasttm -> if !cnt < 1000 && Int64.sub currtm lasttm < 604800L then (incr cnt; peers := n::!peers)) knownpeers;
+  !peers
+
+let loadknownpeers () =
+  let currtm = Int64.of_float (Unix.time()) in
+  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
+  if Sys.file_exists peerfn then
+    let s = open_in peerfn in
+    try
+      while true do
+	let n = input_line s in
+	let lasttm = Int64.of_string (input_line s) in
+	if Int64.sub currtm lasttm < 604800L then
+	  Hashtbl.add knownpeers n lasttm
+      done
+    with End_of_file -> ()
+
+let saveknownpeers () =
+  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
+  let s = open_out_gen [Open_append;Open_wronly;Open_trunc] 0x660 peerfn in
+  Hashtbl.iter
+    (fun n lasttm ->
+      output_string s n;
+      output_char s '\n';
+      output_string s (Int64.to_string lasttm);
+      output_char s '\n')
+    knownpeers;
+  close_out s
+
+let netlistener l =
+  while true do
+    try
+      let (s,a) = Unix.accept l in
+      begin
+	match a with
+	| Unix.ADDR_UNIX(x) ->
+	    Printf.printf "got local connection %s\n" x;
+	| Unix.ADDR_INET(x,y) ->
+	    Printf.printf "got remote connection %s %d\n" (Unix.string_of_inet_addr x) y;
+      end;
+      flush stdout;
+      initialize_conn_accept s
+    with
+    | EnoughConnections -> Printf.printf "Rejecting connection because of maxconns.\n"; flush stdout;
+    | _ -> ()
+  done
+
+(*** break ***)
+
 let stxpool : (hashval,stx) Hashtbl.t = Hashtbl.create 1000;;
 let published_stx : (hashval,unit) Hashtbl.t = Hashtbl.create 1000;;
 let thytree : (hashval,Mathdata.ttree) Hashtbl.t = Hashtbl.create 1000;;
@@ -88,28 +749,8 @@ let rec insertnewdelayed (tm,n) btnl =
   | (tm2,n2)::btnr when tm < tm2 -> (tm,n)::btnl
   | (tm2,n2)::btnr -> (tm2,n2)::insertnewdelayed (tm,n) btnr
 
-exception Hung
-
-let sethungsignalhandler () =
-  Sys.set_signal Sys.sigalrm (Sys.Signal_handle (fun _ -> raise Hung));;
-
 let setsigpipeignore () =
   Sys.set_signal Sys.sigpipe Sys.Signal_ignore;;
-
-let input_byte_nohang c tm =
-  try
-    ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = tm });
-    let b = input_byte c in
-    try
-      ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
-      Some(b)
-    with Hung -> (** in case the alarm is signaled after the connection was accepted but before the function returned, catch Hung and continue **)
-      Some(b)
-  with
-  | Hung -> None
-  | exc -> (** if it's another exception make sure to disable the timer **)
-      ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
-      raise exc
 
 let process_new_tx h =
   Printf.printf "Processing new tx %s\n" h; flush stdout;
@@ -455,7 +1096,6 @@ let publish_block bhh (bh,bd) =
   ignore (Unix.close_process_in qednetch)
 
 let qednetmain initfn preloopfn =
-  sethungsignalhandler();
   setsigpipeignore();
   Printf.printf "Starting qednetd\n"; flush stdout;
   let (qednetch1,qednetch2,qednetch3) = Unix.open_process_full (qednetd()) (Unix.environment()) in
@@ -464,7 +1104,6 @@ let qednetmain initfn preloopfn =
   initfn();
   Printf.printf "Initialization phase complete.\n"; flush stdout;
   while true do
-    try
       preloopfn();
       earlyblocktreenodes := processdelayednodes (Int64.of_float (Unix.time())) !earlyblocktreenodes;
       tovalidatelist := processblockvalidation !tovalidatelist;
@@ -476,6 +1115,5 @@ let qednetmain initfn preloopfn =
 	process_new_tx (String.sub l 28 40)
       else if ll = 72 && String.sub l 0 8 = "QHEADER:" then
 	process_new_header (String.sub l 32 40) false false
-    with Hung -> ()
   done
 

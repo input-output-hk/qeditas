@@ -207,8 +207,8 @@ let main () =
 	  | None -> ()
 	  | Some(fromstkr,tostkr,stkerr) ->
 	      try
-		match input_byte_nohang fromstkr 0.1 with
-		| Some(z) when z = 72 -> (*** hit with no storage ***)
+		match input_byte fromstkr with
+		| z when z = 72 -> (*** hit with no storage ***)
 		    let c = (fromstkr,None) in
 		    let (stktm,c) = sei_int64 seic c in
 		    let (alpha,c) = sei_hashval seic c in
@@ -353,7 +353,7 @@ let main () =
 		      with Not_found -> ()
 		    end;
 		    flush stdout;
-		| Some(z) when z = 83 -> (*** hit with storage ***)
+		| z when z = 83 -> (*** hit with storage ***)
 		    let c = (fromstkr,None) in
 		    let (stktm,c) = sei_int64 seic c in
 		    let (alpha,c) = sei_hashval seic c in
@@ -362,15 +362,9 @@ let main () =
 		    stop_staking();
 		    Printf.printf "Found a hit using a stake combined with storage, but the code to handle it isn't written.\n";
 		    flush stdout
-		| Some(z) -> (*** something has gone wrong. die ***)
+		| z -> (*** something has gone wrong. die ***)
 		    Printf.printf "The staking process sent back %d which is meaningless.\nKilling staker\n" z;
 		    stop_staking();
-		| None ->
-		    match input_byte_nohang stkerr 0.1 with
-		    | Some(z) -> (*** something has gone wrong. die ***)
-			Printf.printf "The staking process sent error code %d.\nKilling staker\n" z;
-			stop_staking();
-		    | None -> ()
 	      with
 	      | exc ->
 		  Printf.printf "Exception thrown while trying to read from the staking process.\n%s\nKilling staker\n" (Printexc.to_string exc);
@@ -403,7 +397,24 @@ let main () =
     qednetmain initfn preloopfn
   end;;
 
+(*** Start here ***)
+
+let stkth : Thread.t option ref = ref None;;
+
 let networking () =
+  begin
+    try
+      match !Config.ip with
+      | Some(ip) ->
+	  let l = openlistener ip !Config.port 5 in
+	  Printf.printf "Listening for incoming connections.\n";
+	  flush stdout;
+	  netlistenerth := Some(Thread.create netlistener l)
+      | None ->
+	  Printf.printf "Not listening for incoming connections.\nIf you want Qeditas to listen for incoming connections set ip to your ip address\nusing ip=... in qeditas.conf or -ip=... on the command line.\n";
+	  flush stdout
+    with _ -> ()
+  end;
   (*** empty placeholder for now ***)
   ();;
 
@@ -416,6 +427,25 @@ let do_command l =
     begin
       (*** Could call Thread.kill on netth and stkth, but Thread.kill is not always implemented. ***)
       exit 0
+    end
+  else if l = "getpeerinfo" then
+    let ll = List.length !netconns in
+    begin
+      Printf.printf "%d connection%s" ll (if ll = 1 then "" else "s");
+      List.iter
+	(fun (_,(_,_,_,gcs)) ->
+	  match !gcs with
+	  | PreConnState(pcs) ->
+	      Printf.printf "In handshake phase, step %d" pcs.handshakestep;
+	      if not (pcs.preaddrfrom = "") then Printf.printf " with %s" pcs.preaddrfrom;
+	      Printf.printf "\n";
+	      Printf.printf "Connected since %f\n" pcs.preconntime;
+	  | ConnState(cs) ->
+	      Printf.printf "%s\n" cs.addrfrom;
+	      Printf.printf "Connected since %f\n" cs.conntime;
+	  )
+	!netconns;
+      flush stdout
     end
   else
     (Printf.fprintf stdout "Ignoring unknown command: %s\n" l; flush stdout);;
@@ -448,8 +478,8 @@ let initialize () =
     Commands.load_wallet();
   end;;
 initialize();;
-let netth = Thread.create networking () in
-let stkth = Thread.create staking () in
+netth := Some(Thread.create networking ());;
+stkth := Some(Thread.create staking ());;
 while true do
   try
     Printf.printf "%s" !Config.prompt; flush stdout;
