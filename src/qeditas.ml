@@ -431,7 +431,7 @@ let do_command l =
   else if l = "getpeerinfo" then
     let ll = List.length !netconns in
     begin
-      Printf.printf "%d connection%s" ll (if ll = 1 then "" else "s");
+      Printf.printf "%d connection%s\n" ll (if ll = 1 then "" else "s");
       List.iter
 	(fun (_,(_,_,_,gcs)) ->
 	  match !gcs with
