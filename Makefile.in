@@ -60,7 +60,7 @@ bin/block.cmi: src/block.mli bin/hash.cmi bin/mathdata.cmi bin/assets.cmi bin/si
 	$(OCAMLC) -I bin -o bin/block.cmi -c src/block.mli
 
 bin/net.cmi: src/net.mli bin/hash.cmi bin/signat.cmi bin/tx.cmi bin/ctre.cmi bin/block.cmi
-	$(OCAMLC) -I bin -o bin/net.cmi -c src/net.mli
+	$(OCAMLC) -I bin -I +threads -o bin/net.cmi -c src/net.mli
 
 bin/setconfig.cmi: src/setconfig.mli
 	$(OCAMLC) -I bin -o bin/setconfig.cmi -c src/setconfig.mli
@@ -120,7 +120,7 @@ bin/block.cmx: src/block.ml bin/block.cmi bin/hash.cmx bin/mathdata.cmx bin/asse
 	$(OCAMLOPT) -I bin -o bin/block.cmx -c src/block.ml
 
 bin/net.cmx: src/net.ml bin/net.cmi bin/ser.cmx bin/hash.cmx bin/assets.cmx bin/tx.cmx bin/ctre.cmx bin/block.cmx
-	$(OCAMLOPT) -I bin -o bin/net.cmx -c src/net.ml
+	$(OCAMLOPT) -I bin -I +threads -o bin/net.cmx -c src/net.ml
 
 bin/setconfig.cmx: src/setconfig.ml bin/setconfig.cmi bin/config.cmx
 	$(OCAMLOPT) -I bin -o bin/setconfig.cmx -c src/setconfig.ml
@@ -183,7 +183,7 @@ bin/block.cmo: src/block.ml bin/block.cmi bin/hash.cmo bin/mathdata.cmo bin/asse
 	$(OCAMLC) -I bin -o bin/block.cmo -c src/block.ml
 
 bin/net.cmo: src/net.ml bin/net.cmi bin/ser.cmo bin/hash.cmo bin/assets.cmo bin/tx.cmo bin/ctre.cmo bin/block.cmo
-	$(OCAMLC) -I bin -o bin/net.cmo -c src/net.ml
+	$(OCAMLC) -I bin -I +threads -o bin/net.cmo -c src/net.ml
 
 bin/setconfig.cmo: src/setconfig.ml bin/setconfig.cmi bin/config.cmo
 	$(OCAMLC) -I bin -o bin/setconfig.cmo -c src/setconfig.ml
