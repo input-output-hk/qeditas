@@ -439,12 +439,10 @@ let do_command l =
       List.iter
 	(fun (_,(_,_,_,gcs)) ->
 	  match !gcs with
-	  | Some(PreConnState(pcs)) ->
-	      Printf.printf "In handshake phase, step %d\n" pcs.handshakestep;
-	      Printf.printf "Connected since %f\n" pcs.preconntime;
-	  | Some(ConnState(cs)) ->
-	      Printf.printf "%s\n" cs.addrfrom;
+	  | Some(cs) ->
+	      Printf.printf "%s: %s\n" cs.addrfrom cs.useragent;
 	      Printf.printf "Connected since %f\n" cs.conntime;
+	      if cs.handshakestep < 5 then Printf.printf "(Still in handshake phase)\n";
 	  | None -> (*** This could happen if a connection died after remove_dead_conns above. ***)
 	      Printf.printf "[Dead Connection]\n";
 	  )

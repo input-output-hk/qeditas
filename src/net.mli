@@ -49,8 +49,10 @@ type pendingcallback = PendingCallback of (msg -> pendingcallback option)
 
 type connstate = {
     conntime : float;
-    addrfrom : string;
-    mutable veracked : bool;
+    mutable protvers : int32;
+    mutable useragent : string;
+    mutable addrfrom : string;
+    mutable handshakestep : int;
     mutable locked : bool;
     mutable lastmsgtm : float;
     mutable pending : (hashval * bool * float * float * pendingcallback option) list;
@@ -62,16 +64,9 @@ type connstate = {
     mutable last_height : int64; (*** how up to date the node is ***)
   }
 
-type preconnstate = {
-    preconntime : float;
-    mutable handshakestep : int
-  }
-
-type genconnstate = ConnState of connstate | PreConnState of preconnstate
-
 val netlistenerth : Thread.t option ref
 val netseekerth : Thread.t option ref
-val netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * genconnstate option ref)) list ref
+val netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * connstate option ref)) list ref
 val this_nodes_nonce : int64 ref
 
 val remove_dead_conns : unit -> unit

@@ -469,8 +469,10 @@ type pendingcallback = PendingCallback of (msg -> pendingcallback option)
 
 type connstate = {
     conntime : float;
-    addrfrom : string;
-    mutable veracked : bool;
+    mutable protvers : int32;
+    mutable useragent : string;
+    mutable addrfrom : string;
+    mutable handshakestep : int;
     mutable locked : bool;
     mutable lastmsgtm : float;
     mutable pending : (hashval * bool * float * float * pendingcallback option) list;
@@ -481,13 +483,6 @@ type connstate = {
     mutable first_full_height : int64; (*** how much block/ctree history is stored at the node ***)
     mutable last_height : int64; (*** how up to date the node is ***)
   }
-
-type preconnstate = {
-    preconntime : float;
-    mutable handshakestep : int
-  }
-
-type genconnstate = ConnState of connstate | PreConnState of preconnstate
 
 let send_msg_real c replyto m =
   let magic = if !Config.testnet then 0x51656454l else 0x5165644dl in
@@ -566,13 +561,12 @@ let rec_msg c =
 
 let netlistenerth : Thread.t option ref = ref None
 let netseekerth : Thread.t option ref = ref None
-let netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * genconnstate option ref)) list ref = ref []
+let netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * connstate option ref)) list ref = ref []
 let this_nodes_nonce = ref 0L
 
 let peeraddr gcs =
   match gcs with
-  | Some(PreConnState(pcs)) -> "[handshake]"
-  | Some(ConnState(cs)) -> cs.addrfrom
+  | Some(cs) -> cs.addrfrom
   | None -> "[dead]"
 
 (*** recentblockheaders: associate block header hash with block height and block header ***)
@@ -667,7 +661,7 @@ let broadcast_inv invl =
       (fun (cth,(s,sin,sout,gcs)) ->
 	try
 	  match !gcs with
-	  | Some(ConnState(cs)) ->
+	  | Some(cs) ->
 	      if not (cs.locked) then
 		begin
 (*** should acquire a lock on cs.locked, or there could be a race condition with cth ***)
@@ -697,41 +691,66 @@ let send_initial_inv sout cs =
   if not (!tosend = []) then ignore (send_msg sout (Inv(!tosend)));
   cs.sentinv <- List.map (fun (k,_,h) -> (k,h)) !tosend
 
-let handle_msg sin sout gcs replyto mh m =
-  match (replyto,m,!gcs) with
-  | (None,Version(vers,srvs,tm,addr_recv,addr_from,n,user_agent,fhh,ffh,lh,relay,lastchkpt),Some(PreConnState(pcs))) ->
+let log_msg m =
+  let sb = Buffer.create 10 in
+  seosbf (seo_msg seosb m (sb,None));
+  let h = string_hexstring (Buffer.contents sb) in
+  Printf.fprintf !log "\nmsg: %s\n" h
+
+let handle_msg sin sout cs replyto mh m : unit =
+  match (replyto,m) with
+  | (None,Version(vers,srvs,tm,addr_recv,addr_from,n,ua,fhh,ffh,lh,relay,lastchkpt)) ->
       if n = !this_nodes_nonce then
 	raise SelfConnection
-      else if pcs.handshakestep = 1 then
-	let cs = { conntime = pcs.preconntime; addrfrom = addr_from; veracked = false; locked = false; lastmsgtm = Unix.time(); pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
-	begin
-	  send_msg sout Verack;
-	  send_msg sout (Version(0l,0L,0L,addr_from,myaddr(),!this_nodes_nonce,"Qeditas 0.0.1 (alpha)",0L,0L,0L,true,None));
-	  gcs := Some(ConnState(cs))
-	end
-      else if pcs.handshakestep = 2 then
-	let cs = { conntime = pcs.preconntime; addrfrom = addr_from; veracked = false; locked = false; lastmsgtm = Unix.time(); pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
-	begin
-	  send_msg sout Verack;
-	  gcs := Some(ConnState(cs))
-	end
       else
-	raise (ProtocolViolation "Handshake failed")
-  | (None,Verack,Some(ConnState(cs))) when not cs.veracked -> cs.veracked <- true
-  | (_,_,Some(ConnState(cs))) when not cs.veracked -> raise (ProtocolViolation("No Verack received"))
-  | (_,_,Some(PreConnState(_))) -> raise (ProtocolViolation("Handshake failed"))
-  | (None,Ping,_) ->
+	let minvers = if vers > Version.protocolversion then Version.protocolversion else 0l in
+	if cs.handshakestep = 1 then
+	  begin
+	    send_msg sout Verack;
+	    send_msg sout (Version(minvers,0L,0L,addr_from,myaddr(),!this_nodes_nonce,Version.useragent,0L,0L,0L,true,None));
+	    cs.handshakestep <- 3;
+	    cs.useragent <- ua;
+	    cs.protvers <- minvers;
+	    cs.addrfrom <- addr_from;
+	    cs.lastmsgtm <- Unix.time();
+	    cs.first_header_height <- fhh;
+	    cs.first_full_height <- ffh;
+	    cs.last_height <- lh;
+	  end
+	else if cs.handshakestep = 4 then
+	  begin
+	    send_msg sout Verack;
+	    cs.handshakestep <- 5;
+	    cs.useragent <- ua;
+	    cs.protvers <- minvers;
+	    cs.addrfrom <- addr_from;
+	    cs.lastmsgtm <- Unix.time();
+	    cs.first_header_height <- fhh;
+	    cs.first_full_height <- ffh;
+	    cs.last_height <- lh;
+	  end
+	else
+	  raise (ProtocolViolation "Handshake failed")
+  | (_,Verack) ->
+      if cs.handshakestep = 2 then
+	cs.handshakestep <- 4
+      else if cs.handshakestep = 3 then
+	cs.handshakestep <- 5
+      else
+	raise (ProtocolViolation("Unexpected Verack"))
+  | (_,_) when cs.handshakestep < 5 -> raise (ProtocolViolation("Handshake failed"))
+  | (None,Ping) ->
       Printf.printf "Handling Ping. Sending Pong.\n"; flush stdout;
       ignore (send_reply sout mh Pong);
       Printf.printf "Sent Pong.\n"; flush stdout
-  | (Some(pingh),Pong,Some(ConnState(cs))) ->
+  | (Some(pingh),Pong) ->
       Printf.printf "Handling Pong.\n"; flush stdout;
       cs.pending <- update_pending cs.pending pingh m
-  | (Some(qh),Reject(msgcom,by,rsn,data),Some(ConnState(cs))) ->
+  | (Some(qh),Reject(msgcom,by,rsn,data)) ->
       Printf.printf "Message %s %s rejected: %d %s\n" (hashval_hexstring mh) msgcom by rsn;
       flush stdout;
       cs.pending <- update_pending cs.pending qh m
-  | (None,Inv(invl),Some(ConnState(cs))) ->
+  | (None,Inv(invl)) ->
       let toget = ref [] in
       Printf.printf "got Inv\n"; flush stdout;
       List.iter
@@ -754,7 +773,7 @@ let handle_msg sin sout gcs replyto mh m =
 	let mh = send_msg sout (GetData(!toget)) in
 	Printf.printf "Just sent GetData\n"; flush stdout;
 	cs.invreq <- !toget @ cs.invreq
-  | (None,GetData(invl),_) ->
+  | (None,GetData(invl)) ->
       let headerl = ref [] in
       Printf.printf "got GetData\n"; flush stdout;
       List.iter
@@ -795,7 +814,7 @@ let handle_msg sin sout gcs replyto mh m =
 	  | _ -> () (*** ignore everything else for now ***)
 	  )
 	invl
-  | (None,Headers(bhl),Some(ConnState(cs))) ->
+  | (None,Headers(bhl)) ->
       Printf.printf "got Headers\n"; flush stdout;
       let tm = Int64.of_float (Unix.time()) in
       let tobroadcast = ref [] in
@@ -863,38 +882,38 @@ let handle_msg sin sout gcs replyto mh m =
 	      end)
 	bhl;
       broadcast_inv !tobroadcast
-  | (None,MBlockdeltah(vers,h,bdh),Some(ConnState(cs))) ->
+  | (None,MBlockdeltah(vers,h,bdh)) ->
       Printf.printf "Handling MBlockdeltah.\n"; flush stdout;
       if List.mem (2,h) cs.invreq then (*** only accept if it seems to have been requested ***)
 	begin
 	  cs.invreq <- List.filter (fun (k,h2) -> not (k = 2 && h2 = h)) cs.invreq;
 	  Hashtbl.add recentblockdeltahs h bdh
 	end
-  | (None,MBlockdelta(vers,h,bd),Some(ConnState(cs))) ->
+  | (None,MBlockdelta(vers,h,bd)) ->
       Printf.printf "Handling MBlockdelta.\n"; flush stdout;
       if List.mem (3,h) cs.invreq then (*** only accept if it seems to have been requested ***)
 	begin
 	  cs.invreq <- List.filter (fun (k,h2) -> not (k = 3 && h2 = h)) cs.invreq;
 	  Hashtbl.add recentblockdeltas h bd
 	end
-  | (None,MTx(vers,(tx,txsig)),Some(ConnState(cs))) ->
+  | (None,MTx(vers,(tx,txsig))) ->
       let h = hashtx tx in
       if List.mem (4,h) cs.invreq then (*** only accept if it seems to have been requested ***)
 	begin
 	  cs.invreq <- List.filter (fun (k,h2) -> not (k = 4 && h2 = h)) cs.invreq;
 	  Hashtbl.add recentstxs h (tx,txsig)
 	end
-  | (None,Addr(addrl),_) ->
+  | (None,Addr(addrl)) ->
       let currtm = Int64.of_float (Unix.time()) in
       List.iter (fun (lasttm,n) -> if Int64.sub currtm lasttm < 604800L then addknownpeer lasttm n) addrl (*** add peers that were active at some point in the last week ***)
-  | (None,GetAddr,_) ->
+  | (None,GetAddr) ->
       let cnt = ref 0 in
       let addrl = ref [] in
       begin
 	List.iter
 	  (fun (_,(_,_,_,gcs)) ->
 	    match !gcs with
-	    | Some(ConnState(cs)) ->
+	    | Some(cs) ->
 		if !cnt < 1000 && not (cs.addrfrom = "") then (incr cnt; addrl := (Int64.of_float cs.lastmsgtm,cs.addrfrom) :: !addrl)
 	    | _ -> ()
 	  )
@@ -909,7 +928,9 @@ let connlistener (s,sin,sout,gcs) =
     while true do
       try
 	let (replyto,mh,m) = rec_msg sin in
-	handle_msg sin sout gcs replyto mh m
+	match !gcs with
+	| Some(cs) -> handle_msg sin sout cs replyto mh m
+	| None -> raise End_of_file (*** connection died; this probably shouldn't happen, as we should have left this thread when it died ***)
       with
       | Unix.Unix_error(c,x,y) -> (*** close connection ***)
 	  Printf.fprintf !log "Unix error exception raised in connection listener for %s:\n%s %s %s\nClosing connection\n" (peeraddr !gcs) (Unix.error_message c) x y;
@@ -951,8 +972,9 @@ let initialize_conn_accept s =
       let sout = Unix.out_channel_of_descr s in
       set_binary_mode_in sin true;
       set_binary_mode_out sout true;
-      let pcs = { preconntime = Unix.time(); handshakestep = 1 } in
-      let sgcs = (s,sin,sout,ref (Some(PreConnState pcs))) in
+      let tm = Unix.time() in
+      let cs = { conntime = tm; handshakestep = 1; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = 0L; first_full_height = 0L; last_height = 0L } in
+      let sgcs = (s,sin,sout,ref (Some(cs))) in
       let cth = Thread.create connlistener sgcs in
       (* should lock netconns *)
       netconns := (cth,sgcs)::!netconns;
@@ -969,16 +991,15 @@ let initialize_conn_2 n s sin sout =
   (*** initiate handshake ***)
   let vers = 1l in
   let srvs = 1L in
-  let tm = Int64.of_float(Unix.time()) in
-  let user_agent = "Qeditas-Testing-Phase" in
-  let first_header_height = 0L in
-  let first_full_height = 0L in
-  let last_height = 0L in
+  let tm = Unix.time() in
+  let fhh = 0L in
+  let ffh = 0L in
+  let lh = 0L in
   let relay = true in
   let lastchkpt = None in
-  send_msg sout (Version(vers,srvs,tm,n,myaddr(),!this_nodes_nonce,user_agent,first_header_height,first_full_height,last_height,relay,lastchkpt));
-  let pcs = { preconntime = Unix.time(); handshakestep = 2 } in
-  let sgcs = (s,sin,sout,ref (Some(PreConnState pcs))) in
+  send_msg sout (Version(vers,srvs,Int64.of_float tm,n,myaddr(),!this_nodes_nonce,Version.useragent,fhh,ffh,lh,relay,lastchkpt));
+  let cs = { conntime = tm; handshakestep = 2; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
+  let sgcs = (s,sin,sout,ref (Some(cs))) in
   let cth = Thread.create connlistener sgcs in
   (* should lock netconns *)
   netconns := (cth,sgcs)::!netconns
