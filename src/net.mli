@@ -49,6 +49,7 @@ type pendingcallback = PendingCallback of (msg -> pendingcallback option)
 
 type connstate = {
     conntime : float;
+    realaddr : string;
     mutable protvers : int32;
     mutable useragent : string;
     mutable addrfrom : string;

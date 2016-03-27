@@ -469,6 +469,7 @@ type pendingcallback = PendingCallback of (msg -> pendingcallback option)
 
 type connstate = {
     conntime : float;
+    realaddr : string;
     mutable protvers : int32;
     mutable useragent : string;
     mutable addrfrom : string;
@@ -712,7 +713,6 @@ let handle_msg sin sout cs replyto mh m : unit =
 	    cs.useragent <- ua;
 	    cs.protvers <- minvers;
 	    cs.addrfrom <- addr_from;
-	    cs.lastmsgtm <- Unix.time();
 	    cs.first_header_height <- fhh;
 	    cs.first_full_height <- ffh;
 	    cs.last_height <- lh;
@@ -724,7 +724,6 @@ let handle_msg sin sout cs replyto mh m : unit =
 	    cs.useragent <- ua;
 	    cs.protvers <- minvers;
 	    cs.addrfrom <- addr_from;
-	    cs.lastmsgtm <- Unix.time();
 	    cs.first_header_height <- fhh;
 	    cs.first_full_height <- ffh;
 	    cs.last_height <- lh;
@@ -929,7 +928,7 @@ let connlistener (s,sin,sout,gcs) =
       try
 	let (replyto,mh,m) = rec_msg sin in
 	match !gcs with
-	| Some(cs) -> handle_msg sin sout cs replyto mh m
+	| Some(cs) -> cs.lastmsgtm <- Unix.time(); handle_msg sin sout cs replyto mh m
 	| None -> raise End_of_file (*** connection died; this probably shouldn't happen, as we should have left this thread when it died ***)
       with
       | Unix.Unix_error(c,x,y) -> (*** close connection ***)
@@ -965,7 +964,7 @@ let remove_dead_conns () =
 
 exception EnoughConnections
 
-let initialize_conn_accept s =
+let initialize_conn_accept ra s =
   if List.length !netconns < !Config.maxconns then
     begin
       let sin = Unix.in_channel_of_descr s in
@@ -973,7 +972,7 @@ let initialize_conn_accept s =
       set_binary_mode_in sin true;
       set_binary_mode_out sout true;
       let tm = Unix.time() in
-      let cs = { conntime = tm; handshakestep = 1; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = 0L; first_full_height = 0L; last_height = 0L } in
+      let cs = { conntime = tm; realaddr = ra; handshakestep = 1; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = 0L; first_full_height = 0L; last_height = 0L } in
       let sgcs = (s,sin,sout,ref (Some(cs))) in
       let cth = Thread.create connlistener sgcs in
       (* should lock netconns *)
@@ -998,7 +997,7 @@ let initialize_conn_2 n s sin sout =
   let relay = true in
   let lastchkpt = None in
   send_msg sout (Version(vers,srvs,Int64.of_float tm,n,myaddr(),!this_nodes_nonce,Version.useragent,fhh,ffh,lh,relay,lastchkpt));
-  let cs = { conntime = tm; handshakestep = 2; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
+  let cs = { conntime = tm; realaddr = n; handshakestep = 2; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
   let sgcs = (s,sin,sout,ref (Some(cs))) in
   let cth = Thread.create connlistener sgcs in
   (* should lock netconns *)
@@ -1042,16 +1041,22 @@ let netlistener l =
   while true do
     try
       let (s,a) = Unix.accept l in
-      begin
-	match a with
-	| Unix.ADDR_UNIX(x) ->
-	    Printf.fprintf !log "got local connection %s\n" x;
-	| Unix.ADDR_INET(x,y) ->
-	    Printf.fprintf !log "got remote connection %s %d\n" (Unix.string_of_inet_addr x) y;
-      end;
+      let ra =
+	begin
+	  match a with
+	  | Unix.ADDR_UNIX(x) ->
+	      Printf.fprintf !log "got local connection %s\n" x;
+	      flush !log;
+	      "local " ^ x
+	  | Unix.ADDR_INET(x,y) ->
+	      Printf.fprintf !log "got remote connection %s %d\n" (Unix.string_of_inet_addr x) y;
+	      flush !log;
+	      (Unix.string_of_inet_addr x) ^ " " ^ (string_of_int y)
+	end
+      in
       flush !log;
       remove_dead_conns();
-      initialize_conn_accept s
+      initialize_conn_accept ra s
     with
     | EnoughConnections -> Printf.fprintf !log "Rejecting connection because of maxconns.\n"; flush !log;
     | _ -> ()

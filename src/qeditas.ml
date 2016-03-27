@@ -424,6 +424,19 @@ let staking () =
   (*** empty placeholder for now ***)
   ();;
 
+let sincetime f =
+  let snc = Int64.of_float (Unix.time() -. f) in
+  if snc >= 172800L then
+    (Int64.to_string (Int64.div snc 86400L)) ^ " days"
+  else if snc >= 7200L then
+    (Int64.to_string (Int64.div snc 7200L)) ^ " hours"
+  else if snc >= 120L then
+    (Int64.to_string (Int64.div snc 60L)) ^ " minutes"
+  else if snc = 1L then
+    "1 second"
+  else
+    (Int64.to_string snc) ^ " seconds";;
+
 let do_command l =
   if l = "exit" then
     begin
@@ -440,8 +453,11 @@ let do_command l =
 	(fun (_,(_,_,_,gcs)) ->
 	  match !gcs with
 	  | Some(cs) ->
-	      Printf.printf "%s: %s\n" cs.addrfrom cs.useragent;
-	      Printf.printf "Connected since %f\n" cs.conntime;
+	      Printf.printf "%s (%s): %s\n" cs.realaddr cs.addrfrom cs.useragent;
+	      let snc = Int64.of_float (Unix.time() -. cs.conntime) in
+	      let snc1 = sincetime cs.conntime in
+	      let snc2 = sincetime cs.lastmsgtm in
+	      Printf.printf "Connected for %s; last message %s ago.\n" snc1 snc2;
 	      if cs.handshakestep < 5 then Printf.printf "(Still in handshake phase)\n";
 	  | None -> (*** This could happen if a connection died after remove_dead_conns above. ***)
 	      Printf.printf "[Dead Connection]\n";
