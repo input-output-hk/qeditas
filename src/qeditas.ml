@@ -439,9 +439,7 @@ let do_command l =
 	(fun (_,(_,_,_,gcs)) ->
 	  match !gcs with
 	  | PreConnState(pcs) ->
-	      Printf.printf "In handshake phase, step %d" pcs.handshakestep;
-	      if not (pcs.preaddrfrom = "") then Printf.printf " with %s" pcs.preaddrfrom;
-	      Printf.printf "\n";
+	      Printf.printf "In handshake phase, step %d\n" pcs.handshakestep;
 	      Printf.printf "Connected since %f\n" pcs.preconntime;
 	  | ConnState(cs) ->
 	      Printf.printf "%s\n" cs.addrfrom;
@@ -480,6 +478,11 @@ let initialize () =
     initblocktree();
     Printf.printf "Loading wallet\n"; flush stdout;
     Commands.load_wallet();
+    let dur = open_in_bin "/dev/urandom" in (*** this is to compute a nonce for the node to prevent self conns; it doesn't need to be cryptographically secure ***)
+    let (n,_) = sei_int64 seic (dur,None) in
+    close_in dur;
+    this_nodes_nonce := n;
+    Printf.fprintf !log "Nonce: %Ld\n" n; flush !log
   end;;
 
 initialize();;

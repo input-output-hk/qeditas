@@ -50,6 +50,8 @@ type pendingcallback = PendingCallback of (msg -> pendingcallback option)
 type connstate = {
     conntime : float;
     addrfrom : string;
+    mutable veracked : bool;
+    mutable locked : bool;
     mutable alive : bool;
     mutable lastmsgtm : float;
     mutable pending : (hashval * bool * float * float * pendingcallback option) list;
@@ -63,7 +65,6 @@ type connstate = {
 
 type preconnstate = {
     preconntime : float;
-    mutable preaddrfrom : string;
     mutable handshakestep : int
   }
 

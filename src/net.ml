@@ -23,6 +23,77 @@ let myaddr () =
   | None ->
       ""
 
+let fallbacknodes = [
+"172.246.252.93:20805"
+]
+
+let testnetfallbacknodes = [
+"172.246.252.93:20804"
+]
+
+let getfallbacknodes () =
+  if !Config.testnet then
+    testnetfallbacknodes
+  else
+    fallbacknodes
+
+let knownpeers : (string,int64) Hashtbl.t = Hashtbl.create 1000
+
+let addknownpeer lasttm n =
+  if not (n = "") && not (n = myaddr()) && not (List.mem n (getfallbacknodes())) then
+    try
+      let oldtm = Hashtbl.find knownpeers n in
+      Hashtbl.replace knownpeers n lasttm
+    with Not_found ->
+      let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnet/peers" else "peers") in
+      if Sys.file_exists peerfn then
+	let s = open_out_gen [Open_append;Open_wronly] 0x644 peerfn in
+	output_string s n;
+	output_char s '\n';
+	output_string s (Int64.to_string lasttm);
+	output_char s '\n';
+	close_out s
+      else
+	let s = open_out peerfn in
+	output_string s n;
+	output_char s '\n';
+	output_string s (Int64.to_string lasttm);
+	output_char s '\n';
+	close_out s
+
+let getknownpeers () =
+  let cnt = ref 0 in
+  let peers = ref [] in
+  let currtm = Int64.of_float (Unix.time()) in
+  Hashtbl.iter (fun n lasttm -> if !cnt < 1000 && Int64.sub currtm lasttm < 604800L then (incr cnt; peers := n::!peers)) knownpeers;
+  !peers
+
+let loadknownpeers () =
+  let currtm = Int64.of_float (Unix.time()) in
+  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnet/peers" else "peers") in
+  if Sys.file_exists peerfn then
+    let s = open_in peerfn in
+    try
+      while true do
+	let n = input_line s in
+	let lasttm = Int64.of_string (input_line s) in
+	if Int64.sub currtm lasttm < 604800L then
+	  Hashtbl.add knownpeers n lasttm
+      done
+    with End_of_file -> ()
+
+let saveknownpeers () =
+  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
+  let s = open_out_gen [Open_append;Open_wronly;Open_trunc] 0x644 peerfn in
+  Hashtbl.iter
+    (fun n lasttm ->
+      output_string s n;
+      output_char s '\n';
+      output_string s (Int64.to_string lasttm);
+      output_char s '\n')
+    knownpeers;
+  close_out s
+
 type msg =
   | Version of int32 * int64 * int64 * string * string * int64 * string * int64 * int64 * int64 * bool * (int64 * hashval) option
   | Verack
@@ -303,6 +374,7 @@ let sei_msg i c =
 
 exception RequestRejected
 exception IllformedMsg
+exception ProtocolViolation of string
 
 let openlistener ip port numconns =
   let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
@@ -397,6 +469,8 @@ type pendingcallback = PendingCallback of (msg -> pendingcallback option)
 type connstate = {
     conntime : float;
     addrfrom : string;
+    mutable veracked : bool;
+    mutable locked : bool;
     mutable alive : bool;
     mutable lastmsgtm : float;
     mutable pending : (hashval * bool * float * float * pendingcallback option) list;
@@ -410,7 +484,6 @@ type connstate = {
 
 type preconnstate = {
     preconntime : float;
-    mutable preaddrfrom : string;
     mutable handshakestep : int
   }
 
@@ -486,7 +559,7 @@ let rec_msg c =
     let ms = Buffer.contents sb in
     if not (mh = hash160 ms) then raise IllformedMsg;
     let (m,_) = sei_msg seis (ms,msl,None,0,0) in
-    Some(replyto,mh,m)
+    (replyto,mh,m)
   with
   | _ -> (*** consider it an IllformedMsg no matter what the exception raised was ***)
       raise IllformedMsg
@@ -496,11 +569,361 @@ let netseekerth : Thread.t option ref = ref None
 let netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * genconnstate ref)) list ref = ref []
 let this_nodes_nonce = ref 0L
 
+let peeraddr gcs =
+  match gcs with
+  | PreConnState(pcs) -> "" (*** empty string during the handshake phase ***)
+  | ConnState(cs) -> cs.addrfrom
+
+(*** recentblockheaders: associate block header hash with block height and block header ***)
+(*** recentblockdeltahs: associate block header hash with a blockdeltah (summarizing stxs by hashvals) ***)
+(*** recentblockdeltas: associate block header hash with a blockdelta (with all stxs explicit) ***)
+(*** recentstxs: associate hashes of txs/stxs with stxs (may or may not be in blocks) ***)
+let recentblockheaders : (hashval * (big_int * int64 * blockheader)) list ref = ref [] (*** ordered by cumulative stake ***)
+let recentorphanblockheaders : (hashval * (int64 * blockheader)) list ref = ref []
+let recentearlyblockheaders : (hashval * (big_int * int64 * blockheader)) list ref = ref []
+let recentcommitments : (int64 * hashval) list ref = ref []
+let recentblockdeltahs : (hashval, blockdeltah) Hashtbl.t = Hashtbl.create 1024
+let recentblockdeltas : (hashval, blockdelta) Hashtbl.t = Hashtbl.create 1024
+let recentstxs : (hashval, stx) Hashtbl.t = Hashtbl.create 65536
+
+let waitingblock : (int64 * int64 * hashval * blockheader * blockdelta * big_int) option ref = ref None;;
+
+let rec insertnewblockheader_real bhh cs mine blkh bh l =
+  match l with
+  | (bhh1,(_,_,bh1))::r when bhh = bhh1 -> l (*** already in the list ***)
+  | (bhh1,(cs1,blkh1,bh1))::r when lt_big_int cs1 cs || (mine && eq_big_int cs1 cs) -> (bhh,(cs,blkh,bh))::l (*** consider the ones this process has created preferable to others with the same cumulative stake ***)
+  | x::r -> x::insertnewblockheader_real bhh cs mine blkh bh r
+  | [] -> [(bhh,(cs,blkh,bh))]
+
+let insertnewblockheader bhh cs mine blkh bh =
+  recentblockheaders := insertnewblockheader_real bhh cs mine blkh bh !recentblockheaders;
+  Printf.printf "After insertnewblockheader\n";
+  List.iter
+    (fun (bhh1,(cs1,blkh1,bh1)) ->
+      Printf.printf "%Ld %s cs: %s timestamp %Ld\n" blkh1 (hashval_hexstring bhh1) (string_of_big_int cs1) (let (bhd1,_) = bh1 in bhd1.timestamp)
+      )
+    !recentblockheaders;
+  flush stdout
+
+let known_blockheader_p blkh h =
+  List.mem_assoc h !recentblockheaders (*** should also check if it's in a file ***)
+
+let known_blockdeltah_p blkh h =
+  Hashtbl.mem recentblockdeltahs h (*** should also check if it's in a file ***)
+
+let known_blockdelta_p blkh h =
+  Hashtbl.mem recentblockdeltas h (*** should also check if it's in a file ***)
+
+let known_stx_p h =
+  Hashtbl.mem recentstxs h (*** should also check if it's in a file ***)
+
+let rec update_pending pendl k m =
+  match pendl with
+  | [] -> []
+  | (h,p,tm1,tm2,None)::pendr when not (h = k) ->
+      (h,p,tm1,tm2,None)::update_pending pendr k m
+  | (h,p,tm1,tm2,None)::pendr ->
+      pendr
+  | (h,p,tm1,tm2,Some(PendingCallback(f)))::pendr ->
+      match f m with
+      | None -> pendr
+      | g -> (h,p,tm1,Unix.time(),g)::pendr
+
+(*** This is only approximate; it takes the height of a recent block header with the highest cumul stake ***)
+let current_block_height () =
+  match !recentblockheaders with
+  | (_,(_,blkh,_))::_ -> blkh
+  | [] -> 0L
+
+let lastbroadcastextra = ref (Unix.time());;
+
+let extra_inv_h invl mblkh =
+  let invr = ref invl in
+  let cnt = ref 0 in
+  List.iter (fun (bhh,(cumulstk,blkh,bh)) ->
+    incr cnt;
+    if !cnt < 50000 && blkh >= mblkh && not (List.mem (1,blkh,bhh) !invr) then
+      invr := (1,blkh,bhh)::!invr)
+    !recentblockheaders;
+  !invr
+
+(*** extra_inv is a function that adds extra inventory to inventory messages to make certain block headers propagate ***)
+let extra_inv invl =
+  let tm = Unix.time() in
+  if tm -. !lastbroadcastextra > 5400.0 then (*** every 90 minutes or so, send a big inv broadcast including the last 256 headers or so ***)
+    begin
+      lastbroadcastextra := tm;
+      extra_inv_h invl (Int64.sub (current_block_height()) 256L)
+    end
+  else (*** otherwise also send the past 8 headers or so ***)
+    extra_inv_h invl (Int64.sub (current_block_height()) 8L)
+
+let broadcast_inv invl =
+  let invl = extra_inv invl in
+  if not (invl = []) then
+    let invl2 = List.map (fun (k,_,h) -> (k,h)) invl in
+    List.iter
+      (fun (cth,(s,sin,sout,gcs)) ->
+	try
+	  match !gcs with
+	  | ConnState(cs) ->
+	      if cs.alive && not (cs.locked) then
+		begin
+(*** should acquire a lock on cs.locked, or there could be a race condition with cth ***)
+		  cs.locked <- true;
+		  ignore (send_msg sout (Inv(invl)));
+		  cs.locked <- false;
+(*** should now give up lock on cs.locked ***)
+		  cs.sentinv <- invl2 @ cs.sentinv
+		end
+	  | _ -> ()
+	with _ -> ())
+      !netconns
+
+let send_initial_inv sout cs =
+  let tosend = ref [] in
+  let cnt = ref 0 in
+  List.iter (fun (bhh,(cumulstk,blkh,bh)) ->
+    incr cnt;
+    if !cnt < 50000 then
+      begin
+	tosend := (1,blkh,bhh)::!tosend;
+	if Hashtbl.mem recentblockdeltahs bhh then (incr cnt; if !cnt < 50000 then tosend := (2,blkh,bhh)::!tosend);
+	if Hashtbl.mem recentblockdeltas bhh then (incr cnt; if !cnt < 50000 then tosend := (3,blkh,bhh)::!tosend);
+      end)
+    !recentblockheaders;
+  Hashtbl.iter (fun txh _ -> incr cnt; if !cnt < 50000 then tosend := (4,0L,txh)::!tosend) recentstxs;
+  if not (!tosend = []) then ignore (send_msg sout (Inv(!tosend)));
+  cs.sentinv <- List.map (fun (k,_,h) -> (k,h)) !tosend
+
+let handle_msg sin sout gcs replyto mh m =
+  match (replyto,m,!gcs) with
+  | (None,Version(vers,srvs,tm,addr_recv,addr_from,n,user_agent,fhh,ffh,lh,relay,lastchkpt),PreConnState(pcs)) ->
+      if pcs.handshakestep = 1 then
+	let cs = { conntime = pcs.preconntime; addrfrom = addr_from; veracked = false; locked = false; alive = true; lastmsgtm = Unix.time(); pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
+	begin
+	  send_msg sout Verack;
+	  send_msg sout (Version(0l,0L,0L,addr_from,myaddr(),!this_nodes_nonce,"Qeditas 0.0.1 (alpha)",0L,0L,0L,true,None));
+	  gcs := ConnState(cs)
+	end
+      else if pcs.handshakestep = 2 then
+	let cs = { conntime = pcs.preconntime; addrfrom = addr_from; veracked = false; locked = false; alive = true; lastmsgtm = Unix.time(); pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
+	begin
+	  send_msg sout Verack;
+	  gcs := ConnState(cs)
+	end
+      else
+	raise (ProtocolViolation "Handshake failed")
+  | (None,Verack,ConnState(cs)) when not cs.veracked -> cs.veracked <- true
+  | (_,_,ConnState(cs)) when not cs.veracked -> raise (ProtocolViolation("No Verack received"))
+  | (_,_,PreConnState(_)) -> raise (ProtocolViolation("Handshake failed"))
+  | (None,Ping,_) ->
+      Printf.printf "Handling Ping. Sending Pong.\n"; flush stdout;
+      ignore (send_reply sout mh Pong);
+      Printf.printf "Sent Pong.\n"; flush stdout
+  | (Some(pingh),Pong,ConnState(cs)) ->
+      Printf.printf "Handling Pong.\n"; flush stdout;
+      cs.pending <- update_pending cs.pending pingh m
+  | (Some(qh),Reject(msgcom,by,rsn,data),ConnState(cs)) ->
+      Printf.printf "Message %s %s rejected: %d %s\n" (hashval_hexstring mh) msgcom by rsn;
+      flush stdout;
+      cs.pending <- update_pending cs.pending qh m
+  | (None,Inv(invl),ConnState(cs)) ->
+      let toget = ref [] in
+      Printf.printf "got Inv\n"; flush stdout;
+      List.iter
+	(fun (k,blkh,h) ->
+	  Printf.printf "%d %Ld %s\n" k blkh (hashval_hexstring h); flush stdout;
+	  cs.rinv <- (k,h)::cs.rinv;
+	  match k with
+	  | 1 -> (*** block header ***)
+	      if not (known_blockheader_p blkh h) then (toget := (k,h)::!toget; Printf.printf "get %s since not known blockheader\n" (hashval_hexstring h); flush stdout)
+	  | 2 -> (*** blockdeltah ***)
+	      if not (known_blockdeltah_p blkh h) then toget := (k,h)::!toget
+	  | 3 -> (*** blockdelta ***)
+	      if not (known_blockdelta_p blkh h) then toget := (k,h)::!toget
+	  | 4 -> (*** stx ***)
+	      if not (known_stx_p h) then toget := (k,h)::!toget
+	  | _ -> () (*** ignore everything else for now ***)
+	)
+	invl;
+      if not (!toget = []) then
+	let mh = send_msg sout (GetData(!toget)) in
+	Printf.printf "Just sent GetData\n"; flush stdout;
+	cs.invreq <- !toget @ cs.invreq
+  | (None,GetData(invl),_) ->
+      let headerl = ref [] in
+      Printf.printf "got GetData\n"; flush stdout;
+      List.iter
+	(fun (k,h) ->
+	  Printf.printf "%d %s\n" k (hashval_hexstring h); flush stdout;
+	  if k = 1 then
+	    try
+	      let (_,blkh,bh) = List.assoc h !recentblockheaders in headerl := (blkh,bh)::!headerl
+	    with Not_found -> (*** should look for it in a file in this case ***)
+	      ())
+	invl;
+      ignore (send_msg sout (Headers(!headerl)));
+      List.iter
+	(fun (k,h) ->
+	  match k with
+	  | 1 -> () (*** block headers sent above ***)
+	  | 2 -> (*** blockdeltah ***)
+	      begin
+		try
+		  let bdh = Hashtbl.find recentblockdeltahs h in
+		  ignore (send_msg sout (MBlockdeltah(1l,h,bdh)))
+		with Not_found -> () (*** should look for it in a file in this case ***)
+	      end
+	  | 3 -> (*** blockdelta ***)
+	      begin
+		try
+		  let bd = Hashtbl.find recentblockdeltas h in
+		  ignore (send_msg sout (MBlockdelta(1l,h,bd)))
+		with Not_found -> () (*** should look for it in a file in this case ***)
+	      end
+	  | 4 -> (*** stx ***)
+	      begin
+		try
+		  let stx = Hashtbl.find recentstxs h in
+		  ignore (send_msg sout (MTx(1l,stx)))
+		with Not_found -> () (*** should look for it in a file in this case ***)
+	      end
+	  | _ -> () (*** ignore everything else for now ***)
+	  )
+	invl
+  | (None,Headers(bhl),ConnState(cs)) ->
+      Printf.printf "got Headers\n"; flush stdout;
+      let tm = Int64.of_float (Unix.time()) in
+      let tobroadcast = ref [] in
+      List.iter
+	(fun (blkh,(bhd,bhs)) ->
+	  Printf.printf "header at height %Ld\n" blkh; flush stdout;
+	  if valid_blockheader blkh (bhd,bhs) then
+	    let bhdh = hash_blockheaderdata bhd in
+	    if List.mem (1,bhdh) cs.invreq then (*** only accept if it seems to have been requested ***)
+	      begin
+		cs.invreq <- List.filter (fun (k,h) -> not (k = 1 && h = bhdh)) cs.invreq;
+		match 
+		  match bhd.prevblockhash with
+		  | None ->
+		      Printf.printf "genesis\n";
+		      if valid_blockheaderchain blkh ((bhd,bhs),[]) (*** first block, special conditions ***)
+		      then Some(zero_big_int)
+		      else None
+		  | Some(pbhh) ->
+		      begin
+			try
+			  let (cs,_,pbh) = List.assoc pbhh !recentblockheaders in
+			  if blockheader_succ pbh (bhd,bhs) then
+			    Some(cs)
+			  else
+			    None
+			with Not_found ->
+			  recentorphanblockheaders := (bhdh,(blkh,(bhd,bhs)))::!recentorphanblockheaders;
+			  None
+		      end
+		with
+		| Some(prevcumulstk) -> (*** header is accepted, put it on the list with the new cumulative stake ***)
+		    let (_,_,tar) = bhd.tinfo in
+		    let cumulstk = cumul_stake prevcumulstk tar bhd.deltatime in
+		    Printf.printf "Got header with cumul stake: %s\n" (string_of_big_int cumulstk); flush stdout;
+		    let bhdh = hash_blockheaderdata bhd in
+		    if not (known_blockheader_p blkh bhdh) then (*** make sure it's new ***)
+		      if bhd.timestamp <= Int64.add tm 60L then (*** if it seems to be early, then delay putting it in the sorted list of recent block headers ***)
+			recentearlyblockheaders := (bhdh,(cumulstk,blkh,(bhd,bhs)))::!recentearlyblockheaders
+		      else
+			begin
+			  tobroadcast := (1,blkh,bhdh)::!tobroadcast;
+			  insertnewblockheader bhdh cumulstk false blkh (bhd,bhs);
+			  begin (*** If there is some block we are waiting to publish, see if it has more cumulative stake that this one. If not, forget it. ***)
+			    match !waitingblock with
+			    | Some(_,_,_,_,_,mycumulstk) when lt_big_int mycumulstk cumulstk ->
+				Printf.printf "A better block was found. Not publishing mine.\n"; flush stdout;
+				waitingblock := None
+			    | _ -> ()
+			  end;
+			  if List.mem (2,bhdh) cs.rinv then (*** request the corresponding blockdeltah if possible ***)
+			    begin
+			      ignore (send_msg sout (GetData([(2,bhdh)])));
+			      cs.invreq <- (2,bhdh)::cs.invreq
+			    end
+			  else if List.mem (3,bhdh) cs.rinv then (*** otherwise request the corresponding blockdelta if possible ***)
+			    begin
+			      ignore (send_msg sout (GetData([(3,bhdh)])));
+			      cs.invreq <- (3,bhdh)::cs.invreq
+			    end
+			end
+		  | None -> (*** header is rejected, ignore it for now, maybe should ignore it forever? ***)
+		      Printf.printf "header rejected\n";
+		      ()
+	      end)
+	bhl;
+      broadcast_inv !tobroadcast
+  | (None,MBlockdeltah(vers,h,bdh),ConnState(cs)) ->
+      Printf.printf "Handling MBlockdeltah.\n"; flush stdout;
+      if List.mem (2,h) cs.invreq then (*** only accept if it seems to have been requested ***)
+	begin
+	  cs.invreq <- List.filter (fun (k,h2) -> not (k = 2 && h2 = h)) cs.invreq;
+	  Hashtbl.add recentblockdeltahs h bdh
+	end
+  | (None,MBlockdelta(vers,h,bd),ConnState(cs)) ->
+      Printf.printf "Handling MBlockdelta.\n"; flush stdout;
+      if List.mem (3,h) cs.invreq then (*** only accept if it seems to have been requested ***)
+	begin
+	  cs.invreq <- List.filter (fun (k,h2) -> not (k = 3 && h2 = h)) cs.invreq;
+	  Hashtbl.add recentblockdeltas h bd
+	end
+  | (None,MTx(vers,(tx,txsig)),ConnState(cs)) ->
+      let h = hashtx tx in
+      if List.mem (4,h) cs.invreq then (*** only accept if it seems to have been requested ***)
+	begin
+	  cs.invreq <- List.filter (fun (k,h2) -> not (k = 4 && h2 = h)) cs.invreq;
+	  Hashtbl.add recentstxs h (tx,txsig)
+	end
+  | (None,Addr(addrl),_) ->
+      let currtm = Int64.of_float (Unix.time()) in
+      List.iter (fun (lasttm,n) -> if Int64.sub currtm lasttm < 604800L then addknownpeer lasttm n) addrl (*** add peers that were active at some point in the last week ***)
+  | (None,GetAddr,_) ->
+      let cnt = ref 0 in
+      let addrl = ref [] in
+      begin
+	List.iter
+	  (fun (_,(_,_,_,gcs)) ->
+	    match !gcs with
+	    | ConnState(cs) ->
+		if !cnt < 1000 && not (cs.addrfrom = "") then (incr cnt; addrl := (Int64.of_float cs.lastmsgtm,cs.addrfrom) :: !addrl)
+	    | _ -> ()
+	  )
+	  !netconns;
+	ignore (send_msg sout (Addr(!addrl)))
+      end
+  | _ ->
+      Printf.fprintf !log "Ignoring msg, probably because the code to handle the msg is unwritten.\n"; flush !log
+
 let connlistener (s,sin,sout,gcs) =
-  (*** empty for now ***)
-  while true do
-    Unix.sleep 900
-  done
+  try
+    while true do
+      try
+	let (replyto,mh,m) = rec_msg sin in
+	handle_msg sin sout gcs replyto mh m
+      with
+      | Unix.Unix_error(c,x,y) -> (*** close connection ***)
+	  Printf.fprintf !log "Unix error exception raised in connection listener for %s:\n%s %s %s\nClosing connection\n" (peeraddr !gcs) (Unix.error_message c) x y;
+	  Unix.close s;
+	  raise Exit
+      | End_of_file -> (*** close connection ***)
+	  Printf.fprintf !log "Channel for connection %s raised End_of_file. Closing connection\n" (peeraddr !gcs);
+	  Unix.close s;
+	  raise Exit
+      | ProtocolViolation(x) -> (*** close connection ***)
+	  Printf.fprintf !log "Protocol violation by connection %s: %s\nClosing connection\n" (peeraddr !gcs) x;
+	  Unix.close s;
+	  raise Exit
+      | exc -> (*** report but ignore all other exceptions ***)
+	  Printf.fprintf !log "Ignoring exception raised in connection listener for %s:\n%s\n" (peeraddr !gcs) (Printexc.to_string exc)
+    done
+  with _ -> ()
 
 exception EnoughConnections
 
@@ -511,7 +934,7 @@ let initialize_conn_accept s =
       let sout = Unix.out_channel_of_descr s in
       set_binary_mode_in sin true;
       set_binary_mode_out sout true;
-      let pcs = { preconntime = Unix.time(); preaddrfrom = ""; handshakestep = 1 } in
+      let pcs = { preconntime = Unix.time(); handshakestep = 1 } in
       let gcs = (s,sin,sout,ref (PreConnState pcs)) in
       let cth = Thread.create connlistener gcs in
       (* should lock netconns *)
@@ -537,7 +960,7 @@ let initialize_conn_2 n s sin sout =
   let relay = true in
   let lastchkpt = None in
   send_msg sout (Version(vers,srvs,tm,n,myaddr(),!this_nodes_nonce,user_agent,first_header_height,first_full_height,last_height,relay,lastchkpt));
-  let pcs = { preconntime = Unix.time(); preaddrfrom = ""; handshakestep = 2 } in
+  let pcs = { preconntime = Unix.time(); handshakestep = 2 } in
   let gcs = (s,sin,sout,ref (PreConnState pcs)) in
   let cth = Thread.create connlistener gcs in
   (* should lock netconns *)
@@ -550,13 +973,6 @@ let initialize_conn n s =
   set_binary_mode_in sin true;
   set_binary_mode_out sout true;
   initialize_conn_2 n s sin sout
-
-let knownpeers : (string,int64) Hashtbl.t = Hashtbl.create 1000
-
-let peeraddr gcs =
-  match gcs with
-  | PreConnState(pcs) -> pcs.preaddrfrom (*** this may be the empty string during the handshake phase ***)
-  | ConnState(cs) -> cs.addrfrom
 
 let tryconnectpeer n =
   if List.length !netconns >= !Config.maxconns then raise EnoughConnections;
@@ -583,75 +999,6 @@ let tryconnectpeer n =
       | _ ->
 	  ()
     end
-
-let fallbacknodes = [
-"172.246.252.93:20805"
-]
-
-let testnetfallbacknodes = [
-"172.246.252.93:20804"
-]
-
-let getfallbacknodes () =
-  if !Config.testnet then
-    testnetfallbacknodes
-  else
-    fallbacknodes
-
-let addknownpeer lasttm n =
-  if not (n = "") && not (n = myaddr()) && not (List.mem n (getfallbacknodes())) then
-    try
-      let oldtm = Hashtbl.find knownpeers n in
-      Hashtbl.replace knownpeers n lasttm
-    with Not_found ->
-      let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnet/peers" else "peers") in
-      if Sys.file_exists peerfn then
-	let s = open_out_gen [Open_append;Open_wronly] 0x644 peerfn in
-	output_string s n;
-	output_char s '\n';
-	output_string s (Int64.to_string lasttm);
-	output_char s '\n';
-	close_out s
-      else
-	let s = open_out peerfn in
-	output_string s n;
-	output_char s '\n';
-	output_string s (Int64.to_string lasttm);
-	output_char s '\n';
-	close_out s
-
-let getknownpeers () =
-  let cnt = ref 0 in
-  let peers = ref [] in
-  let currtm = Int64.of_float (Unix.time()) in
-  Hashtbl.iter (fun n lasttm -> if !cnt < 1000 && Int64.sub currtm lasttm < 604800L then (incr cnt; peers := n::!peers)) knownpeers;
-  !peers
-
-let loadknownpeers () =
-  let currtm = Int64.of_float (Unix.time()) in
-  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnet/peers" else "peers") in
-  if Sys.file_exists peerfn then
-    let s = open_in peerfn in
-    try
-      while true do
-	let n = input_line s in
-	let lasttm = Int64.of_string (input_line s) in
-	if Int64.sub currtm lasttm < 604800L then
-	  Hashtbl.add knownpeers n lasttm
-      done
-    with End_of_file -> ()
-
-let saveknownpeers () =
-  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
-  let s = open_out_gen [Open_append;Open_wronly;Open_trunc] 0x644 peerfn in
-  Hashtbl.iter
-    (fun n lasttm ->
-      output_string s n;
-      output_char s '\n';
-      output_string s (Int64.to_string lasttm);
-      output_char s '\n')
-    knownpeers;
-  close_out s
 
 let netlistener l =
   while true do
