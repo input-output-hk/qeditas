@@ -913,22 +913,27 @@ let connlistener (s,sin,sout,gcs) =
       with
       | Unix.Unix_error(c,x,y) -> (*** close connection ***)
 	  Printf.fprintf !log "Unix error exception raised in connection listener for %s:\n%s %s %s\nClosing connection\n" (peeraddr !gcs) (Unix.error_message c) x y;
+	  flush !log;
 	  Unix.close s;
 	  raise Exit
       | End_of_file -> (*** close connection ***)
 	  Printf.fprintf !log "Channel for connection %s raised End_of_file. Closing connection\n" (peeraddr !gcs);
+	  flush !log;
 	  Unix.close s;
 	  raise Exit
       | ProtocolViolation(x) -> (*** close connection ***)
 	  Printf.fprintf !log "Protocol violation by connection %s: %s\nClosing connection\n" (peeraddr !gcs) x;
+	  flush !log;
 	  Unix.close s;
 	  raise Exit
       | SelfConnection -> (*** detected a self-connection attempt, close ***)
 	  Printf.fprintf !log "Stopping potential self-connection\n";
+	  flush !log;
 	  Unix.close s;
 	  raise Exit
       | exc -> (*** report but ignore all other exceptions ***)
-	  Printf.fprintf !log "Ignoring exception raised in connection listener for %s:\n%s\n" (peeraddr !gcs) (Printexc.to_string exc)
+	  Printf.fprintf !log "Ignoring exception raised in connection listener for %s:\n%s\n" (peeraddr !gcs) (Printexc.to_string exc);
+	  flush !log;
     done
   with _ -> gcs := None (*** indicate that the connection is dead; it will be removed from netaddr by the netlistener or netseeker ***)
 
