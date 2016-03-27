@@ -432,18 +432,21 @@ let do_command l =
       exit 0
     end
   else if l = "getpeerinfo" then
-    let ll = List.length !netconns in
     begin
+      remove_dead_conns();
+      let ll = List.length !netconns in
       Printf.printf "%d connection%s\n" ll (if ll = 1 then "" else "s");
       List.iter
 	(fun (_,(_,_,_,gcs)) ->
 	  match !gcs with
-	  | PreConnState(pcs) ->
+	  | Some(PreConnState(pcs)) ->
 	      Printf.printf "In handshake phase, step %d\n" pcs.handshakestep;
 	      Printf.printf "Connected since %f\n" pcs.preconntime;
-	  | ConnState(cs) ->
+	  | Some(ConnState(cs)) ->
 	      Printf.printf "%s\n" cs.addrfrom;
 	      Printf.printf "Connected since %f\n" cs.conntime;
+	  | None -> (*** This could happen if a connection died after remove_dead_conns above. ***)
+	      Printf.printf "[Dead Connection]\n";
 	  )
 	!netconns;
       flush stdout

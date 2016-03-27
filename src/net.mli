@@ -52,7 +52,6 @@ type connstate = {
     addrfrom : string;
     mutable veracked : bool;
     mutable locked : bool;
-    mutable alive : bool;
     mutable lastmsgtm : float;
     mutable pending : (hashval * bool * float * float * pendingcallback option) list;
     mutable sentinv : (int * hashval) list;
@@ -72,8 +71,10 @@ type genconnstate = ConnState of connstate | PreConnState of preconnstate
 
 val netlistenerth : Thread.t option ref
 val netseekerth : Thread.t option ref
-val netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * genconnstate ref)) list ref
+val netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * genconnstate option ref)) list ref
 val this_nodes_nonce : int64 ref
+
+val remove_dead_conns : unit -> unit
 
 val netlistener : Unix.file_descr -> unit
 val netseeker : unit -> unit
