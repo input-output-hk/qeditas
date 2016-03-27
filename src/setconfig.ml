@@ -48,7 +48,13 @@ let process_config_line l =
       List.iter
 	(fun (v,r) ->
 	  let vl = String.length v in
-	  if ll > 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
+	  if l = v then
+	    begin
+	      setl := v::!setl;
+	      r true;
+	      raise Done
+	    end
+	  else if ll > 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
 	    let s = String.sub l (vl+1) (ll-(vl+1)) in
 	    begin
 	      setl := v::!setl;
@@ -119,17 +125,16 @@ let datadir_from_command_line () =
   let a = Array.length Sys.argv in
   for i = 1 to a-1 do
     let arg = Sys.argv.(i) in
-    if String.length arg > 9 && arg.[0] = '-' then
-      try
-	if String.sub arg 0 9 = "-datadir=" then
-	  Config.datadir := String.sub arg 9 (String.length arg - 9);
-	if arg = "-testnet" || arg = "-testnet=1" then (*** if testnet, then change some default values ***)
-          begin
-            Config.testnet := true;
-            if not (List.mem "port" !setl) then Config.port := 20804;
-            if not (List.mem "seed" !setl) then Config.seed := "68324ba252550a4cb02b7279cf398b9994c0c39f"; (*** last 20 bytes of hash of bitcoin block 378800 ***)
-          end
-      with Not_found -> ()
+    try
+      if String.length arg > 9 && String.sub arg 0 9 = "-datadir=" then
+	Config.datadir := String.sub arg 9 (String.length arg - 9);
+      if arg = "-testnet" || arg = "-testnet=1" then (*** if testnet, then change some default values ***)
+        begin
+          Config.testnet := true;
+          if not (List.mem "port" !setl) then Config.port := 20804;
+          if not (List.mem "seed" !setl) then Config.seed := "68324ba252550a4cb02b7279cf398b9994c0c39f"; (*** last 20 bytes of hash of bitcoin block 378800 ***)
+        end
+    with Not_found -> ()
   done;;
 
 let process_config_args () =
