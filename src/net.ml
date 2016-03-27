@@ -470,10 +470,11 @@ type pendingcallback = PendingCallback of (msg -> pendingcallback option)
 type connstate = {
     conntime : float;
     realaddr : string;
+    mutable handshakestep : int;
+    mutable peertimeskew : int;
     mutable protvers : int32;
     mutable useragent : string;
     mutable addrfrom : string;
-    mutable handshakestep : int;
     mutable locked : bool;
     mutable lastmsgtm : float;
     mutable pending : (hashval * bool * float * float * pendingcallback option) list;
@@ -698,6 +699,17 @@ let log_msg m =
   let h = string_hexstring (Buffer.contents sb) in
   Printf.fprintf !log "\nmsg: %s\n" h
 
+let network_time () =
+  let mytm = Int64.of_float (Unix.time()) in
+  let offsets = ref [] in
+  List.iter (fun (_,(_,_,_,gcs)) -> match !gcs with Some(cs) -> offsets := List.merge compare [cs.peertimeskew] !offsets | None -> ());
+  if !offsets = [] then
+    (mytm,0)
+  else
+    let m = (List.length !offsets) lsr 1 in
+    let mskew = List.nth !offsets m in
+    (Int64.add mytm (Int64.of_int mskew),mskew)
+
 let handle_msg sin sout cs replyto mh m : unit =
   match (replyto,m) with
   | (None,Version(vers,srvs,tm,addr_recv,addr_from,n,ua,fhh,ffh,lh,relay,lastchkpt)) ->
@@ -705,31 +717,39 @@ let handle_msg sin sout cs replyto mh m : unit =
 	raise SelfConnection
       else
 	let minvers = if vers > Version.protocolversion then Version.protocolversion else 0l in
-	if cs.handshakestep = 1 then
-	  begin
-	    send_msg sout Verack;
-	    send_msg sout (Version(minvers,0L,0L,addr_from,myaddr(),!this_nodes_nonce,Version.useragent,0L,0L,0L,true,None));
-	    cs.handshakestep <- 3;
-	    cs.useragent <- ua;
-	    cs.protvers <- minvers;
-	    cs.addrfrom <- addr_from;
-	    cs.first_header_height <- fhh;
-	    cs.first_full_height <- ffh;
-	    cs.last_height <- lh;
-	  end
-	else if cs.handshakestep = 4 then
-	  begin
-	    send_msg sout Verack;
-	    cs.handshakestep <- 5;
-	    cs.useragent <- ua;
-	    cs.protvers <- minvers;
-	    cs.addrfrom <- addr_from;
-	    cs.first_header_height <- fhh;
-	    cs.first_full_height <- ffh;
-	    cs.last_height <- lh;
-	  end
+	let mytm = Int64.of_float (Unix.time()) in
+	let tmskew = Int64.sub tm mytm in
+	if tmskew > 7200L then
+	  raise (ProtocolViolation("Peer rejected due to excessive time skew"))
 	else
-	  raise (ProtocolViolation "Handshake failed")
+	  let tmskew = Int64.to_int tmskew in
+	  if cs.handshakestep = 1 then
+	    begin
+	      send_msg sout Verack;
+	      send_msg sout (Version(minvers,0L,mytm,addr_from,myaddr(),!this_nodes_nonce,Version.useragent,0L,0L,0L,true,None));
+	      cs.handshakestep <- 3;
+	      cs.peertimeskew <- tmskew;
+	      cs.useragent <- ua;
+	      cs.protvers <- minvers;
+	      cs.addrfrom <- addr_from;
+	      cs.first_header_height <- fhh;
+	      cs.first_full_height <- ffh;
+	      cs.last_height <- lh;
+	    end
+	  else if cs.handshakestep = 4 then
+	    begin
+	      send_msg sout Verack;
+	      cs.handshakestep <- 5;
+	      cs.peertimeskew <- tmskew;
+	      cs.useragent <- ua;
+	      cs.protvers <- minvers;
+	      cs.addrfrom <- addr_from;
+	      cs.first_header_height <- fhh;
+	      cs.first_full_height <- ffh;
+	      cs.last_height <- lh;
+	    end
+	  else
+	    raise (ProtocolViolation "Handshake failed")
   | (_,Verack) ->
       if cs.handshakestep = 2 then
 	cs.handshakestep <- 4
@@ -972,7 +992,7 @@ let initialize_conn_accept ra s =
       set_binary_mode_in sin true;
       set_binary_mode_out sout true;
       let tm = Unix.time() in
-      let cs = { conntime = tm; realaddr = ra; handshakestep = 1; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = 0L; first_full_height = 0L; last_height = 0L } in
+      let cs = { conntime = tm; realaddr = ra; handshakestep = 1; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = 0L; first_full_height = 0L; last_height = 0L } in
       let sgcs = (s,sin,sout,ref (Some(cs))) in
       let cth = Thread.create connlistener sgcs in
       (* should lock netconns *)
@@ -997,7 +1017,7 @@ let initialize_conn_2 n s sin sout =
   let relay = true in
   let lastchkpt = None in
   send_msg sout (Version(vers,srvs,Int64.of_float tm,n,myaddr(),!this_nodes_nonce,Version.useragent,fhh,ffh,lh,relay,lastchkpt));
-  let cs = { conntime = tm; realaddr = n; handshakestep = 2; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
+  let cs = { conntime = tm; realaddr = n; handshakestep = 2; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
   let sgcs = (s,sin,sout,ref (Some(cs))) in
   let cth = Thread.create connlistener sgcs in
   (* should lock netconns *)

@@ -465,6 +465,12 @@ let do_command l =
 	!netconns;
       flush stdout
     end
+  else if l = "nettime" then
+    begin
+      let (tm,skew) = network_time() in
+      Printf.printf "network time %Ld (median skew of %d)\n" tm skew;
+      flush stdout;
+    end
   else
     (Printf.fprintf stdout "Ignoring unknown command: %s\n" l; flush stdout);;
 

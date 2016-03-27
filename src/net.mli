@@ -50,10 +50,11 @@ type pendingcallback = PendingCallback of (msg -> pendingcallback option)
 type connstate = {
     conntime : float;
     realaddr : string;
+    mutable handshakestep : int;
+    mutable peertimeskew : int;
     mutable protvers : int32;
     mutable useragent : string;
     mutable addrfrom : string;
-    mutable handshakestep : int;
     mutable locked : bool;
     mutable lastmsgtm : float;
     mutable pending : (hashval * bool * float * float * pendingcallback option) list;
@@ -74,6 +75,8 @@ val remove_dead_conns : unit -> unit
 
 val netlistener : Unix.file_descr -> unit
 val netseeker : unit -> unit
+
+val network_time : unit -> int64 * int
 
 (** break ***)
 
