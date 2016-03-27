@@ -457,6 +457,7 @@ let initialize () =
     datadir_from_command_line(); (*** if -datadir=... is on the command line, then set Config.datadir so we can find the config file ***)
     process_config_file();
     process_config_args(); (*** settings on the command line shadow those in the config file ***)
+    openlog(); (*** Don't open the log until the config vars are set, so if we know whether or not it's testnet. ***)
     if !Config.seed = "" && !Config.lastcheckpoint = "" then
       begin
 	raise (Failure "Need either a seed (to validate the genesis block) or a lastcheckpoint (to start later in the blockchain); have neither")
@@ -480,7 +481,6 @@ let initialize () =
     Commands.load_wallet();
   end;;
 
-openlog();;
 initialize();;
 initnetwork();;
 stkth := Some(Thread.create staking ());;
