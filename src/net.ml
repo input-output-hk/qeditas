@@ -375,6 +375,7 @@ let sei_msg i c =
 exception RequestRejected
 exception IllformedMsg
 exception ProtocolViolation of string
+exception SelfConnection
 
 let openlistener ip port numconns =
   let s = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
@@ -699,7 +700,9 @@ let send_initial_inv sout cs =
 let handle_msg sin sout gcs replyto mh m =
   match (replyto,m,!gcs) with
   | (None,Version(vers,srvs,tm,addr_recv,addr_from,n,user_agent,fhh,ffh,lh,relay,lastchkpt),PreConnState(pcs)) ->
-      if pcs.handshakestep = 1 then
+      if n = !this_nodes_nonce then
+	raise SelfConnection
+      else if pcs.handshakestep = 1 then
 	let cs = { conntime = pcs.preconntime; addrfrom = addr_from; veracked = false; locked = false; alive = true; lastmsgtm = Unix.time(); pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
 	begin
 	  send_msg sout Verack;
@@ -918,6 +921,10 @@ let connlistener (s,sin,sout,gcs) =
 	  raise Exit
       | ProtocolViolation(x) -> (*** close connection ***)
 	  Printf.fprintf !log "Protocol violation by connection %s: %s\nClosing connection\n" (peeraddr !gcs) x;
+	  Unix.close s;
+	  raise Exit
+      | SelfConnection -> (*** detected a self-connection attempt, close ***)
+	  Printf.fprintf !log "Stopping potential self-connection\n";
 	  Unix.close s;
 	  raise Exit
       | exc -> (*** report but ignore all other exceptions ***)
