@@ -69,7 +69,6 @@ type preconnstate = {
 
 type genconnstate = ConnState of connstate | PreConnState of preconnstate
 
-val netth : Thread.t option ref
 val netlistenerth : Thread.t option ref
 val netseekerth : Thread.t option ref
 val netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * genconnstate ref)) list ref

@@ -3,6 +3,7 @@
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 open Big_int;;
+open Utils;;
 open Ser;;
 open Hash;;
 open Secp256k1;;
@@ -401,7 +402,7 @@ let main () =
 
 let stkth : Thread.t option ref = ref None;;
 
-let networking () =
+let initnetwork () =
   begin
     try
       match !Config.ip with
@@ -426,6 +427,7 @@ let do_command l =
   if l = "exit" then
     begin
       (*** Could call Thread.kill on netth and stkth, but Thread.kill is not always implemented. ***)
+      closelog();
       exit 0
     end
   else if l = "getpeerinfo" then
@@ -477,8 +479,10 @@ let initialize () =
     Printf.printf "Loading wallet\n"; flush stdout;
     Commands.load_wallet();
   end;;
+
+openlog();;
 initialize();;
-netth := Some(Thread.create networking ());;
+initnetwork();;
 stkth := Some(Thread.create staking ());;
 while true do
   try

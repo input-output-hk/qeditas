@@ -3,6 +3,7 @@
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 open Big_int
+open Utils
 open Ser
 open Hashaux
 open Hash
@@ -384,7 +385,7 @@ let connectpeer_socks4 proxyport ip port =
   flush sout;
   let z = input_byte sin in
   let cd = input_byte sin in
-  Printf.printf "%d %d\n" z cd; flush stdout;
+  Printf.fprintf !log "%d %d\n" z cd; flush !log;
   if not (cd = 90) then raise RequestRejected;
   for i = 1 to 6 do
     ignore (input_byte sin)
@@ -490,7 +491,6 @@ let rec_msg c =
   | _ -> (*** consider it an IllformedMsg no matter what the exception raised was ***)
       raise IllformedMsg
 
-let netth : Thread.t option ref = ref None
 let netlistenerth : Thread.t option ref = ref None
 let netseekerth : Thread.t option ref = ref None
 let netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * genconnstate ref)) list ref = ref []
@@ -525,7 +525,7 @@ let initialize_conn_accept s =
     end
 
 let initialize_conn_2 n s sin sout =
-  Printf.printf "calling 2\n"; flush stdout;
+  Printf.fprintf !log "calling 2\n"; flush !log;
   (*** initiate handshake ***)
   let vers = 1l in
   let srvs = 1L in
@@ -579,7 +579,7 @@ let tryconnectpeer n =
 	    raise (Failure ("socks" ^ (string_of_int z) ^ " is not yet supported"))
       with
       | RequestRejected ->
-	  Printf.printf "RequestRejected\n"; flush stdout;
+	  Printf.fprintf !log "RequestRejected\n"; flush !log;
       | _ ->
 	  ()
     end
@@ -660,14 +660,14 @@ let netlistener l =
       begin
 	match a with
 	| Unix.ADDR_UNIX(x) ->
-	    Printf.printf "got local connection %s\n" x;
+	    Printf.fprintf !log "got local connection %s\n" x;
 	| Unix.ADDR_INET(x,y) ->
-	    Printf.printf "got remote connection %s %d\n" (Unix.string_of_inet_addr x) y;
+	    Printf.fprintf !log "got remote connection %s %d\n" (Unix.string_of_inet_addr x) y;
       end;
-      flush stdout;
+      flush !log;
       initialize_conn_accept s
     with
-    | EnoughConnections -> Printf.printf "Rejecting connection because of maxconns.\n"; flush stdout;
+    | EnoughConnections -> Printf.fprintf !log "Rejecting connection because of maxconns.\n"; flush !log;
     | _ -> ()
   done
 
@@ -696,8 +696,8 @@ let node_prevblockhash n =
 let print_best_node () =
   let BlocktreeNode(_,_,pbh,_,_,_,_,_,_,_,_,_,_,_,_) = !bestnode in
   match pbh with
-  | Some(h) -> Printf.printf "bestnode pbh %s\n" (hashval_hexstring h); flush stdout
-  | None -> Printf.printf "bestnode pbh (genesis)\n"; flush stdout
+  | Some(h) -> Printf.fprintf !log "bestnode pbh %s\n" (hashval_hexstring h); flush !log
+  | None -> Printf.fprintf !log "bestnode pbh (genesis)\n"; flush !log
 
 let eq_node n1 n2 = node_prevblockhash n1 = node_prevblockhash n2
 
@@ -753,7 +753,7 @@ let setsigpipeignore () =
   Sys.set_signal Sys.sigpipe Sys.Signal_ignore;;
 
 let process_new_tx h =
-  Printf.printf "Processing new tx %s\n" h; flush stdout;
+  Printf.fprintf !log "Processing new tx %s\n" h; flush !log;
   let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qtx " ^ h) in
   let txhd = input_line qednetch in
   ignore (Unix.close_process_in qednetch);
@@ -764,7 +764,7 @@ let process_new_tx h =
     let txid = hashtx tx1 in
     if not (txid = hexstring_hashval h) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
       begin
-        Printf.printf "WARNING: Received tx with different hash as advertised, removing %s\nThis may e due to a bug or due to a misbehaving peer.\n" h; flush stdout;
+        Printf.fprintf !log "WARNING: Received tx with different hash as advertised, removing %s\nThis may e due to a bug or due to a misbehaving peer.\n" h; flush !log;
         let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qtx " ^ h) in
         ignore (Unix.close_process_in qednetch)
       end
@@ -782,11 +782,11 @@ let process_new_tx h =
      end
   with (*** in some cases, failure should lead to blacklist and removal of the tx, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
   | Not_found ->
-    Printf.printf "Problem with tx, deleting it\n"; flush stdout;
+    Printf.fprintf !log "Problem with tx, deleting it\n"; flush !log;
     let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qtx " ^ h) in
     ignore (Unix.close_process_in qednetch)
   | e ->
-    Printf.printf "exception %s\n" (Printexc.to_string e); flush stdout;
+    Printf.fprintf !log "exception %s\n" (Printexc.to_string e); flush !log;
     ()
 
 let rec processdelayednodes tm btnl =
@@ -796,7 +796,7 @@ let rec processdelayednodes tm btnl =
     let BlocktreeNode(_,_,pbh,_,_,_,_,_,_,_,newcumulstk,_,_,_,_) = n2 in
     if gt_big_int newcumulstk bestcumulstk then
       begin
-        Printf.printf "New best blockheader %s\n" (match pbh with Some(h) -> hashval_hexstring h | None -> "(genesis)"); flush stdout;
+        Printf.fprintf !log "New best blockheader %s\n" (match pbh with Some(h) -> hashval_hexstring h | None -> "(genesis)"); flush !log;
         bestnode := n2
       end;
     processdelayednodes tm btnr
@@ -943,7 +943,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
             let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
             if gt_big_int newcumulstake bestcumulstk then
               begin
-                Printf.printf "New best blockheader %s\n" h; flush stdout;
+                Printf.fprintf !log "New best blockheader %s\n" h; flush !log;
                 bestnode := newnode
               end;
           List.iter
@@ -952,7 +952,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
         end
       else
         begin (*** if it's wrong, delete it and blacklist it so it won't look new in the future ***)
-          Printf.printf "Incorrect blockheader, deleting and blacklisting\n"; flush stdout;
+          Printf.fprintf !log "Incorrect blockheader, deleting and blacklisting\n"; flush !log;
           let qednetch = Unix.open_process_in ((qednetd()) ^ " blacklistdata qblockheader " ^ h) in
           ignore (Unix.close_process_in qednetch);
           let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qblockheader " ^ h) in
@@ -969,7 +969,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
       | None -> ()
   end
 and process_new_header_b h initialization knownvalid =
-  Printf.printf "Processing new header %s\n" h; flush stdout;
+  Printf.fprintf !log "Processing new header %s\n" h; flush !log;
   let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qblockheader " ^ h) in
   try
     let blkhd = input_line qednetch in
@@ -980,7 +980,7 @@ and process_new_header_b h initialization knownvalid =
     let hh = hexstring_hashval h in
     if not (hash_blockheaderdata blkhd1 = hh) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
       begin
-        Printf.printf "WARNING: Received block header with different hash as advertised, removing %s\nThis may e due to a bug or due to a misbehaving peer.\n" h; flush stdout;
+        Printf.fprintf !log "WARNING: Received block header with different hash as advertised, removing %s\nThis may e due to a bug or due to a misbehaving peer.\n" h; flush !log;
         let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qblockheader " ^ h) in
         ignore (Unix.close_process_in qednetch)
       end
@@ -991,21 +991,21 @@ and process_new_header_b h initialization knownvalid =
     begin
       match Unix.close_process_in qednetch with
       | Unix.WEXITED(i) when i = 87 -> (*** probably means qednetd hasn't started yet, wait a second and try again ***)
-        Printf.printf "Problem calling qednetd, will try again in a second\n"; flush stdout;
+        Printf.fprintf !log "Problem calling qednetd, will try again in a second\n"; flush !log;
         Unix.sleep 1;
         process_new_header h initialization knownvalid
       | Unix.WEXITED(i) when i = 5 -> () (*** probably means the header was deleted and should be skipped ***)
       | Unix.WEXITED(i) ->
-        Printf.printf "qednetd WEXITED %d, skipping\n" i
+        Printf.fprintf !log "qednetd WEXITED %d, skipping\n" i
       | _ ->
-        Printf.printf "qednetd unusual exit, skipping\n"
+        Printf.fprintf !log "qednetd unusual exit, skipping\n"
     end
   | Not_found ->
-    Printf.printf "Problem with blockheader, deleting it\n"; flush stdout;
+    Printf.fprintf !log "Problem with blockheader, deleting it\n"; flush !log;
     let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qblockheader " ^ h) in
     ignore (Unix.close_process_in qednetch)
   | e ->
-    Printf.printf "exception %s\n" (Printexc.to_string e); flush stdout;
+    Printf.fprintf !log "exception %s\n" (Printexc.to_string e); flush !log;
     ()
 and process_new_header h initialization knownvalid =
   if not (Hashtbl.mem blkheaders (hexstring_hashval h)) then
@@ -1097,12 +1097,12 @@ let publish_block bhh (bh,bd) =
 
 let qednetmain initfn preloopfn =
   setsigpipeignore();
-  Printf.printf "Starting qednetd\n"; flush stdout;
+  Printf.fprintf !log "Starting qednetd\n"; flush !log;
   let (qednetch1,qednetch2,qednetch3) = Unix.open_process_full (qednetd()) (Unix.environment()) in
-  Printf.printf "Init headers\n"; flush stdout;
+  Printf.fprintf !log "Init headers\n"; flush !log;
   init_headers();
   initfn();
-  Printf.printf "Initialization phase complete.\n"; flush stdout;
+  Printf.fprintf !log "Initialization phase complete.\n"; flush !log;
   while true do
       preloopfn();
       earlyblocktreenodes := processdelayednodes (Int64.of_float (Unix.time())) !earlyblocktreenodes;
