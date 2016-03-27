@@ -75,6 +75,7 @@ val netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * genconn
 val this_nodes_nonce : int64 ref
 
 val netlistener : Unix.file_descr -> unit
+val netseeker : unit -> unit
 
 (** break ***)
 

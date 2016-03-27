@@ -416,6 +416,7 @@ let initnetwork () =
 	  flush stdout
     with _ -> ()
   end;
+  netseeker ();
   (*** empty placeholder for now ***)
   ();;
 

@@ -604,9 +604,9 @@ let addknownpeer lasttm n =
       let oldtm = Hashtbl.find knownpeers n in
       Hashtbl.replace knownpeers n lasttm
     with Not_found ->
-      let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
+      let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnet/peers" else "peers") in
       if Sys.file_exists peerfn then
-	let s = open_out_gen [Open_append;Open_wronly] 0x660 peerfn in
+	let s = open_out_gen [Open_append;Open_wronly] 0x644 peerfn in
 	output_string s n;
 	output_char s '\n';
 	output_string s (Int64.to_string lasttm);
@@ -629,7 +629,7 @@ let getknownpeers () =
 
 let loadknownpeers () =
   let currtm = Int64.of_float (Unix.time()) in
-  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
+  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnet/peers" else "peers") in
   if Sys.file_exists peerfn then
     let s = open_in peerfn in
     try
@@ -643,7 +643,7 @@ let loadknownpeers () =
 
 let saveknownpeers () =
   let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
-  let s = open_out_gen [Open_append;Open_wronly;Open_trunc] 0x660 peerfn in
+  let s = open_out_gen [Open_append;Open_wronly;Open_trunc] 0x644 peerfn in
   Hashtbl.iter
     (fun n lasttm ->
       output_string s n;
@@ -670,6 +670,36 @@ let netlistener l =
     | EnoughConnections -> Printf.fprintf !log "Rejecting connection because of maxconns.\n"; flush !log;
     | _ -> ()
   done
+
+let netseeker_loop () =
+  while true do
+    try
+      if List.length !netconns < max 1 (!Config.maxconns lsr 1) then
+	begin
+	  Hashtbl.iter
+	    (fun n oldtm ->
+	      try (*** don't connect to the same peer twice ***)
+		ignore (List.find
+			  (fun (_,(_,_,_,gcs)) -> peeraddr !gcs = n)
+			  !netconns)
+	      with Not_found -> tryconnectpeer n
+	      )
+	    knownpeers
+	end;
+      if !netconns = [] then
+	begin
+	  List.iter
+	    (fun n -> tryconnectpeer n)
+	    (if !Config.testnet then testnetfallbacknodes else fallbacknodes)
+	end;
+      Unix.sleep 600;
+    with
+    | _ -> ()
+  done
+
+let netseeker () =
+  loadknownpeers();
+  netseekerth := Some(Thread.create netseeker_loop ())
 
 (*** break ***)
 
