@@ -7,6 +7,7 @@ open Utils
 open Ser
 open Hashaux
 open Hash
+open Db
 open Assets
 open Signat
 open Tx
@@ -1198,42 +1199,33 @@ let rec insertnewdelayed (tm,n) btnl =
 let setsigpipeignore () =
   Sys.set_signal Sys.sigpipe Sys.Signal_ignore;;
 
-let process_new_tx h =
-  Printf.fprintf !log "Processing new tx %s\n" h; flush !log;
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qtx " ^ h) in
-  let txhd = input_line qednetch in
-  ignore (Unix.close_process_in qednetch);
+let process_new_tx h hh =
   try
-    let s = hexstring_string txhd in
-    let (stx1,_) = sei_stx seis (s,String.length s,None,0,0) in
+    let stx1 = dbget "qtx" h (sei_stx seis) in
     let (tx1,_) = stx1 in
     let txid = hashtx tx1 in
-    if not (txid = hexstring_hashval h) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
+    if not (txid = h) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
       begin
-        Printf.fprintf !log "WARNING: Received tx with different hash as advertised, removing %s\nThis may e due to a bug or due to a misbehaving peer.\n" h; flush !log;
-        let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qtx " ^ h) in
-        ignore (Unix.close_process_in qednetch)
+        Printf.fprintf !log "WARNING: Received tx with different hash as advertised, removing %s\nThis may be due to a bug or due to a misbehaving peer.\n" hh; flush !log;
+	dbdelete "qtx" h;
       end
     else if tx_valid tx1 then
       begin (*** checking the validity of signatures and support depend on the current ledger; delay this here in favor of checking them before including them in a block we're actively trying to stake; note that the relevant properties are checked when they are included in a block as part of checking a block is valid ***)
         Hashtbl.add stxpool txid stx1;
-     end
-   else
-   (*** in this case, reject the tx since it's definitely not valid ***)
+      end
+    else
+      (*** in this case, reject the tx since it's definitely not valid ***)
      begin
-       let qednetch = Unix.open_process_in ((qednetd()) ^ " blacklistdata qtx " ^ h) in
-       ignore (Unix.close_process_in qednetch);
-       let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qtx " ^ h) in
-       ignore (Unix.close_process_in qednetch)
+       dbput "qblacklist" h true (seo_bool seosb);
+       dbdelete "qtx" h;
      end
   with (*** in some cases, failure should lead to blacklist and removal of the tx, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
   | Not_found ->
-    Printf.fprintf !log "Problem with tx, deleting it\n"; flush !log;
-    let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qtx " ^ h) in
-    ignore (Unix.close_process_in qednetch)
+      Printf.fprintf !log "Problem with tx, deleting it\n"; flush !log;
+      dbdelete "qtx" h;
   | e ->
-    Printf.fprintf !log "exception %s\n" (Printexc.to_string e); flush !log;
-    ()
+      Printf.fprintf !log "exception %s\n" (Printexc.to_string e); flush !log;
+      ()
 
 let rec processdelayednodes tm btnl =
   match btnl with
@@ -1305,37 +1297,33 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
       let BlocktreeNode(_,_,_,thyroot,sigroot,ledgerroot,prevtinfo,currtinfo,deltm,tmstamp,prevcumulstk,blkhght,validated,blacklisted,succl) = prevnode in
       if !blacklisted then (*** child of a blacklisted node, drop and blacklist it ***)
         begin
-          let qednetch = Unix.open_process_in ((qednetd()) ^ " blacklistdata qblockheader " ^ h) in
-          ignore (Unix.close_process_in qednetch);
-          let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qblockheader " ^ h) in
-          ignore (Unix.close_process_in qednetch)
+	  dbput "qblacklist" h true (seo_bool seosb);
+	  dbdelete "qblockheader" h;
         end
       else if valid_blockheader blkhght blkh1 && equ_tinfo blkhd1.tinfo currtinfo
              && ((blkhght = 1L && blkhd1.prevblockhash = None && ctree_hashroot blkhd1.prevledger = !genesisledgerroot && blkhd1.deltatime = 600l)
 		 || (blkhght > 1L && blockheader_succ_a deltm tmstamp prevtinfo blkh1))
       then
 	begin
-          Hashtbl.add blkheaders hh ();
+          Hashtbl.add blkheaders h ();
+(*** (*** todo: relay ***)
 	  let qednetch = Unix.open_process_in ((qednetd()) ^ " relaydata qblockheader " ^ h) in
 	  ignore (Unix.close_process_in qednetch);
+***)
           let (csm1,fsm1,tar1) = blkhd1.tinfo in
 	  let csm2 = stakemod_pushbit (stakemod_lastbit fsm1) csm1 in
 	  let fsm2 = stakemod_pushbit false fsm1 in (** the new bit doesn't matter here **)
 	  let tar2 = retarget tar1 blkhd1.deltatime in
           let newcumulstake = cumul_stake prevcumulstk tar1 blkhd1.deltatime in
 	  let validated = ref (if knownvalid then Valid else Waiting(Unix.time())) in
-          let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],Some(hh),blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,(csm1,fsm1,tar1),(csm2,fsm2,tar2),blkhd1.deltatime,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
+          let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],Some(h),blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,(csm1,fsm1,tar1),(csm2,fsm2,tar2),blkhd1.deltatime,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
 	  (*** add it as a leaf, indicate that we want the block delta to validate it, and check if it's the best ***)
-	  Hashtbl.add blkheadernode (Some(hh)) newnode;
-          succl := (hh,newnode)::!succl;
+	  Hashtbl.add blkheadernode (Some(h)) newnode;
+          succl := (h,newnode)::!succl;
 	  record_recent_staker blkhd1.stakeaddr prevnode 6;
 	  let validatefn () =
 	    try
-	      let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qblockdeltah " ^ h) in
-	      let blkdhh = input_line qednetch in
-	      ignore (Unix.close_process_in qednetch);
-	      let blkdhs = hexstring_string blkdhh in
-	      let (blkdh,_) = sei_blockdeltah seis (blkdhs,String.length blkdhs,None,0,0) in
+	      let blkdh = dbget "qblockdeltah" h (sei_blockdeltah seis) in
 	      let (stkout,forf,cg,txhl) = blkdh in
 	      let alltxs = ref true in
 	      List.iter
@@ -1343,8 +1331,10 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 		  if not (Hashtbl.mem stxpool txh) then
 		    begin
 		      alltxs := false;
+(*** (*** todo: request tx ***)
 		      let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qtx " ^ (hashval_hexstring txh)) in
 		      ignore (Unix.close_process_in qednetch);
+***)
 		    end)
 		txhl;
 	      if !alltxs then
@@ -1359,13 +1349,15 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 		  if valid_block (lookup_thytree thyroot) (lookup_sigtree sigroot) blkhght blk then
 		    begin (*** if valid_block succeeds, then latesttht and latestsigt will be set to the transformed theory tree and signature tree ***)
 		      validated := Valid;
-		      if not initialization then add_to_validheaders_file h;
+		      if not initialization then add_to_validheaders_file hh;
                       let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
 		      if gt_big_int newcumulstake bestcumulstk then bestnode := newnode;
 		      add_thytree blkhd1.newtheoryroot !latesttht;
 		      add_sigtree blkhd1.newsignaroot !latestsigt;
+(*** (** todo: relay **)
 		      let qednetch = Unix.open_process_in ((qednetd()) ^ " relaydata qblockdeltah " ^ h) in
 		      ignore (Unix.close_process_in qednetch);
+***)
 		      (*** construct a transformed tree consisting of elements ***)
 		      let prevc = load_expanded_ctree (ctree_of_block blk) in
 		      match txl_octree_trans blkhght (txl_of_block blk) (Some(prevc)) with
@@ -1377,85 +1369,66 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 		      validated := Invalid; (*** could delete and possibly blacklist the qblockdeltah, but will leave it for now ***)
 		    end
 	    with
-	    | End_of_file ->
+	    | Not_found -> (*** request blockdeltah h from peers ***)
+		()
+(***
 	      let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qblockdeltah " ^ h) in
 	      ignore (Unix.close_process_in qednetch);
+***)
 	  in
 	  tovalidatelist := (validated,validatefn)::!tovalidatelist;
-          if not initialization then add_to_headers_file h;
+          if not initialization then add_to_headers_file hh;
           if Int64.of_float (Unix.time()) < tmstamp then (*** delay it ***)
             earlyblocktreenodes := insertnewdelayed (tmstamp,newnode) !earlyblocktreenodes
           else
             let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
             if gt_big_int newcumulstake bestcumulstk then
-              begin
-                Printf.fprintf !log "New best blockheader %s\n" h; flush !log;
+	      begin
+                Printf.fprintf !log "New best blockheader %s\n" hh; flush !log;
                 bestnode := newnode
-              end;
-          List.iter
-            (fun blkh1 -> let (blkhd1,_) = blkh1 in let hh = hash_blockheaderdata blkhd1 in process_new_header_a (hashval_hexstring hh) hh blkh1 blkhd1 initialization knownvalid)
-            (Hashtbl.find_all orphanblkheaders (Some(hh)))
+	      end;
+            List.iter
+              (fun blkh1 -> let (blkhd1,_) = blkh1 in let h = hash_blockheaderdata blkhd1 in process_new_header_a h (hashval_hexstring h) blkh1 blkhd1 initialization knownvalid)
+              (Hashtbl.find_all orphanblkheaders (Some(h)))
         end
       else
         begin (*** if it's wrong, delete it and blacklist it so it won't look new in the future ***)
-          Printf.fprintf !log "Incorrect blockheader, deleting and blacklisting\n"; flush !log;
-          let qednetch = Unix.open_process_in ((qednetd()) ^ " blacklistdata qblockheader " ^ h) in
-          ignore (Unix.close_process_in qednetch);
-          let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qblockheader " ^ h) in
-          ignore (Unix.close_process_in qednetch)
+	  dbput "qblacklist" h true (seo_bool seosb);
+	  dbdelete "qblockheader" h;
         end
     with Not_found -> (*** orphan block header, put it on the relevant hash table and request parent ***)
       Hashtbl.add orphanblkheaders prevblkh blkh1;
       match prevblkh with
       | Some(pbh) ->
-        let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qblockheader " ^ (hashval_hexstring pbh)) in
-        let l = input_line qednetch in
-        if l = "already have" then process_new_header (hashval_hexstring pbh) initialization knownvalid;
-        ignore (Unix.close_process_in qednetch);
+	  if dbexists "qblockheader" pbh then
+	    process_new_header pbh (hashval_hexstring pbh) initialization knownvalid
+	  else
+	    (*** todo: request qblockheader pbh ***)
+	    ()
       | None -> ()
   end
-and process_new_header_b h initialization knownvalid =
-  Printf.fprintf !log "Processing new header %s\n" h; flush !log;
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qblockheader " ^ h) in
+and process_new_header_b h hh initialization knownvalid =
+  Printf.fprintf !log "Processing new header %s\n" hh; flush !log;
   try
-    let blkhd = input_line qednetch in
-    ignore (Unix.close_process_in qednetch);
-    let s = hexstring_string blkhd in
-    let (blkh1,_) = sei_blockheader seis (s,String.length s,None,0,0) in
+    let blkh1 = dbget "qblockheader" h (sei_blockheader seis) in
     let (blkhd1,blkhs1) = blkh1 in
-    let hh = hexstring_hashval h in
-    if not (hash_blockheaderdata blkhd1 = hh) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
+    if not (hash_blockheaderdata blkhd1 = h) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
       begin
-        Printf.fprintf !log "WARNING: Received block header with different hash as advertised, removing %s\nThis may e due to a bug or due to a misbehaving peer.\n" h; flush !log;
-        let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qblockheader " ^ h) in
-        ignore (Unix.close_process_in qednetch)
+        Printf.fprintf !log "WARNING: Received block header with different hash as advertised, removing %s\nThis may be due to a bug or due to a misbehaving peer.\n" hh; flush !log;
+	dbdelete "qblockheader" h;
       end
     else
       process_new_header_a h hh blkh1 blkhd1 initialization knownvalid
-  with (*** in some cases, failure should lead to blacklist and removal of the tx, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
-  | End_of_file ->
-    begin
-      match Unix.close_process_in qednetch with
-      | Unix.WEXITED(i) when i = 87 -> (*** probably means qednetd hasn't started yet, wait a second and try again ***)
-        Printf.fprintf !log "Problem calling qednetd, will try again in a second\n"; flush !log;
-        Unix.sleep 1;
-        process_new_header h initialization knownvalid
-      | Unix.WEXITED(i) when i = 5 -> () (*** probably means the header was deleted and should be skipped ***)
-      | Unix.WEXITED(i) ->
-        Printf.fprintf !log "qednetd WEXITED %d, skipping\n" i
-      | _ ->
-        Printf.fprintf !log "qednetd unusual exit, skipping\n"
-    end
+  with (*** in some cases, failure should lead to blacklist and removal of the header, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
   | Not_found ->
-    Printf.fprintf !log "Problem with blockheader, deleting it\n"; flush !log;
-    let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qblockheader " ^ h) in
-    ignore (Unix.close_process_in qednetch)
+      Printf.fprintf !log "Problem with blockheader %s, deleting it\n" hh; flush !log;
+      dbdelete "qblockheader" h;
   | e ->
-    Printf.fprintf !log "exception %s\n" (Printexc.to_string e); flush !log;
-    ()
-and process_new_header h initialization knownvalid =
-  if not (Hashtbl.mem blkheaders (hexstring_hashval h)) then
-    process_new_header_b h initialization knownvalid
+      Printf.fprintf !log "exception %s\n" (Printexc.to_string e); flush !log;
+      ()
+and process_new_header h hh initialization knownvalid =
+  if not (Hashtbl.mem blkheaders h) then
+    process_new_header_b h hh initialization knownvalid
 
 let init_headers_a fn knownvalid =
   if Sys.file_exists fn then
@@ -1464,7 +1437,7 @@ let init_headers_a fn knownvalid =
       try
         while true do
           let h = input_line f in
-          process_new_header h true knownvalid
+          process_new_header (hexstring_hashval h) h true knownvalid
         done
       with End_of_file -> close_in f
     end
@@ -1498,29 +1471,12 @@ let rec find_best_validated_block_from fromnode bestcumulstk =
     bestcumulstk
 
 let publish_stx txh stx1 =
-  let txhh = hashval_hexstring txh in
-  let fn = Filename.concat (datadir()) ("t" ^ txhh) in
-  let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
-  let c = seo_stx seoc stx1 (ch,None) in
-  seocf c;
-  close_out ch;
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " adddatafromfile qtx " ^ txhh ^ " " ^ fn) in
-  ignore (Unix.close_process_in qednetch);
-  Sys.remove fn;
+  dbput "qtx" txh stx1 (seo_stx seosb);
   Hashtbl.add published_stx txh ()
 
 let publish_block bhh (bh,bd) =
-  let bhhh = hashval_hexstring bhh in
-  let fn = Filename.concat (datadir()) ("h" ^ bhhh) in
-  let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
-  let c = seo_blockheader seoc bh (ch,None) in
-  seocf c;
-  close_out ch;
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " adddatafromfile qblockheader " ^ bhhh ^ " " ^ fn) in
-  ignore (Unix.close_process_in qednetch);
-  Sys.remove fn;
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " relaydata qblockheader " ^ bhhh) in
-  ignore (Unix.close_process_in qednetch);
+  dbput "qblockheader" bhh bh (seo_blockheader seosb);
+  (*** todo: relay bh ***)
   let stxhl =
     List.map
       (fun (tx1,txsg1) ->
@@ -1530,21 +1486,13 @@ let publish_block bhh (bh,bd) =
       bd.blockdelta_stxl
   in
   let bdh = (bd.stakeoutput,bd.forfeiture,bd.prevledgergraft,stxhl) in
-  let fn = Filename.concat (datadir()) ("d" ^ bhhh) in
-  let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
-  let c = seo_blockdeltah seoc bdh (ch,None) in
-  seocf c;
-  close_out ch;
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " adddatafromfile qblockdeltah " ^ bhhh ^ " " ^ fn) in
-  ignore (Unix.close_process_in qednetch);
-  Sys.remove fn;
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " relaydata qblockdeltah " ^ bhhh) in
-  ignore (Unix.close_process_in qednetch)
+  dbput "qblockdeltah" bhh bdh (seo_blockdeltah seosb);
+  (*** todo: relay bdh ***)
+  ()
 
 let qednetmain initfn preloopfn =
   setsigpipeignore();
-  Printf.fprintf !log "Starting qednetd\n"; flush !log;
-  let (qednetch1,qednetch2,qednetch3) = Unix.open_process_full (qednetd()) (Unix.environment()) in
+  Printf.fprintf !log "Starting networking\n"; flush !log;
   Printf.fprintf !log "Init headers\n"; flush !log;
   init_headers();
   initfn();
@@ -1553,13 +1501,17 @@ let qednetmain initfn preloopfn =
       preloopfn();
       earlyblocktreenodes := processdelayednodes (Int64.of_float (Unix.time())) !earlyblocktreenodes;
       tovalidatelist := processblockvalidation !tovalidatelist;
+(***
       ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 1.0 });
       let l = input_line qednetch3 in
       ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
       let ll = String.length l in
       if ll = 68 && String.sub l 0 4 = "QTX:" then
-	process_new_tx (String.sub l 28 40)
+	let hh = String.sub l 28 40 in
+	process_new_tx (hexstring_hashval hh) hh
       else if ll = 72 && String.sub l 0 8 = "QHEADER:" then
-	process_new_header (String.sub l 32 40) false false
+	let hh = String.sub l 32 40 in
+	process_new_header (hexstring_hashval hh) hh false false
+***)
   done
 

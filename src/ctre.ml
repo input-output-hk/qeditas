@@ -11,8 +11,8 @@ open Assets
 open Cryptocurr
 open Tx
 open Config
+open Db
 
-let qednetd () = if !testnet then (!qednetdexec ^ " -testnet") else !qednetdexec
 let datadir () = if !testnet then (Filename.concat !datadir "testnet") else !datadir
 
 let intention_minage = 144L
@@ -755,25 +755,10 @@ let ensure_dir_exists d =
 exception FoundHashval of hashval
 exception GettingRemoteData
 
-let exists_data_db tp h =
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " exists qhcons " ^ h) in
-  let l = input_line qednetch in
-  ignore (Unix.close_process_in qednetch);
-  l = "exists"
-
-(*** use a temporary file for this, since an asset might be big ***)
 let save_asset a =
   let aid = assetid a in
-  let aidh = hashval_hexstring aid in
-  if not (exists_data_db "qasset" aidh) then
-    let fn = Filename.concat (datadir()) ("a" ^ aidh) in
-    let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
-    let c = seo_asset seoc a (ch,None) in
-    seocf c;
-    close_out ch;
-    let qednetch = Unix.open_process_in ((qednetd()) ^ " savedatafromfile qasset " ^ aidh ^ " " ^ fn) in
-    ignore (Unix.close_process_in qednetch);
-    Sys.remove fn
+  if not (dbexists "qasset" aid) then
+    dbput "qasset" aid a (seo_asset seosb)
 
 let rec save_hlist_elements hl =
   match hl with
@@ -786,18 +771,13 @@ let rec save_hlist_elements hl =
 	| None -> hashtag aid 3l
 	| Some(k) -> hashtag (hashpair aid k) 4l
       in
-      let rh = hashval_hexstring r in
-      if exists_data_db "qhcons" rh then
+      if dbexists "qhcons" r then
 	Some(r)
       else
-	let strb = Buffer.create 100 in
-	let c = seo_hashval seosb aid (strb,None) in
-	let c = seo_option seo_hashval seosb h c in
-	seosbf c;
-	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qhcons " ^ rh ^ " " ^ sh) in
-	ignore (Unix.close_process_in qednetch);
-	Some(r)
+	begin
+	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seosb);
+	  Some(r)
+	end
   | HConsH(aid,hr) ->
       let h = save_hlist_elements hr in
       let r =
@@ -805,18 +785,13 @@ let rec save_hlist_elements hl =
 	| None -> hashtag aid 3l
 	| Some(k) -> hashtag (hashpair aid k) 4l
       in
-      let rh = hashval_hexstring r in
-      if exists_data_db "qhcons" rh then
+      if dbexists "qhcons" r then
 	Some(r)
       else
-	let strb = Buffer.create 100 in
-	let c = seo_hashval seosb aid (strb,None) in
-	let c = seo_option seo_hashval seosb h c in
-	seosbf c;
-	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qhcons " ^ rh ^ " " ^ sh) in
-	ignore (Unix.close_process_in qednetch);
-	Some(r)
+	begin
+	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seosb);
+	  Some(r)
+	end
   | HNil -> None
   | HHash(r) -> Some(r)
 
@@ -831,18 +806,13 @@ let save_nehlist_elements hl =
 	| None -> hashtag aid 3l
 	| Some(k) -> hashtag (hashpair aid k) 4l
       in
-      let rh = hashval_hexstring r in
-      if exists_data_db "qhcons" rh then
+      if dbexists "qhcons" r then
 	r
       else
-	let strb = Buffer.create 100 in
-	let c = seo_hashval seosb aid (strb,None) in
-	let c = seo_option seo_hashval seosb h c in
-	seosbf c;
-	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qhcons " ^ rh ^ " " ^ sh) in
-	ignore (Unix.close_process_in qednetch);
-	r
+	begin
+	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seosb);
+	  r
+	end
   | NehConsH(aid,hr) ->
       let h = save_hlist_elements hr in
       let r = 
@@ -850,18 +820,13 @@ let save_nehlist_elements hl =
 	| None -> hashtag aid 3l
 	| Some(k) -> hashtag (hashpair aid k) 4l
       in
-      let rh = hashval_hexstring r in
-      if exists_data_db "qhcons" rh then
+      if dbexists "qhcons" r then
 	r
       else
-	let strb = Buffer.create 100 in
-	let c = seo_hashval seosb aid (strb,None) in
-	let c = seo_option seo_hashval seosb h c in
-	seosbf c;
-	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qhcons " ^ rh ^ " " ^ sh) in
-	ignore (Unix.close_process_in qednetch);
-	r
+	begin
+	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seosb);
+	  r
+	end
   | NehHash(r) -> r
 
 let rec ctree_element_a tr i =
@@ -901,34 +866,27 @@ let rec save_ctree_elements_a tr i =
     | CLeft(trl) ->
 	let (trl2,hl) = save_ctree_elements_a trl (i-1) in
 	let r = hashopair1 hl None in
-	let rh = hashval_hexstring r in
 	(CLeft(trl2),r)
     | CRight(trr) ->
 	let (trr2,hr) = save_ctree_elements_a trr (i-1) in
 	let r = hashopair2 None hr in
-	let rh = hashval_hexstring r in
 	(CRight(trr2),r)
     | CBin(trl,trr) ->
 	let (trl2,hl) = save_ctree_elements_a trl (i-1) in
 	let (trr2,hr) = save_ctree_elements_a trr (i-1) in
 	let r = hashopair1 hl (Some(hr)) in
-	let rh = hashval_hexstring r in
 	(CBin(trl2,trr2),r)
     | CHash(r) -> (tr,r)
   else
     let (tre,r) = save_ctree_elements_a tr 9 in
     if ctree_element_p tre then (*** make sure it's an element before saving it ***)
-      let rh = hashval_hexstring r in
-      if exists_data_db "qctree" rh then
+      if dbexists "qctree" r then
 	(CHash(r),r)
       else
-	let strb = Buffer.create 100 in
-	let c = seo_ctree seosb tre (strb,None) in
-	seosbf c;
-	let sh = string_hexstring (Buffer.contents strb) in
-	let qednetch = Unix.open_process_in ((qednetd()) ^ " savedata qctree " ^ rh ^ " " ^ sh) in
-	ignore (Unix.close_process_in qednetch);
-	(CHash(r),r)
+	begin
+	  dbput "qctree" r tre (seo_ctree seosb);
+	  (CHash(r),r)
+	end
     else (*** if it isn't an element (presumably because it's only approximating an element) then return the hash root only ***)
       (CHash(r),r)
     
@@ -936,61 +894,42 @@ let save_ctree_elements tr =
   let (tre,r) = save_ctree_elements_a tr 0 in
   r
 
+let load_asset h =
+  dbget "qasset" h (sei_asset seis)
+
 let get_asset h =
-  let hh = hashval_hexstring h in
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qasset " ^ hh) in
   try
-    let cd = input_line qednetch in
-    ignore (Unix.close_process_in qednetch);
-    begin
-      try
-	let ch = hexstring_string cd in
-	let (a,c) = sei_asset seis (ch,String.length ch,None,0,0) in
-	a
-      with _ ->
-	raise (Failure ("could not understand asset " ^ hh))
-    end
-  with _ -> (*** request it and fail ***)
-    let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qasset " ^ hh) (Unix.environment()) in
+    load_asset h
+  with Not_found -> (*** request it and fail ***)
+(***
+      let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qasset " ^ hh) (Unix.environment()) in
     ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
 (*    raise (Failure ("could not resolve a needed asset " ^ hh ^ "; requesting from peers")) *)
+***)
     raise GettingRemoteData
 
-let load_asset h =
-  let hh = hashval_hexstring h in
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qasset " ^ hh) in
-  try
-    let cd = input_line qednetch in
-    ignore (Unix.close_process_in qednetch);
-    begin
-      try
-	let ch = hexstring_string cd in
-	let (a,c) = sei_asset seis (ch,String.length ch,None,0,0) in
-	a
-      with _ ->
-	raise (Failure ("could not understand asset " ^ hh))
-    end
-  with _ -> raise Not_found
+let load_hcons_element h =
+  dbget "qhcons" h (sei_prod sei_hashval (sei_option sei_hashval) seis)
+
+let load_hlist_element h =
+  match load_hcons_element h with
+  | (aid,Some(k)) -> HConsH(aid,HHash(k))
+  | (aid,None) -> HConsH(aid,HNil)
+
+let load_nehlist_element h =
+  match load_hcons_element h with
+  | (aid,Some(k)) -> NehConsH(aid,HHash(k))
+  | (aid,None) -> NehConsH(aid,HNil)
 
 let get_hcons_element h =
-  let hh = hashval_hexstring h in
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qhcons " ^ hh) in
   try
-    let cd = input_line qednetch in
-    ignore (Unix.close_process_in qednetch);
-    begin
-      try
-	let ch = hexstring_string cd in
-	let (aid,c) = sei_hashval seis (ch,String.length ch,None,0,0) in
-	let (k,c) = sei_option sei_hashval seis c in
-	(aid,k)
-      with _ ->
-	raise (Failure ("could not understand hcons " ^ hh))
-    end
-  with _ -> (*** request it and fail ***)
+    load_hcons_element h
+  with Not_found -> (*** request it and fail ***)
+(***
     let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qhcons " ^ hh) (Unix.environment()) in
     ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
 (*    raise (Failure ("could not resolve a needed hcons " ^ hh ^ "; requesting from peers")) *)
+***)
     raise GettingRemoteData
 
 let get_hlist_element h =
@@ -1000,33 +939,6 @@ let get_hlist_element h =
 
 let get_nehlist_element h =
   match get_hcons_element h with
-  | (aid,Some(k)) -> NehConsH(aid,HHash(k))
-  | (aid,None) -> NehConsH(aid,HNil)
-
-let load_hcons_element h =
-  let hh = hashval_hexstring h in
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qhcons " ^ hh) in
-  try
-    let cd = input_line qednetch in
-    ignore (Unix.close_process_in qednetch);
-    begin
-      try
-	let ch = hexstring_string cd in
-	let (aid,c) = sei_hashval seis (ch,String.length ch,None,0,0) in
-	let (k,c) = sei_option sei_hashval seis c in
-	(aid,k)
-      with _ ->
-	raise (Failure ("could not understand hcons " ^ hh))
-    end
-  with _ -> raise Not_found
-
-let load_hlist_element h =
-  match load_hcons_element h with
-  | (aid,Some(k)) -> HConsH(aid,HHash(k))
-  | (aid,None) -> HConsH(aid,HNil)
-
-let load_nehlist_element h =
-  match load_hcons_element h with
   | (aid,Some(k)) -> NehConsH(aid,HHash(k))
   | (aid,None) -> NehConsH(aid,HNil)
 
@@ -1063,57 +975,19 @@ let rec super_element_to_element_a tr i =
 let super_element_to_element tr =
   super_element_to_element_a tr 9
 
+let load_ctree_element h =
+  dbget "qctree" h (sei_ctree seis)
+
 let get_ctree_element h =
-  let hh = hashval_hexstring h in
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qctree " ^ hh) in
   try
-    let cd = input_line qednetch in
-    ignore (Unix.close_process_in qednetch);
-    begin
-      try
-	let ch = hexstring_string cd in
-	let (tr,c) = sei_ctree seis (ch,String.length ch,None,0,0) in
-	if ctree_element_p tr then
-	  tr
-	else
-	  begin
-	    Printf.printf "ctree saved with root %s is not an element, removing it.\n" hh;
-	    let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qctree " ^ hh) in
-	    ignore (Unix.close_process_in qednetch);
-	    raise (Failure("ctree saved with this root is not an element"))
-	  end
-      with _ ->
-	raise (Failure ("could not understand ctree " ^ hh))
-    end
-  with _ -> (*** request it and fail ***)
+    load_ctree_element h
+  with Not_found -> (*** request it and fail ***)
+(***
     let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qctree " ^ hh) (Unix.environment()) in
     ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
 (*    raise (Failure ("could not resolve a needed ctree " ^ hh ^ "; requesting from peers")) *)
+***)
     raise GettingRemoteData
-
-let load_ctree_element h =
-  let hh = hashval_hexstring h in
-  let qednetch = Unix.open_process_in ((qednetd()) ^ " loaddata qctree " ^ hh) in
-  try
-    let cd = input_line qednetch in
-    ignore (Unix.close_process_in qednetch);
-    begin
-      try
-	let ch = hexstring_string cd in
-	let (tr,c) = sei_ctree seis (ch,String.length ch,None,0,0) in
-	if ctree_element_p tr then
-	  tr
-	else
-	  begin
-	    Printf.printf "ctree saved with this root is not an element, removing it.\n";
-	    let qednetch = Unix.open_process_in ((qednetd()) ^ " removedata qctree " ^ hh) in
-	    ignore (Unix.close_process_in qednetch);
-	    raise (Failure("ctree saved with this root is not an element"))
-	  end
-      with _ ->
-	raise (Failure ("could not understand ctree " ^ hh))
-    end
-  with _ -> raise Not_found
 
 let rec octree_S_inv c =
   match c with

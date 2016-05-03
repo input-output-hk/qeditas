@@ -8,7 +8,6 @@ open Mathdata
 open Assets
 open Tx
 
-val qednetd : unit -> string
 val datadir : unit -> string
 
 val reward_maturation : int64

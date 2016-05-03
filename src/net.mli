@@ -89,6 +89,7 @@ val lastcheckpointnode : blocktree ref
 val bestnode : blocktree ref
 val initblocktree : unit -> unit
 val node_prevblockhash : blocktree -> hashval option
+val node_timestamp : blocktree -> int64
 val eq_node : blocktree -> blocktree -> bool
 val find_best_validated_block_from : blocktree -> big_int -> big_int
 val is_recent_staker : hashval -> blocktree -> int -> bool

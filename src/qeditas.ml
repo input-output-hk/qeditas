@@ -657,6 +657,9 @@ let initialize () =
     datadir_from_command_line(); (*** if -datadir=... is on the command line, then set Config.datadir so we can find the config file ***)
     process_config_file();
     process_config_args(); (*** settings on the command line shadow those in the config file ***)
+    let datadir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
+    let dbdir = Filename.concat datadir "db" in
+    Db.dbopen dbdir; (*** open the database ***)
     openlog(); (*** Don't open the log until the config vars are set, so if we know whether or not it's testnet. ***)
     if !Config.seed = "" && !Config.lastcheckpoint = "" then
       begin
