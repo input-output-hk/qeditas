@@ -702,7 +702,7 @@ let log_msg m =
 let network_time () =
   let mytm = Int64.of_float (Unix.time()) in
   let offsets = ref [] in
-  List.iter (fun (_,(_,_,_,gcs)) -> match !gcs with Some(cs) -> offsets := List.merge compare [cs.peertimeskew] !offsets | None -> ());
+  List.iter (fun (_,(_,_,_,gcs)) -> match !gcs with Some(cs) -> offsets := List.merge compare [cs.peertimeskew] !offsets | None -> ()) !netconns;
   if !offsets = [] then
     (mytm,0)
   else
@@ -1134,6 +1134,10 @@ let bestnode = ref !genesisblocktreenode;;
 let node_prevblockhash n =
   let BlocktreeNode(_,_,pbh,_,_,_,_,_,_,_,_,_,_,_,_) = n in
   pbh
+
+let node_timestamp n =
+  let BlocktreeNode(_,_,_,_,_,_,_,_,_,tm,_,_,_,_,_) = n in
+  tm
 
 let print_best_node () =
   let BlocktreeNode(_,_,pbh,_,_,_,_,_,_,_,_,_,_,_,_) = !bestnode in
