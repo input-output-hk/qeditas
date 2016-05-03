@@ -417,8 +417,12 @@ let rec printassets_a ctr =
   
 let printassets () =
   let BlocktreeNode(_,_,_,_,_,ledgerroot,_,_,_,_,_,_,_,_,_) = !bestnode in
-  Printf.printf "cr %s\n" (hashval_hexstring ledgerroot); flush stdout;
+  Printf.printf "Assets in ledger with root %s:\n" (hashval_hexstring ledgerroot); flush stdout;
   let ctr = Ctre.CHash(ledgerroot) in
   printassets_a ctr
 
+let printassets_at_ledger ledgerroot =
+  Printf.printf "Assets in ledger with root %s:\n" ledgerroot; flush stdout;
+  let ctr = Ctre.CHash(hexstring_hashval ledgerroot) in
+  printassets_a ctr
     

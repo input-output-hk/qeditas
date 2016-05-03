@@ -28,6 +28,7 @@ val load_wallet : unit -> unit
 val save_wallet : unit -> unit
 
 val printassets : unit -> unit
+val printassets_at_ledger : string -> unit
 
 val btctoqedaddr : string -> unit
 val importprivkey : string -> unit
