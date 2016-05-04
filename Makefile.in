@@ -116,7 +116,7 @@ bin/hash.cmx: src/hash.ml bin/hash.cmi bin/hashaux.cmx bin/sha256.cmx bin/ripemd
 bin/htree.cmx: src/htree.ml bin/htree.cmi bin/hash.cmx
 	$(OCAMLOPT) -I bin -o bin/htree.cmx -c src/htree.ml
 
-bin/db.cmx: src/db.ml bin/db.cmi bin/ser.cmx bin/hash.cmx
+bin/db.cmx: src/db.ml bin/db.cmi bin/ser.cmx bin/hash.cmx bin/config.cmx
 	$(OCAMLOPT) -I bin -o bin/db.cmx -c src/db.ml
 
 bin/mathdata.cmx: src/mathdata.ml bin/mathdata.cmi bin/htree.cmx bin/hash.cmx bin/ser.cmx
@@ -188,7 +188,7 @@ bin/hash.cmo: src/hash.ml bin/hash.cmi bin/hashaux.cmo bin/sha256.cmo bin/ripemd
 bin/htree.cmo: src/htree.ml bin/htree.cmi bin/hash.cmo
 	$(OCAMLC) -I bin -o bin/htree.cmo -c src/htree.ml
 
-bin/db.cmo: src/db.ml bin/db.cmi bin/ser.cmo bin/hash.cmo
+bin/db.cmo: src/db.ml bin/db.cmi bin/ser.cmo bin/hash.cmo bin/config.cmo
 	$(OCAMLC) -I bin -o bin/db.cmo -c src/db.ml
 
 bin/mathdata.cmo: src/mathdata.ml bin/mathdata.cmi bin/htree.cmo bin/hash.cmo bin/ser.cmo

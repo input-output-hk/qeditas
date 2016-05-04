@@ -758,7 +758,7 @@ exception GettingRemoteData
 let save_asset a =
   let aid = assetid a in
   if not (dbexists "qasset" aid) then
-    dbput "qasset" aid a (seo_asset seosb)
+    dbput "qasset" aid a (seo_asset seoc)
 
 let rec save_hlist_elements hl =
   match hl with
@@ -775,7 +775,7 @@ let rec save_hlist_elements hl =
 	Some(r)
       else
 	begin
-	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seosb);
+	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seoc);
 	  Some(r)
 	end
   | HConsH(aid,hr) ->
@@ -789,7 +789,7 @@ let rec save_hlist_elements hl =
 	Some(r)
       else
 	begin
-	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seosb);
+	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seoc);
 	  Some(r)
 	end
   | HNil -> None
@@ -810,7 +810,7 @@ let save_nehlist_elements hl =
 	r
       else
 	begin
-	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seosb);
+	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seoc);
 	  r
 	end
   | NehConsH(aid,hr) ->
@@ -824,7 +824,7 @@ let save_nehlist_elements hl =
 	r
       else
 	begin
-	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seosb);
+	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seoc);
 	  r
 	end
   | NehHash(r) -> r
@@ -884,7 +884,7 @@ let rec save_ctree_elements_a tr i =
 	(CHash(r),r)
       else
 	begin
-	  dbput "qctree" r tre (seo_ctree seosb);
+	  dbput "qctree" r tre (seo_ctree seoc);
 	  (CHash(r),r)
 	end
     else (*** if it isn't an element (presumably because it's only approximating an element) then return the hash root only ***)
@@ -895,7 +895,7 @@ let save_ctree_elements tr =
   r
 
 let load_asset h =
-  dbget "qasset" h (sei_asset seis)
+  dbget "qasset" h (sei_asset seic)
 
 let get_asset h =
   try
@@ -909,7 +909,7 @@ let get_asset h =
     raise GettingRemoteData
 
 let load_hcons_element h =
-  dbget "qhcons" h (sei_prod sei_hashval (sei_option sei_hashval) seis)
+  dbget "qhcons" h (sei_prod sei_hashval (sei_option sei_hashval) seic)
 
 let load_hlist_element h =
   match load_hcons_element h with
@@ -976,7 +976,7 @@ let super_element_to_element tr =
   super_element_to_element_a tr 9
 
 let load_ctree_element h =
-  dbget "qctree" h (sei_ctree seis)
+  dbget "qctree" h (sei_ctree seic)
 
 let get_ctree_element h =
   try
