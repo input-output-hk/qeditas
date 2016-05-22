@@ -312,7 +312,7 @@ module Dbbasic : dbtype = functor (M:sig type t val basedir : string val seival 
       else
 	let h = !cache2 in
 	cache2 := !cache1;
-	Hashtbl.reset h;
+	Hashtbl.clear h;
 	Hashtbl.add h k v;
 	cache1 := h
 
