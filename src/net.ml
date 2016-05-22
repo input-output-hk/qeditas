@@ -1201,13 +1201,13 @@ let setsigpipeignore () =
 
 let process_new_tx h hh =
   try
-    let stx1 = dbget "qtx" h (sei_stx seic) in
+    let stx1 = DbTx.dbget h in
     let (tx1,_) = stx1 in
     let txid = hashtx tx1 in
     if not (txid = h) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
       begin
         Printf.fprintf !log "WARNING: Received tx with different hash as advertised, removing %s\nThis may be due to a bug or due to a misbehaving peer.\n" hh; flush !log;
-	dbdelete "qtx" h;
+	DbTx.dbdelete h;
       end
     else if tx_valid tx1 then
       begin (*** checking the validity of signatures and support depend on the current ledger; delay this here in favor of checking them before including them in a block we're actively trying to stake; note that the relevant properties are checked when they are included in a block as part of checking a block is valid ***)
@@ -1216,13 +1216,13 @@ let process_new_tx h hh =
     else
       (*** in this case, reject the tx since it's definitely not valid ***)
      begin
-       dbput "qblacklist" h true (seo_bool seoc);
-       dbdelete "qtx" h;
+       DbBlacklist.dbput h true;
+       DbTx.dbdelete h;
      end
   with (*** in some cases, failure should lead to blacklist and removal of the tx, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
   | Not_found ->
       Printf.fprintf !log "Problem with tx, deleting it\n"; flush !log;
-      dbdelete "qtx" h;
+      DbTx.dbdelete h;
   | e ->
       Printf.fprintf !log "exception %s\n" (Printexc.to_string e); flush !log;
       ()
@@ -1297,8 +1297,8 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
       let BlocktreeNode(_,_,_,thyroot,sigroot,ledgerroot,prevtinfo,currtinfo,deltm,tmstamp,prevcumulstk,blkhght,validated,blacklisted,succl) = prevnode in
       if !blacklisted then (*** child of a blacklisted node, drop and blacklist it ***)
         begin
-	  dbput "qblacklist" h true (seo_bool seoc);
-	  dbdelete "qblockheader" h;
+	  DbBlacklist.dbput h true;
+	  DbBlockHeader.dbdelete h;
         end
       else if valid_blockheader blkhght blkh1 && equ_tinfo blkhd1.tinfo currtinfo
              && ((blkhght = 1L && blkhd1.prevblockhash = None && ctree_hashroot blkhd1.prevledger = !genesisledgerroot && blkhd1.deltatime = 600l)
@@ -1323,7 +1323,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 	  record_recent_staker blkhd1.stakeaddr prevnode 6;
 	  let validatefn () =
 	    try
-	      let blkdh = dbget "qblockdeltah" h (sei_blockdeltah seic) in
+	      let blkdh = DbBlockDeltaH.dbget h in
 	      let (stkout,forf,cg,txhl) = blkdh in
 	      let alltxs = ref true in
 	      List.iter
@@ -1393,14 +1393,14 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
         end
       else
         begin (*** if it's wrong, delete it and blacklist it so it won't look new in the future ***)
-	  dbput "qblacklist" h true (seo_bool seoc);
-	  dbdelete "qblockheader" h;
+	  DbBlacklist.dbput h true;
+	  DbBlockHeader.dbdelete h;
         end
     with Not_found -> (*** orphan block header, put it on the relevant hash table and request parent ***)
       Hashtbl.add orphanblkheaders prevblkh blkh1;
       match prevblkh with
       | Some(pbh) ->
-	  if dbexists "qblockheader" pbh then
+	  if DbBlockHeader.dbexists pbh then
 	    process_new_header pbh (hashval_hexstring pbh) initialization knownvalid
 	  else
 	    (*** todo: request qblockheader pbh ***)
@@ -1410,19 +1410,19 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 and process_new_header_b h hh initialization knownvalid =
   Printf.fprintf !log "Processing new header %s\n" hh; flush !log;
   try
-    let blkh1 = dbget "qblockheader" h (sei_blockheader seic) in
+    let blkh1 = DbBlockHeader.dbget h in
     let (blkhd1,blkhs1) = blkh1 in
     if not (hash_blockheaderdata blkhd1 = h) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
       begin
         Printf.fprintf !log "WARNING: Received block header with different hash as advertised, removing %s\nThis may be due to a bug or due to a misbehaving peer.\n" hh; flush !log;
-	dbdelete "qblockheader" h;
+	DbBlockHeader.dbdelete h
       end
     else
       process_new_header_a h hh blkh1 blkhd1 initialization knownvalid
   with (*** in some cases, failure should lead to blacklist and removal of the header, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
   | Not_found ->
       Printf.fprintf !log "Problem with blockheader %s, deleting it\n" hh; flush !log;
-      dbdelete "qblockheader" h;
+      DbBlockHeader.dbdelete h
   | e ->
       Printf.fprintf !log "exception %s\n" (Printexc.to_string e); flush !log;
       ()
@@ -1471,11 +1471,11 @@ let rec find_best_validated_block_from fromnode bestcumulstk =
     bestcumulstk
 
 let publish_stx txh stx1 =
-  dbput "qtx" txh stx1 (seo_stx seoc);
+  DbTx.dbput txh stx1;
   Hashtbl.add published_stx txh ()
 
 let publish_block bhh (bh,bd) =
-  dbput "qblockheader" bhh bh (seo_blockheader seoc);
+  DbBlockHeader.dbput bhh bh;
   (*** todo: relay bh ***)
   let stxhl =
     List.map
@@ -1486,7 +1486,8 @@ let publish_block bhh (bh,bd) =
       bd.blockdelta_stxl
   in
   let bdh = (bd.stakeoutput,bd.forfeiture,bd.prevledgergraft,stxhl) in
-  dbput "qblockdeltah" bhh bdh (seo_blockdeltah seoc);
+  DbBlockHeader.dbput bhh bh;
+  DbBlockDeltaH.dbput bhh bdh;
   (*** todo: relay bdh ***)
   ()
 

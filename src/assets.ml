@@ -4,6 +4,7 @@
 
 open Ser
 open Hash
+open Db
 open Mathdata
 
 (*** If the obligation is Some(alpha,n,r), then the way to spend the asset is for alpha to sign after block n.
@@ -359,3 +360,6 @@ let seo_addr_preasset o u c = seo_prod seo_addr (seo_prod seo_obligation seo_pre
 let sei_addr_preasset i c = sei_prod sei_addr (sei_prod sei_obligation sei_preasset) i c
 let seo_addr_asset o a c = seo_prod seo_addr seo_asset o a c
 let sei_addr_asset i c = sei_prod sei_addr sei_asset i c
+
+module DbAsset = Dbbasic (struct type t = asset let basedir = "asset" let seival = sei_asset seic let seoval = seo_asset seoc end)
+

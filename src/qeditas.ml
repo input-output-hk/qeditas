@@ -6,6 +6,7 @@ open Big_int;;
 open Utils;;
 open Ser;;
 open Hash;;
+open Db;;
 open Secp256k1;;
 open Signat;;
 open Assets;;
@@ -611,7 +612,6 @@ let do_command l =
   | "exit" ->
       (*** Could call Thread.kill on netth and stkth, but Thread.kill is not always implemented. ***)
       closelog();
-      Db.dbclose();
       exit 0
   | "getpeerinfo" ->
       remove_dead_conns();
@@ -659,7 +659,7 @@ let initialize () =
     process_config_args(); (*** settings on the command line shadow those in the config file ***)
     let datadir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
     let dbdir = Filename.concat datadir "db" in
-    Db.dbopen dbdir; (*** open the database ***)
+    dbconfig dbdir; (*** configure the database ***)
     openlog(); (*** Don't open the log until the config vars are set, so if we know whether or not it's testnet. ***)
     if !Config.seed = "" && !Config.lastcheckpoint = "" then
       begin
@@ -699,6 +699,7 @@ while true do
     do_command l
   with
   | Exit -> () (*** silently ignore ***)
+  | End_of_file -> closelog(); exit 0
   | Failure(x) ->
       Printf.fprintf stdout "Ignoring Uncaught Failure: %s\n" x; flush stdout
   | exn -> (*** unexpected ***)

@@ -1,9 +1,22 @@
 open Ser
 open Hash
 
-val dbopen : string -> unit
-val dbclose : unit -> unit
-val dbget : string -> hashval -> (seict -> 'a * seict) -> 'a
-val dbexists : string -> hashval -> bool
-val dbput : string -> hashval -> 'a -> ('a -> seoct -> seoct) -> unit
-val dbdelete : string -> hashval -> unit
+val dbconfig : string -> unit
+
+module type dbtype = functor (M:sig type t val basedir : string val seival : (seict -> t * seict) val seoval : (t -> seoct -> seoct) end) ->
+  sig
+    val dbget : hashval -> M.t
+    val dbexists : hashval -> bool
+    val dbput : hashval -> M.t -> unit
+    val dbdelete : hashval -> unit
+  end
+
+module Dbbasic : dbtype
+
+module DbBlacklist :
+  sig
+    val dbget : hashval -> bool
+    val dbexists : hashval -> bool
+    val dbput : hashval -> bool -> unit
+    val dbdelete : hashval -> unit
+  end

@@ -4,6 +4,7 @@
 
 open Big_int
 open Hash
+open Db
 open Mathdata
 open Assets
 open Tx
@@ -41,6 +42,22 @@ exception NotSupported
 exception InsufficientInformation
 exception GettingRemoteData
 
+module DbHConsElt :
+    sig
+      val dbget : Hash.hashval -> hashval * hashval option
+      val dbexists : Hash.hashval -> bool
+      val dbput : Hash.hashval -> hashval * hashval option -> unit
+      val dbdelete : Hash.hashval -> unit
+    end
+
+module DbCTreeElt :
+    sig
+      val dbget : Hash.hashval -> ctree
+      val dbexists : Hash.hashval -> bool
+      val dbput : Hash.hashval -> ctree -> unit
+      val dbdelete : Hash.hashval -> unit
+    end
+
 val remove_hashed_ctree : hashval -> unit
 val archive_unused_ctrees : int64 -> ctree -> ctree -> unit
 val remove_unused_ctrees : ctree -> ctree -> unit
@@ -48,6 +65,7 @@ val save_hlist_elements : hlist -> hashval option
 val save_nehlist_elements : nehlist -> hashval
 val save_ctree_elements : ctree -> hashval
 val save_ctree : string -> ctree -> unit
+val load_ctree : string -> ctree
 val get_hlist_element : hashval -> hlist
 val get_nehlist_element : hashval -> nehlist
 val get_ctree_element : hashval -> ctree

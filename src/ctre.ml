@@ -6,12 +6,12 @@ open Big_int
 open Ser
 open Hashaux
 open Hash
+open Db
 open Mathdata
 open Assets
 open Cryptocurr
 open Tx
 open Config
-open Db
 
 let datadir () = if !testnet then (Filename.concat !datadir "testnet") else !datadir
 
@@ -755,29 +755,28 @@ let ensure_dir_exists d =
 exception FoundHashval of hashval
 exception GettingRemoteData
 
-let save_asset a =
-  let aid = assetid a in
-  if not (dbexists "qasset" aid) then
-    dbput "qasset" aid a (seo_asset seoc)
+module DbHConsElt =
+  Dbbasic
+    (struct
+      type t = hashval * hashval option
+      let basedir = "hconselt"
+      let seival = sei_prod sei_hashval (sei_option sei_hashval) seic
+      let seoval = seo_prod seo_hashval (seo_option seo_hashval) seoc
+    end)
 
 let rec save_hlist_elements hl =
   match hl with
   | HCons(a,hr) ->
-      save_asset a;
       let aid = assetid a in
+      DbAsset.dbput aid a;
       let h = save_hlist_elements hr in
       let r =
 	match h with
 	| None -> hashtag aid 3l
 	| Some(k) -> hashtag (hashpair aid k) 4l
       in
-      if dbexists "qhcons" r then
-	Some(r)
-      else
-	begin
-	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seoc);
-	  Some(r)
-	end
+      DbHConsElt.dbput r (aid,h);
+      Some(r)
   | HConsH(aid,hr) ->
       let h = save_hlist_elements hr in
       let r =
@@ -785,34 +784,24 @@ let rec save_hlist_elements hl =
 	| None -> hashtag aid 3l
 	| Some(k) -> hashtag (hashpair aid k) 4l
       in
-      if dbexists "qhcons" r then
-	Some(r)
-      else
-	begin
-	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seoc);
-	  Some(r)
-	end
+      DbHConsElt.dbput r (aid,h);
+      Some(r)
   | HNil -> None
   | HHash(r) -> Some(r)
 
 let save_nehlist_elements hl =
   match hl with
   | NehCons(a,hr) ->
-      save_asset a;
       let aid = assetid a in
+      DbAsset.dbput aid a;
       let h = save_hlist_elements hr in
       let r = 
 	match h with
 	| None -> hashtag aid 3l
 	| Some(k) -> hashtag (hashpair aid k) 4l
       in
-      if dbexists "qhcons" r then
-	r
-      else
-	begin
-	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seoc);
-	  r
-	end
+      DbHConsElt.dbput r (aid,h);
+      r
   | NehConsH(aid,hr) ->
       let h = save_hlist_elements hr in
       let r = 
@@ -820,14 +809,18 @@ let save_nehlist_elements hl =
 	| None -> hashtag aid 3l
 	| Some(k) -> hashtag (hashpair aid k) 4l
       in
-      if dbexists "qhcons" r then
-	r
-      else
-	begin
-	  dbput "qhcons" r (aid,h) (seo_prod seo_hashval (seo_option seo_hashval) seoc);
-	  r
-	end
+      DbHConsElt.dbput r (aid,h);
+      r
   | NehHash(r) -> r
+
+module DbCTreeElt =
+  Dbbasic
+    (struct
+      type t = ctree
+      let basedir = "ctreeelt"
+      let seival = sei_ctree seic
+      let seoval = seo_ctree seoc
+    end)
 
 let rec ctree_element_a tr i =
   if i > 0 then
@@ -880,13 +873,10 @@ let rec save_ctree_elements_a tr i =
   else
     let (tre,r) = save_ctree_elements_a tr 9 in
     if ctree_element_p tre then (*** make sure it's an element before saving it ***)
-      if dbexists "qctree" r then
+      begin
+	DbCTreeElt.dbput r tre;
 	(CHash(r),r)
-      else
-	begin
-	  dbput "qctree" r tre (seo_ctree seoc);
-	  (CHash(r),r)
-	end
+      end
     else (*** if it isn't an element (presumably because it's only approximating an element) then return the hash root only ***)
       (CHash(r),r)
     
@@ -894,12 +884,9 @@ let save_ctree_elements tr =
   let (tre,r) = save_ctree_elements_a tr 0 in
   r
 
-let load_asset h =
-  dbget "qasset" h (sei_asset seic)
-
 let get_asset h =
   try
-    load_asset h
+    DbAsset.dbget h
   with Not_found -> (*** request it and fail ***)
 (***
       let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qasset " ^ hh) (Unix.environment()) in
@@ -908,22 +895,19 @@ let get_asset h =
 ***)
     raise GettingRemoteData
 
-let load_hcons_element h =
-  dbget "qhcons" h (sei_prod sei_hashval (sei_option sei_hashval) seic)
-
 let load_hlist_element h =
-  match load_hcons_element h with
+  match DbHConsElt.dbget h with
   | (aid,Some(k)) -> HConsH(aid,HHash(k))
   | (aid,None) -> HConsH(aid,HNil)
 
 let load_nehlist_element h =
-  match load_hcons_element h with
+  match DbHConsElt.dbget h with
   | (aid,Some(k)) -> NehConsH(aid,HHash(k))
   | (aid,None) -> NehConsH(aid,HNil)
 
 let get_hcons_element h =
   try
-    load_hcons_element h
+    DbHConsElt.dbget h
   with Not_found -> (*** request it and fail ***)
 (***
     let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qhcons " ^ hh) (Unix.environment()) in
@@ -975,12 +959,9 @@ let rec super_element_to_element_a tr i =
 let super_element_to_element tr =
   super_element_to_element_a tr 9
 
-let load_ctree_element h =
-  dbget "qctree" h (sei_ctree seic)
-
 let get_ctree_element h =
   try
-    load_ctree_element h
+    DbCTreeElt.dbget h
   with Not_found -> (*** request it and fail ***)
 (***
     let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qctree " ^ hh) (Unix.environment()) in
@@ -1910,7 +1891,7 @@ and load_expanded_ctree c =
   try
     let c2 = load_expanded_ctree_a c 9 in
     let r = ctree_hashroot c2 in
-    let ce = load_ctree_element r in
+    let ce = DbCTreeElt.dbget r in
     ctree_lub c2 ce
   with Not_found -> c
 

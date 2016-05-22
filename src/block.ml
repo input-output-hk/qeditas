@@ -5,6 +5,7 @@
 open Ser
 open Sha256
 open Hash
+open Db
 open Big_int
 open Mathdata
 open Assets
@@ -368,6 +369,10 @@ let seo_blockdeltah o bd c =
 let sei_blockdeltah i c =
   sei_prod4 (sei_list sei_addr_preasset) (sei_option sei_poforfeit) sei_cgraft (sei_list sei_hashval)
     i c
+
+module DbBlockHeader = Dbbasic (struct type t = blockheader let basedir = "blockheader" let seival = sei_blockheader seic let seoval = seo_blockheader seoc end)
+module DbBlockDelta = Dbbasic (struct type t = blockdelta let basedir = "blockdelta" let seival = sei_blockdelta seic let seoval = seo_blockdelta seoc end)
+module DbBlockDeltaH = Dbbasic (struct type t = blockdeltah let basedir = "blockdeltah" let seival = sei_blockdeltah seic let seoval = seo_blockdeltah seoc end)
 
 let blockdelta_blockdeltah bd =
   (bd.stakeoutput,bd.forfeiture,bd.prevledgergraft,List.map (fun (tau,_) -> hashtx tau) bd.blockdelta_stxl)

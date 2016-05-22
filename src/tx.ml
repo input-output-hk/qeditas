@@ -6,6 +6,7 @@ open Big_int
 open Ser
 open Sha256
 open Hash
+open Db
 open Mathdata
 open Assets
 open Secp256k1
@@ -176,3 +177,5 @@ let seo_tx o g c = seo_prod (seo_list seo_addr_assetid) (seo_list seo_addr_preas
 let sei_tx i c = sei_prod (sei_list sei_addr_assetid) (sei_list sei_addr_preasset) i c
 let seo_stx o g c = seo_prod seo_tx (seo_prod (seo_list seo_gensignat) (seo_list seo_gensignat)) o g c
 let sei_stx i c = sei_prod sei_tx (sei_prod (sei_list sei_gensignat) (sei_list sei_gensignat)) i c
+
+module DbTx = Dbbasic (struct type t = stx let basedir = "tx" let seival = sei_stx seic let seoval = seo_stx seoc end)

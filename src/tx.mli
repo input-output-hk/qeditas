@@ -4,6 +4,7 @@
 
 open Big_int
 open Hash
+open Db
 open Mathdata
 open Assets
 open Script
@@ -31,3 +32,10 @@ val sei_tx : (int -> 'a -> int * 'a) -> 'a -> tx * 'a
 val seo_stx : (int -> int -> 'a -> 'a) -> stx -> 'a -> 'a
 val sei_stx : (int -> 'a -> int * 'a) -> 'a -> stx * 'a
 
+module DbTx :
+    sig
+      val dbget : Hash.hashval -> stx
+      val dbexists : Hash.hashval -> bool
+      val dbput : Hash.hashval -> stx -> unit
+      val dbdelete : Hash.hashval -> unit
+    end

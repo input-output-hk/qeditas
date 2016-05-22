@@ -94,6 +94,30 @@ val sei_blockdeltah : (int -> 'a -> int * 'a) -> 'a -> blockdeltah * 'a
 
 val blockdelta_blockdeltah : blockdelta -> blockdeltah
 
+module DbBlockHeader :
+    sig
+      val dbget : Hash.hashval -> blockheader
+      val dbexists : Hash.hashval -> bool
+      val dbput : Hash.hashval -> blockheader -> unit
+      val dbdelete : Hash.hashval -> unit
+    end
+
+module DbBlockDelta :
+    sig
+      val dbget : Hash.hashval -> blockdelta
+      val dbexists : Hash.hashval -> bool
+      val dbput : Hash.hashval -> blockdelta -> unit
+      val dbdelete : Hash.hashval -> unit
+    end
+
+module DbBlockDeltaH :
+    sig
+      val dbget : Hash.hashval -> blockdeltah
+      val dbexists : Hash.hashval -> bool
+      val dbput : Hash.hashval -> blockdeltah -> unit
+      val dbdelete : Hash.hashval -> unit
+    end
+
 val coinstake : block -> tx
 
 val incrstake : int64 -> int64

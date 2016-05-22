@@ -3,6 +3,7 @@
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 open Hash
+open Db
 open Mathdata
 
 type obligation = (payaddr * int64 * bool) option
@@ -82,3 +83,10 @@ val sei_addr_preasset : (int -> 'a -> int * 'a) -> 'a -> addr_preasset * 'a
 val seo_addr_asset : (int -> int -> 'a -> 'a) -> addr_asset -> 'a -> 'a
 val sei_addr_asset : (int -> 'a -> int * 'a) -> 'a -> addr_asset * 'a
 
+module DbAsset :
+    sig
+      val dbget : Hash.hashval -> asset
+      val dbexists : Hash.hashval -> bool
+      val dbput : Hash.hashval -> asset -> unit
+      val dbdelete : Hash.hashval -> unit
+    end
