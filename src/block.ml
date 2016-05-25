@@ -72,7 +72,7 @@ set_genesis_stakemods "0000000000000000000000000000000000000000"
 (*** max target/min difficulty: 2^220 (for mainnet) ***)
 let max_target = ref (shift_left_big_int unit_big_int 220)
 let genesistarget = ref (shift_left_big_int unit_big_int 205) (* current estimate for initial difficulty *)
-let genesisledgerroot : hashval ref = ref (hexstring_hashval "a47da9044687cc40e368fbd60f404ad5b4ddd4cf");; (*** snapshot ledger root ***)
+let genesisledgerroot : hashval ref = ref (hexstring_hashval "66c029f4c29b351785c0480cedc9449b64332dfa");; (*** snapshot ledger root ***)
 
 (*** base reward of 50 fraenks (5 trillion cants) like bitcoin, but assume the first 350000 blocks have passed. ***)
 let basereward = 5000000000000L
