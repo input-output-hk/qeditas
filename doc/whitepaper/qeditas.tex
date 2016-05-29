@@ -1,0 +1,836 @@
+\documentclass{article}
+
+\usepackage{amsthm}
+\usepackage{amssymb}
+\usepackage{bussproofs}
+\usepackage{pstricks,pst-node}
+\usepackage{url}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\title{Qeditas: A Formal Library as a Bitcoin Spin-Off}
+
+\author{Bill White\footnote{\mbox{Email:~billwhite@protonmail.com} \mbox{BTC: 12pbhpqEg7cjaCLLcvdhJhBWGUQWkRK3zS}}}
+
+\date{{Draft of \today}}
+
+\def\cB{\mathcal{B}}
+\def\cH{\mathcal{H}}
+\def\cM{\mathcal{M}}
+\def\cC{\mathcal{C}}
+\def\Addr{\mathcal{A}}
+\def\asset{\mathfrak{A}}
+\def\Val{\mathcal{V}}
+\def\coqtt{\tt}
+\def\hash#1{\ulcorner #1 \urcorner}
+\def\hasho#1{\ulcorner #1 \urcorner^{\bot}}
+\def\hashroot#1{\mathbf{R} #1}
+\def\outsum#1{\overleftarrow{\Sigma}(#1)}
+\def\insum{\vec{\Sigma}}
+\def\trans#1#2{[#2]^{#1}}
+\def\myapprox{\blacktriangleright}
+\def\subqh{\sqsubseteq}
+\def\subqm{\sqsubseteq}
+\def\subqc{\sqsubseteq}
+\def\lub{\sqcup}
+\def\normalize#1{\langle #1\rangle}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Formalization of mathematical theories is a time consuming process
+for which there is currently little reward. We describe how block chain
+technology can be used to support the formalization of mathematics by
+encouraging and rewarding useful work while discouraging repeating the
+work of others. The block chain will contain a record of definitions made
+and propositions proven. In addition the block chain can be used as a
+registry to record the first participant to make a definition or prove a
+theorem as the owner of the object or proposition as intellectual property.
+Future users may be required to buy rights to make use of the object or
+proposition. Purchasing of these rights can be avoided by repeating the
+content, but at the expense of larger documents and increased fees to the
+creators of blocks.
+\end{abstract}
+
+\section{Introduction}
+
+Qeditas
+is a project to apply block chain technology to
+support the construction of a library of formalized mathematics.
+Motivations for building such a library
+were spelled out in an anonymously published document in
+1994 with the title The QED Manifesto~\cite{QED}.
+In order to construct such a library there must be
+a clear record of which definitions have been made
+and which theorems have been proven.
+In addition the record may include unproven conjectures
+of interest.
+Qeditas will use a block chain to secure such a record in a decentralized manner.
+In addition a block chain can be used to reward those who
+make useful definitions and prove useful theorems.
+
+Bitcoin~\cite{Nakamoto2008} introduced the notion of a block chain
+to have a secure distributed record of currency transactions.
+The Ethereum project~\cite{WoodEtheriumYellow} uses a block chain
+to provide a distributed platform for computation.
+Qeditas will use a block chain to provide a distributed platform for deduction.
+Qeditas will also include an internal currency whose initial
+distribution will be based on a snapshot of the Bitcoin block chain.
+In other words Qeditas will be a Bitcoin spin-off~\cite{Spinoff}.
+
+The task of building a formal mathematical library is enormous.
+Wiedijk estimated the work to formalize the mathematics that mathematicians
+``take for granted'' as requiring 140 man-years~\cite{WiedijkEstimating}.
+Achieving such a goal will require the work of many independent people.
+The system in which the formalization takes place must allow people
+submit definitions, conjectures and theorems (with proofs)
+independently. Their contributions to the library should be appropriately
+rewarded and other users should be encouraged to build on previous work.
+
+For the most part the work of formally proving theorems
+has been limited to
+graduate students who formalize certain areas of mathematics or computer science
+as part of obtaining their degrees.
+This is sometimes done as part of a larger project.
+One example of such a large project is the recently completed Flyspeck project~\cite{Flyspeck2015}
+to formalize Hales' proof of the Kepler conjecture.
+Gonthier's work formalizing
+theorems about the classification of finite simple groups~\cite{Gonthier2013}
+provides another prominent example.
+
+In the academic world {\em{wealth}} is largely measured in publications,
+and academics who create formalizations
+receive their reward in the form of the resulting publications.
+Outside of academia there is currently little reward for doing such work.
+To some degree this is surprising since theorem proving can
+be used to ensure properties of programs and protocols.
+
+In Qeditas there will be two ways to be rewarded.
+\begin{enumerate}
+\item Users will be able to place bounties on conjectures
+and the bounties can be collected by the publisher
+of the first document resolving the conjecture.
+\item If a user is the first to define an object or prove a proposition,
+then the user will be able to claim ownership of the object or proposition.
+In order for future users to make use of the definition or theorem without repeating the
+content,
+they may (at the discretion of the owner) be required to purchase corresponding rights.
+\end{enumerate}
+The second point means that mathematical objects and propositions
+will become essentially a form of {\em{decentralized intellectual property}}
+(within the system) and the purchasing and usage of rights will be enforced by the network.
+This is similar to the requirement that academics include appropriate references
+to previous work in their publications.
+Note, however, that in the current academic world many publications
+have copyright restrictions and are often behind paywalls.
+In contrast all documents published in the Qeditas block chain
+will be freely available.
+
+In this white paper we will give a high level description of the Qeditas project.
+The code is still being written and details are subject to change.
+
+In Section~\ref{sec:currency} we describe the Qeditas currency units
+including the plan for an initial distribution taken from a snapshot of
+the Bitcoin block chain. The remaining currency units will be given as block
+rewards.
+The current plan is to use
+a lightweight block chain~\cite{Bruce2014,White2015b} so that
+each member of the network need not permanently store, for example, every formal document.
+The consensus mechanism will likely be proof of stake~\cite{ProofOfStakeDefinite} in some combination with proof of
+storage~\cite{MillerJSPK14}.
+These choices are discussed in Section~\ref{sec:ledger}.
+We use a small
+example to show how formal documents can be specified and published into the
+block chain
+in Section~\ref{sec:docs}.
+In Section~\ref{sec:rights} we extend the small example to demonstrate how ownership of objects and propositions can be recorded into the block
+chain.
+In Section~\ref{sec:bounties} we describe how bounties can be placed on
+conjectures and later collected by someone who proves the conjecture (or possibly its negation).
+Currency units, ownership, rights, and bounties can generally be described as {\em{assets}}
+which are held at addresses. This is described in Section~\ref{sec:assets}.
+All of the concepts above are generic and could be instantiated to many
+different theorem provers. In Section~\ref{sec:provers}
+we list some pros and cons of a few theorem provers which could be used as the underlying engine
+for Qeditas, leaving the definite choice for later.
+
+\section{Currency}\label{sec:currency}
+
+One of the oft-repeated complaints about Bitcoin is
+that the same name was given to both the network and the currency units.
+This is remedied in print by writing ``Bitcoin'' for the network
+and ``bitcoin'' for the currency unit. Actually, the basic currency unit
+is called a ``satoshi'' and a bitcoin consists of 100 million satoshis.
+It is also possible that subdivisions of satoshis will be included at some
+point in the future.
+
+As the value of bitcoin has increased, community members have engaged in long debates about
+the possible names to give to units between satoshis and bitcoins.
+In an attempt to preempt such debates in Qeditas, we give names for the units
+here. We do not use the term ``qeditas'' for any of the units.
+Instead we derive the names from the names of some mathematicians who have contributed
+to the understanding of the foundations of mathematics.
+The names are listed in Table~\ref{tab:currencyunits}
+and the pronounciations are intended to be the same as the
+pronounciations of the names of the corresponding mathematicians.
+The names are given in full form (both singular and plural)
+and in a short abbreviated form (both singular and plural).
+For the remainder of the paper we will use the abbreviated names.
+
+\begin{table}
+\begin{center}
+{\scriptsize{
+\begin{tabular}{llll}
+& & {\scriptsize{Basic Unit}} & {\scriptsize{Corresponding}} \\
+{\scriptsize{Full Name}} & {\scriptsize{Short Name}} & {\scriptsize{Factor}} & {\scriptsize{Bitcoin Units}} \\ \hline
+Cantor (Cantors) & cant (cants) & $1$ & 0.001 satoshis \\
+Frege (Freges) & freg (fregs) & $10^2$ & 0.1 satoshis \\
+Church (Churches) & church (churches) & $10^5$ & 1 microbit \\
+Zermelo (Zermelos) & zerm (zerms) & $10^8$ & 1 millibit \\
+Fraenkel (Fraenkels) & fraenk (fraenks) & $10^{11}$ & 1 bitcoin \\
+Grothendieck (Grothendiecks) & groth (groths) & $10^{14}$ & 1000 bitcoins
+\end{tabular}
+}}
+\end{center}
+\caption{Qeditas currency units}\label{tab:currencyunits}
+\end{table}
+
+The intention is that one fraenk corresponds directly to one bitcoin
+(in terms of units, not value),
+and so the number of fraenks in Qeditas is capped at 21 million.
+The first (approximately) 14 million ($\frac{2}{3}$) will be distributed by taking a snapshot of the
+first 350,000 blocks of the Bitcoin block chain.\footnote{To be precise, the snapshot will include all pay-to-public-key-hash addresses, including those derived from pay-to-public-key outputs. The snapshot will also include native multisig outputs. In addition, all pay-to-script-hash outputs will be included, but we cannot guarantee the Qeditas script interpreter is 100\% compatible with the script interpreter of Bitcoin. A preliminary script interpreter has been written and tested on already spent pay-to-script-hash outputs in the Bitcoin block chain and it succeeds in over 99.8\% of cases.}
+The remaining 7 million will be distributed as block rewards with
+the same schedule Bitcoin is using (starting from block 350,000). That is, the block reward will
+begin with 25 fraenks for the first 70,000 blocks
+and will then halve to 12.5 fraenks. After block 70,000
+the block reward will halve each 210,000 blocks.
+A block time of 10 minutes will be targetted, so that the number of fraenks
+should always be approximately the same as the number of bitcoins.
+Note that since there are finer units in Qeditas than Bitcoin,
+very small Qeditas block rewards will continue after the Bitcoin block
+rewards have stopped.
+
+Arguments in favor of such a snapshot distribution
+can be found in the ``spin-off'' thread begun by Peter R~\cite{Spinoff}.\footnote{While the cited thread contains the primary discussion on the topic, the idea seems to be older. See for example the earlier thread begun by go1111111~\cite{PreSpinoff}.}
+One can view the Bitcoin block chain as recording an efficient distribution
+of wealth in a voluntary environment.
+Bitcoin was sufficiently well-known by 2015
+that each individual had a chance to make an independent judgement about the idea.
+Consequently each person at that point held the amount of bitcoins that reflected their own judgment.
+
+Having $\frac{2}{3}$ of the total Qeditas currency supply in the initial distribution
+may lead to an unhealthy level of uncertainty. It is likely that a significant percentage of the initial
+distribution will never be claimed, either due to lack of interest or due to lost private keys.
+One solution to this problem (also discussed in the spin-off thread~\cite{Spinoff})
+is to have a {\em{claim window}}. That is, there would be a block height after which
+currency units from the initial distribution could no longer be claimed.
+An argument in favor of such a claim window is that it removes the uncertainty about the long-term supply.
+An argument against having such a claim window is that it is redistributive and punishes bitcoin holders
+who did not become aware of the spin-off in time.
+
+The current plan in Qeditas is to have an initial claim window of roughly 5 years.
+During these 5 years, for each satoshi the bitcoin address had, the controller of the corresponding
+private key will be able to claim 1000 cants from the initial Qeditas distribution, held at the corresponding
+Qeditas address.
+After these 5 years, there will be new claim windows coinciding with the halving of the block rewards.
+In particular, each time the block reward halves (roughly every 4 years) the value of the 
+unclaimed initial distribution will also halve. For example, a bitcoin address that held 1 satoshi
+at the time of the snapshot, would only be able to claim 500 cants during this second claim window.
+During the third claim window (roughly years 9 through 13) the corresponding initial distribution (if still unclaimed)
+would be worth 250 cants.
+As a consequence, even a claim corresponding to a single satoshi in the snapshot will
+be able to be claimed for at least one cant for roughly the first 40 years of the network.\footnote{Trent Russell 
+suggested this idea for halving the value of unclaimed currency from the initial distribution
+after noting problems caused by similar issues in the case of the Clams cryptocurrency.}
+
+\section{Lightweight Ledger}\label{sec:ledger}
+
+Qeditas will use a lightweight ledger in the sense described in~\cite{White2015b}.
+The idea is similar to the mini-blockchain scheme
+implemented in the cryptocurrency Cryptonite~\cite{Bruce2014}
+as well as to the intended use of Merkle-Patricia trees in Ethereum~\cite{WoodEtheriumYellow}.
+The state of the ledger will be represented by a compact form of a trie
+combined with a Merkle structure (a Merkle-Patricia tree up to some details).
+The full trie allows one to look up the assets held by an address.
+These assets may include currency units but may also include formal documents,
+ownership information, rights and bounties.
+
+We distinguish between assets {\em{held}} by an address and assets being {\em{controlled}}
+by addresses. An asset $a$ is {\em{held}} by an address $\alpha$ if $a$
+can be found in the trie at address $\alpha$. The asset itself contains {\em{obligations}}
+(see~\cite{White2015b}) indicating who can spend the asset. The obligations allow
+for an address to hold an asset without being able to spend the asset.
+
+The two most popular kinds of consensus mechanisms used by cryptocurrencies are proof of work and proof of stake. Proof of work (PoW) was first
+described by Back~\cite{Back2002}
+and is used by Bitcoin.
+Proof of stake (PoS) was introduced by King and Nadal~\cite{KingNadal2012}, and first implemented
+(as a proof of work/proof of stake hybrid) in Peercoin.
+Another consensus mechanism, proof of retrievability
+(PoR), described by Miller, et. al., is designed to support data preservation~\cite{MillerJSPK14}.
+
+Since Qeditas is intended to support a library, some form of PoR seems to be
+a good choice. On the other hand, the amount of data being secured by Qeditas
+is likely to be relatively small (especially at first) and it is not clear that PoR is
+appropriate in this case. Conceivably, PoR could be used to ensure storage of
+the syntactic terms which hash to give addresses of objects and possibly storage
+of proofs of theorems. While the consensus mechanism is not yet fixed, it is
+likely to be some combination of PoS and PoR.\footnote{The current design of Qeditas does not make use of erasure codes when storing data, and so it would likely make use of ``Proof of Storage'' instead of PoR.}
+
+The original PoS mechanism used a notion of coin age.
+When coin age is coupled with a block reward proportional to the stake,
+the incentive to constantly stake (and thereby support the security of the network) is decreased.
+The Qeditas network will not suffer from this problem since it will have a fixed
+block reward independent of the stake of the forger of the block. This idea has
+been described earlier as ``proof of stake definite''~\cite{ProofOfStakeDefinite}. Qeditas may use a notion
+of coin age, but since there is a fixed block reward potential stakers maximize
+their reward by keeping their nodes online as much as possible.
+
+The currency units held by an address $\alpha$ are part of the stake of that address.
+Accordingly, if an address holds some currency units, then
+the private key for $\alpha$
+will be able to forge new blocks in the block chain.
+In order to check $\alpha$ holds the alleged stake it is sufficient
+to look at an approximation of the current state showing the
+stake is among the assets held by $\alpha$. The approximation
+need not include information about assets held by any other address.
+More details can be found in~\cite{White2015b}.
+
+Note that if $\beta$ controls some currency units, then $\beta$ can allow the asset to be
+held by $\alpha$ so that $\alpha$ can use them to forge blocks. 
+This would allow a staker to keep the keys for spending offline while having the staking keys online.
+It would also allow for a non-staker (controlling $\beta$) to ``loan'' their currency units to a staker (controlling $\alpha$).
+In return $\alpha$
+might pay some of the block rewards back to $\beta$.
+Since $\beta$ still controls the asset, the owner of the private key for $\beta$
+can spend the asset even though it is held by $\alpha$.
+(Though the obligation may contain a block height before which the asset cannot be spent.)
+
+There are strong arguments that PoS cannot provide the same level
+of distributed consensus as PoW~\cite{Poelstra2014}.
+One reason is that if someone had stake in the currency at one time,
+then this previously owned stake could, in principle, be used to create
+a fork of the block chain starting from that earlier time.
+In practice PoS cryptocurrency can avoid a long range attack
+of this kind by preventing long reorganizations.
+For example, the cryptocurrency Nxt~\cite{Nxt} disallows reorganization beyond
+720 blocks. The cost of this solution is that if someone new enters the network
+they may need a way, outside the network itself, to determine the ``correct'' chain.
+Buterin calls such a criteria ``weakly subjective''
+in contrast to the ``objective'' criteria used by
+Bitcoin~\cite{Buterin2014}.
+Short range attacks are still possible, though simulations
+by Consensus Research show them to be unlikely
+even in the face of participants signing competing chains~\cite{Chepurnoy2014d,multistrategy,ConsensusResearch}.
+
+The initial distribution may provide a protection against certain
+kinds of attacks.
+In the first place, it would be very difficult
+for an individual or group to obtain 50\% of the currency units since this would
+require obtaining the private keys corresponding to at least 3.5 million bitcoins
+as of block height 350,000. On the other hand, a 51\% attack on a proof of stake
+coin only requires having more than 50\% of the {\emph{actively staking}} coins.
+There is a threat that if a single wealthy bitcoin holder decided to attack
+the Qeditas network before many others are participating, the network could
+be strangled in its cradle.
+The economic rationality of such an attack is questionable, since they would be doing work to
+destroy a block chain that would add to their wealth if left alone. Nevertheless,
+the threat exists.
+The hope is that the wide initial distribution will make it likely
+that for each participant with a certain amount of the distribution
+there will be others with a similar amount.
+
+\section{Documents}\label{sec:docs}
+
+Some examples of formal mathematical libraries include
+the Mizar Mathematical Library~\cite{RudnickiTrybulec2001},
+the Archive of Formal Proofs supported by
+Isabelle-HOL~\cite{Nipkow-Paulson-Wenzel:2002}
+and the Mathematical Components library of ssreflect~\cite{Gonthier2010}.
+In each case the library is made up of documents.
+Each of these documents extends the mathematical content of the library
+by including mathematical items, mainly definitions and theorems.
+The organization of these libraries tends to be handled by experts who have
+a familiarity with the current contents of the library.
+These experts can determine if the content is new and whether the document
+conforms to the expectations of the library.
+
+Since Qeditas will be decentralized, there will be no ``expert'' to filter out
+submissions. The protocol itself must ensure the submission meets the necessary
+criteria. In this section we walk through a small example of how a document
+might be created and published.
+
+Suppose a user creates a document {\tt{Relns}} which
+defines the converse of a relation, defines when a binary relation is symmetric
+and proves a theorem that the converse of a relation is symmetric if the relation is symmetric.
+The particular syntax and format of such a document depends on the system
+used to check the proofs. For now, we can remain system-independent by
+using informal mathematical language.
+The mathematical content of {\tt{Relns}} is shown in Figure~\ref{fig:docrelns}.
+
+\begin{figure}
+\begin{center}
+\fbox{\parbox{11.5cm}{
+{\bf{Definition 1.}} Let $R$ be a binary relation. The binary relation $R^{-1}$ is
+defined such that $R^{-1}(x,y)$ holds if $R(x,y)$ holds.
+
+{\bf{Definition 2.}} A binary relation $R$ is {\em{symmetric}} if $R(y,x)$ holds whenever $R(x,y)$ holds.
+
+{\bf{Theorem 1.}} Let $R$ be a binary relation. If $R$ is symmetric, then $R^{-1}$ is also symmetric.
+\begin{proof} Assume $R$ is symmetric and $R^{-1}(x,y)$ holds. By Definition 1, $R(y,x)$ holds. By symmetry of $R$ and Definition 2, $R(x,y)$ holds. By the Definition 1 again, $R^{-1}(y,x)$ holds.
+\end{proof}
+}}
+\end{center}
+\caption{Mathematical Content of {\tt{Relns}}}
+\label{fig:docrelns}
+\end{figure}
+
+Note that the document contains a proof of the theorem. There are a variety
+of representations for proofs, but a fundamental requirement is that
+it must be easy for a proof checker to determine whether or not the proof is correct.
+We return to this issue in Section~\ref{sec:provers}.
+
+The first criteria for the document to be accepted by the network for publication
+is that it is formally correct. This ensures that only correct definitions and
+theorems will be included in the library.
+There are a number of other criteria which will be discussed in the remainder of the paper.
+For this section, let us consider how plagiarism is avoided.
+
+Suppose the author of {\tt{Relns}}, Alice, controls an address $\alpha$.
+Suppose {\tt{Relns}} is signed with the address $\alpha$
+and submitted to the Qeditas network for publication.
+Another network participant, Bob, controlling an address $\beta$,
+could easily remove Alice's signature and replace it with his own.
+If Bob's version were confirmed before Alice's, then
+Alice would lose credit for having done the work.
+
+A solution to this problem is to enforce the following protocol.
+\begin{enumerate}
+\item The author chooses a salt and includes it in the document.
+\item The author computes a hash of the signed salted document and publishes it as an {\em{intention}}.
+\item After the intention is sufficiently confirmed, the author releases the signed salted document to be published.
+\end{enumerate}
+The network will only allow a document to be confirmed if it has a sufficiently confirmed intention.
+Now for an attacker to take credit for another document, the attacker would
+need to publish a new intention, wait for enough confirmations, and then
+attempt to publish the plagiarized document all before the original author's document is
+confirmed.
+
+Publishing an intention and a document will likely require fees,
+and the fees will likely depend on the size of the document.
+This gives the first in-system use of the currency.
+We will see other in-system uses of the currency in the next sections.
+
+\section{Ownership and Rights}\label{sec:rights}
+
+In this section we consider the notions of ownership of objects and propositions
+and rights of use.
+We use the example document Relns with the contents
+described in Figure~\ref{fig:docrelns} to guide the discussion.
+
+In a document a formal definition declares a certain name to be an abbreviation for a certain syntactic term. Likewise, a formal theorem declares a name
+to be a reference to the fact that a certain syntactic term (representing a proposition) is provable (with the proof following the declaration). These syntactic
+terms can be hashed in order to assign a unique address corresponding for each
+term.
+
+Consider the first definition in {\tt{Relns}}.
+This defines an operation $-^{-1}$ on relations.
+As a $\lambda$-term~\cite{Church40} the definition can be written as
+$$\lambda R\lambda x\lambda y.R(y,x).$$
+This definition can then be converted to a nameless (de Bruijn) representation~\cite{deBruijn72}
+$$\lambda \_\lambda \_\lambda \_.2(0,1).$$
+This nameless version can be serialized and hashed to given an address.
+Let $\delta_1$ be the address corresponding to the first definition.
+Likewise, we can compute an address $\delta_2$ corresponding to the second definition
+and $\delta_3$ corresponding to the proposition of the theorem.
+
+Suppose Alice (the author of {\tt{Relns}})
+is the first to make both of the definitions, the first to mention the proposition
+of the theorem and the first to prove the theorem.
+In this case $\alpha$ (the address of Alice)
+will be marked as the owner of the objects $\delta_1$ and $\delta_2$
+and the owner of both the object and proposition $\delta_3$
+when the document is published (and confirmed).
+This ownership information is held as a kind of asset at the addresses $\delta_1$, $\delta_2$
+and $\delta_3$
+and will include a {\em{royalty}} requirement.
+The royalty requirement is used to determine under
+what conditions others may use the object or proposition.
+The owner may either allow everyone to freely use the item,
+may allow no one to use the item,
+or may allow others to purchase rights for each use.
+Ownership can also be transfered to a different address using the private key for $\alpha$.
+The royalty information can be changed by the current owner.
+
+Let us suppose that Alice publishes the document {\tt{Relns}}
+and assigns ownership of $\delta_1$, $\delta_2$ and $\delta_3$ to her address $\alpha$.
+Suppose Alice allows $\delta_1$ to be freely used,
+does not allow the use of $\delta_2$ at all,
+and requires a payment of 3 zerms for each right to use $\delta_3$.
+
+Now suppose Bob, the controller of address $\beta$, wants to author a document
+extending Alice's work by proving that $(R^{-1})^{-1}$ is symmetric
+if $R$ is symmetric.
+Bob has a number of options for doing this.
+We will discuss three options as documents {\tt{Relns2v1}}, {\tt{Relns2v2}} and  {\tt{Relns2v3}}.
+
+\begin{figure}
+\begin{center}
+\fbox{\parbox{11.5cm}{
+{\bf{Definition 1.}} Let $R$ be a binary relation. The binary relation $R^{-1}$ is
+defined such that $R^{-1}(x,y)$ holds if $R(x,y)$ holds.
+
+{\bf{Definition 2.}} A binary relation $R$ is {\em{symmetric}} if $R(y,x)$ holds whenever $R(x,y)$ holds.
+
+{\bf{Theorem 1.}} Let $R$ be a binary relation. If $R$ is symmetric, then $R^{-1}$ is also symmetric.
+\begin{proof} Assume $R$ is symmetric and $R^{-1}(x,y)$ holds. By Definition 1, $R(y,x)$ holds. By symmetry of $R$ and Definition 2, $R(x,y)$ holds. By the Definition 1 again, $R^{-1}(y,x)$ holds.
+\end{proof}
+
+{\bf{Theorem 2.}} Let $R$ be a binary relation. If $R$ is symmetric, then $(R^{-1})^{-1}$ is also symmetric.
+\begin{proof} Assume $R$ is symmetric. Applying Theorem 1 with $R$ we know $R^{-1}$ is symmetric. Applying Theorem 1 again, this time with $R^{-1}$, we know $(R^{-1})^{-1}$ is symmetric.
+\end{proof}
+}}
+\end{center}
+\caption{Mathematical Content of {\tt{Relns2v1}}}
+\label{fig:docrelns2v1}
+\end{figure}
+In {\tt{Relns2v1}} (see Figure~\ref{fig:docrelns2v1}) Bob copies Alice's work and adds one new theorem.
+The new theorem (Theorem 2) is easily proven using Alice's theorem twice.
+Theorem 2 is new and will have a corresponding address $\delta_4$ which currently has no owner.
+
+Bob can publish {\tt{Relns2v1}} signed using the private key for his address $\beta$.
+The first three items already have an owner, Alice, and she will remain the owner of these
+three items. The address $\beta$ for Bob will be assigned the owner of the new item $\delta_4$.
+
+Simply repeating Alice's work is not the best way to import previous work.
+In this case as in many others it would be a superior choice to only record the
+parts of the work that are needed.
+For this reason suppose Bob is unsatisfied and does not publish {\tt{Relns2v1}}.
+Bob could examine his proof of Theorem 2 and recognize that he did not
+need the actual definitions of $-^{-1}$ or the property of being symmetric, but only needed
+the fact that the proposition of Theorem 1 has been proven.
+Armed with this information Bob can create {\tt{Relns2v2}} (see Figure~\ref{fig:docrelns2v2})
+by omitting the definitions and first proof.
+
+\begin{figure}
+\begin{center}
+\fbox{\parbox{11.5cm}{
+{\bf{Object 1.}} $(-)^{-1}$ is the object with address $\delta_1$.
+
+{\bf{Object 2.}} {\em{symmetric}} is the object with address $\delta_2$.
+
+{\bf{Known 1.}} Let $R$ be a binary relation. If $R$ is symmetric, then $R^{-1}$ is also symmetric.
+
+{\bf{Theorem 2.}} Let $R$ be a binary relation. If $R$ is symmetric, then $(R^{-1})^{-1}$ is also symmetric.
+\begin{proof} Assume $R$ is symmetric. Applying Known 1 with $R$ we know $R^{-1}$ is symmetric. Applying Known 1 again, this time with $R^{-1}$, we know $(R^{-1})^{-1}$ is symmetric.
+\end{proof}
+}}
+\end{center}
+\caption{Mathematical Content of {\tt{Relns2v2}}}
+\label{fig:docrelns2v2}
+\end{figure}
+
+The correctness of the proof of Theorem 2 in {\tt{Relns2v2}} can still be checked.
+More information is needed to ensure that there really are objects with addresses $\delta_1$
+and $\delta_2$. This can be verified by looking up $\delta_1$ and $\delta_2$ in the trie.
+Assuming they are previously defined objects, the information will be there.
+Furthermore, the system must verify that the proposition in Known 1 has been previously proven.
+This can be verified by computing the address corresponding to the proposition, $\delta_3$,
+and then looking up the relevant information in the trie at this address.
+
+The document {\tt{Relns2v2}} is shorter than {\tt{Relns2v1}}.
+Consequently it should be less expensive (in terms of fees) to publish it.
+In general fees are expected to encourage succinctness.
+
+However, the network will not allow Bob to publish {\tt{Relns2v2}}.
+In addition to checking $\delta_1$ and $\delta_2$ are objects and $\delta_3$ is a known proposition,
+the permission to make use of them must be determined.
+Alice has allowed free use of $\delta_1$, but Alice has not allowed use of $\delta_2$ at all.
+In addition, Alice requires the purchase of rights to use $\delta_3$.
+At the moment, Bob has no such rights.
+
+Armed with this further information, Bob purchases the rights to use $\delta_3$ twice.
+He can do this by creating a transaction
+with outputs
+sending $6$ zerms to $\alpha$ (the owner of $\delta_3$) and
+sending $2$ {\em{$\delta_3$-rights}} to himself.
+Note that Alice need not be involved in this transaction.
+In the future Alice may change the royalty requirements for $\delta_3$,
+but this will not affect Bob's right to use $\delta_3$ twice.
+Purchasing such rights are the second in-system use of the currency.
+
+Bob then creates a third document {\tt{Relns2v3}} (see Figure~\ref{fig:docrelns2v3}).
+In this case Bob avoids the fact that Alice does not allow use of $\delta_2$ by
+simply repeating the work of defining the property of being symmetric.
+Bob can then publish an intention to publish {\tt{Relns2v3}}
+and later publish {\tt{Relns2v3}}.
+The transaction publishing {\tt{Relns2v3}}
+will spend the two rights purchased above, consuming them.
+
+\begin{figure}
+\begin{center}
+\fbox{\parbox{11.5cm}{
+{\bf{Object 1.}} $(-)^{-1}$ is the object with address $\delta_1$.
+
+{\bf{Definition 2.}} A binary relation $R$ is {\em{symmetric}} if $R(y,x)$ holds whenever $R(x,y)$ holds.
+
+{\bf{Known 1.}} Let $R$ be a binary relation. If $R$ is symmetric, then $R^{-1}$ is also symmetric.
+
+{\bf{Theorem 2.}} Let $R$ be a binary relation. If $R$ is symmetric, then $(R^{-1})^{-1}$ is also symmetric.
+\begin{proof} Assume $R$ is symmetric. Applying Known 1 with $R$ we know $R^{-1}$ is symmetric. Applying Known 1 again, this time with $R^{-1}$, we know $(R^{-1})^{-1}$ is symmetric.
+\end{proof}
+}}
+\end{center}
+\caption{Mathematical Content of {\tt{Relns2v3}}}
+\label{fig:docrelns2v3}
+\end{figure}
+
+In the end the previous work that is repeated in vs. imported into a document
+will be (at least partially) economically determined based on fees (relative
+to the size of documents) and royalty requirements.
+If the owners of items determine new documents are opting to repeat work
+and pay higher fees, then these owners are likely to reduce the royalty requirements.
+However, as developments
+become increasingly complicated, repeating work becomes less feasible. The
+reason is simple: to repeat a definition or a proof, one will generally need to
+include other dependencies. In the most extreme case, to avoid all dependencies a document can include every definition and proof all the way down to the foundation.
+
+\section{Bounties}\label{sec:bounties}
+
+We next consider bounties on conjectures.
+This gives a third in-system use of the currency
+and allows users to guide the development the library.
+A document may include conjectures (unproven propositions)
+and include a bounty in the form of currency units.
+The bounty will be automatically paid out to the publisher
+of a document resolving the conjecture.
+By {\em{resolving}} we mean either proving the conjecture
+or proving its negation.
+
+A similar notion of bounties for bitcoin is available
+at Sakaguchi's website {\tt{proofmarket.org}}~\cite{ProofMarket}.
+At {\tt{proofmarket.org}} there is a list of Coq~\cite{Coq:manual} and Agda~\cite{Norell08} propositions
+with bitcoin bounties. These can be collected by submitting formal proofs to
+the website. If the proofs are checked by the corresponding system to be correct,
+then the bounty is paid out.
+The bounty mechanism at
+proofmarket.org is centralized and carries counterparty risk.
+
+Qeditas will handle bounties in a decentralized manner as follows.
+Suppose $\delta$ is the address of the syntactic term specifying a conjecture.
+All bounties will be held (as bounties, not currency) at address $\delta$.
+Suppose Alice, with address $\alpha$, publishes a document which contains
+a proof of the proposition.
+As a result of this publication, $\alpha$ will be entered as the owner of $\delta$ (as a proposition).
+The owner of a proposition will always be allowed to spend bounties held at the address back into currency units (to any address).
+To handle the case when Alice proves the negation of the conjecture,
+we say the owners of propositions will also be allowed to spend bounties
+held at the {\em{negation}} of propositions
+back into currency units.
+
+Note that it is possible for a proposition to be {\em{independent}} -- meaning
+neither the proposition nor its negation is provable.
+Using currency units to place bounties on independent propositions
+essentially {\em{burns}} the currency.
+
+The collection of bounties seems to have a ``winner takes all'' quality. However, as the conjectures become increasingly complicated, it seems likely that
+the document which resolves the conjecture is built from previous work. In
+practice, we assume the creators of this previous work required royalties, and
+they will be rewarded by the purchase of rights instead of the bounty. This
+means bounties can indirectly encourage users to publish intermediate results
+intended to build towards a solution to a conjecture with a bounty.
+
+\section{Assets}\label{sec:assets}
+
+In previous sections we have described currency units, intentions, documents, ownership, rights and bounties.
+We combine these under the general notion of a preasset.
+A preasset can be combined with other information to give an asset.
+Here we mostly follow the presentation in~\cite{White2015b}, with some modifications.
+
+A {\em{preasset}} is one of the following:
+\begin{itemize}
+\item a currency unit ($64$-bit number giving the number of cants),
+\item a bounty on a conjecture (with a 64-bit number giving the number of currency units),
+\item a deed for an object (with the address of the owner and an optional $64$-bit number indicating the cost of rights to use it as an object),
+\item a deed for a proposition (with the address of the owner and an optional $64$-bit number indicating the cost of rights to use it as a known proposition),
+\item a deed for the negation of a proposition (useful only for collecting bounties when a conjecture is resolved in the negative),
+\item a right to use an object (with the address of the object and the number of times it may be used as an object),
+\item a right to use a proposition (with the address of the proposition and the number of times it may be used as a known proposition),
+\item a marker to indicate the intention to reveal and publish a document or
+\item a published document (arbitrary, but checked to ensure correctness, intention and appropriate rights).
+\end{itemize}
+
+An {\em{obligation}} $\omega$ is a triple $(\alpha,n,r)$ where $\alpha$
+is an address, $n$ is a block height and $r$ is a boolean.
+The address $\alpha$ is either a pay-to-public-key-hash or pay-to-script-hash address
+and gives the signature required to spend the corresponding asset.
+The block height $n$ gives the earliest block height at which the corresponding asset
+can be spent. The boolean $r$ indicates if the corresponding asset is a reward
+from staking. Rewards are subject to extra conditions, including the possibility
+of forfeiture in case double signing on two short forks is detected.
+
+An {\em{asset}} is a triple $(h,b,\omega,u)$
+where $h$ is a unique identifier of the asset (in practice, a hash value),
+$b$ is a block height,
+$\omega$ is an obligation, and $u$ is a preasset.
+The obligation $\omega$ may be omitted, in which case it is treated as
+$(\alpha,0,{\mathtt{false}})$ where $\alpha$ is the address where the asset is held.
+The block height $b$ is the {\emph{birthday}} of the asset, and is
+the block height at which the asset entered the ledger tree.
+Initially distributed assets will have birthday $0$.
+The first block of the Qeditas block chain will have height $1$,
+and assets created in this first block will have birthday $1$.
+
+If $b>0$ and $u$ is a currency preasset with $v$ units, the value of the asset $(h,b,\omega,u)$
+is $v$ cants.
+We consider the case where $b=0$ special, as these are assets from the initial distribution.
+As discussed in Section~\ref{sec:currency} the value of unclaimed (unspent) assets from the initial distribution
+will halve over time. In particular, if $u$ is a currency preasset with $v$ units,
+then value of the asset $(h,0,\omega,u)$ at block height $n$
+is (the floor of) $\frac{v}{2^{f(n)}}$ where $f(n) = 0$ if $n \leq 280000$
+and $f(n) = \frac{n-70000}{210000}$ for $n > 280000$.
+If $n \geq 11410000$ (which should be after roughly 200 years),
+all the assets from the initial distribution will have value $0$.
+
+The state of the system can be representated as a function taking addresses
+to lists of assets.
+Such a state can be represented using tries (similar to Merkle Patricia trees)
+as described in~\cite{White2015b}.
+One can use the same representation to keep up with only the portions of the state
+relevant to the node in question.
+
+\section{Theorem Provers and Proof Checkers}\label{sec:provers}
+
+In this section we discuss what kind of theorem prover or proof checker
+is appropriate for Qeditas. We begin by distinguishing between theorem provers and
+proof checkers. A theorem prover is a system in which one constructs proofs,
+often with varying degrees of automated assistance. (Given this role, such a
+system is sometimes called a proof assistant.) A proof checker is a system which
+takes a preexisting proof and simply checks that it is correct. For Qeditas the
+vital ingredient is a proof checker. Each time a document is published each node
+will need to use the proof checker to ensure its correctness. For the project to
+be successful, there should also be (at least one) theorem prover in which users
+can create documents and construct proofs.
+
+For concrete examples, we can contrast two early groundbreaking systems:
+AUTOMATH~\cite{debr68,DeBruijn80} and Mizar~\cite{RudnickiTrybulec2001}.
+
+AUTOMATH was the first proof checker. The user would give definitions in
+full detail. Each of the definitions would have a declared type and the system
+would check that the given term has the given type. Some of the types would
+correspond to propositions and the terms would correspond to proofs, giving
+a first implementation of what is now known as the Curry-Howard-de Bruijn
+correspondence~\cite{debr68,DeBruijn80,howa80}. The AUTOMATH project is no longer active.
+
+Mizar was an early example of a theorem prover (dating back to the 1970s)
+and is still in use today.\footnote{The Mizar project was not known outside the Soviet block until the Iron Curtain fell. One can find exciting discussions on the old QED mailing list prompted by the discovery that a small Polish group led by Andrzej Trybulec had already implemented a system doing many of the things under discussion.}
+Mizar is the only widely used system based on set theory and provides
+support for some set theoretic notation similar to
+that used by traditional mathematicians.
+The proofs are given in a declarative and
+(relatively) readable style.
+The foundation of Mizar is essentially first-order Tarski-Grothendieck
+which is known to be consistent assuming the existence of certain large cardinals.
+Mizar has been used to build the Mizar Mathematical Library
+which comprises an impressive collection of mathematics.
+
+What we require for Qeditas is a proof checker (like AUTOMATH)
+with a reasonably small ``trusted'' code base, and a theorem prover which can
+be used to construct the proofs to be checked. As long as the underlying logic
+of a theorem prover is clearly defined, it should be easy enough to write a
+small proof checker independent of the theorem prover. If the theorem prover
+follows the Curry-Howard-de Bruijn correspondence, then it should be possible
+to ``compile'' proofs constructed with the system's assistance into proof terms
+to be independently checked.
+
+Many popular theorem provers today follow a different scheme: the LCF
+approach. In this alternative, abstraction in the meta-language is used to guarantee correctness.
+While it seems to be feasible to produce different proof representations (e.g., proof terms) by
+translating from LCF style provers, it is
+not as simple as one might hope in practice~\cite{ckak-itp13,ckju-cade13}. Theorem provers in the
+LCF style include Isabelle-HOL~\cite{Nipkow-Paulson-Wenzel:2002} and those in the HOL family~\cite{Gordon91} such as
+HOL-light~\cite{harrison-hollight}.
+
+A well-known theorem prover based on Curry-Howard-de Bruijn is Coq~\cite{Coq:manual,BC04,chlipalacpdt2011,Pierce:SF}
+and Coq's ssreflect variant~\cite{Gonthier2010}. Coq is a widely used and well developed system,
+even winning the 2013 ACM Software System award. Ssreflect was used to formally prove both the four color theorem~\cite{Gonthier2007} and later the
+Odd Order Theorem~\cite{Gonthier2013}. Coq has also been applied to theories directly related
+to cryptocurrencies~\cite{Miller2014gpads,multibranch,multistrategy,White2015a,White2015b}. There is clear evidence that it is possible
+to formalize serious mathematics in Coq and ssreflect. Coq supports the construction of proofs with some automation, but always compiles to a proof term
+checkable by a kernel. This would seem to make Coq (or ssreflect) the clear
+choice to use with Qeditas.
+
+On the other hand, there are aspects of Coq which are experimental and
+this makes it somewhat dangerous to use in a context in which value depends
+on its stability. It is reasonable to be skeptical of the consistency of Coq's
+fairly sophisticated logic. For example, proofmarket.org placed a bounty on
+the proposition False. In other words, there was a bitcoin bounty placed on
+proving Coq inconsistent. While this should not have been provable in principle,
+in practice it was proven twice (for two different reasons). In addition, the
+foundational logic of Coq is not quite fixed and may change in subtle ways with
+each new version. Even with Coq's very attractive properties, it is also clear
+that it was not designed for a purpose like Qeditas.
+
+An alternative to trying to use Coq directly is to have
+a small proof checker in a sublogic of Coq, e.g., Egal~\cite{Brown2014}. Like Coq, Egal constructs
+Curry-Howard-de Bruijn style proof terms, but for the logic of simple type theory~\cite{Church40}.
+The subset of the code used for proof checking in Egal
+was easy to extract (and simplify) for use as the
+kernel proof checker for Qeditas. Now that this kernel has been
+extracted, Qeditas users could make use of any number of
+theorem provers to construct proofs, so long as the prover
+is capable of producing documents with Qeditas-checkable proof terms.
+It should be easy to obtain such proof terms from a prover like Coq,
+so long as one works within a fragment of Coq's logic (e.g., avoiding
+type universes and inductive types).
+
+Egal itself could also be used to construct Qeditas documents.
+Egal seems to have been designed to specifically support a
+higher-order set theory (higher-order Tarksi-Grothendieck),
+which would likely be one of many Qeditas foundational theories.
+Like Mizar's foundation, higher-order Tarski-Grothendieck is a
+theory which is known to be consistent assuming the existence of certain large
+cardinals. That is, if someone were to prove a contradiction in Egal, then either
+there is an implementation bug or there is a proof of a surprising mathematical
+result (that certain large cardinals cannot exist).
+Another advantage of using Egal is that a few people from the cryptocurrency community
+gained some experience using Egal in the bitcoin theorem proving treasure hunt
+at mathgate.info in 2014. It is likely that during this process a few bitcoin
+enthusiasts got over the critical hump required to learn to use such a prover.
+The drawbacks of choosing to use Egal are obvious: Egal does not provide
+the rich environment of other provers, either in terms of the system or in terms
+of a community. Moreover, the proof tactics in Egal are of only modest power,
+leaving the user to do most of the work. Finally, the development of the system
+seems to have ended.
+It would likely make sense to use Egal while bootstrapping the Qeditas network
+until other more advanced theorem provers (e.g., Coq, Isabelle-HOL, HOL-light, etc.)
+are modified to produce Qeditas checkable documents.
+
+In addition to the systems above, there are two other systems that do not yet
+exist. A peer-to-peer system called ProofPeer~\cite{ProofPeer} supporting formalization is in
+development. It is unclear at this early stage how similar ProofPeer and Qeditas
+will be. Another similar project is BitFuncTor~\cite{bitFuncTor}. BitFuncTor is intended to
+target functional programming instead of mathematics.
+
+\section{Conclusion}\label{sec:concl}
+
+We have described Qeditas, a project to support distributed formalization of
+mathematics using block chain technology. The underlying currency will be
+similar to bitcoin in that there will be a similar 21 million unit cap. Two thirds
+of these units will be part of an initial distribution based on a snapshot of the
+Bitcoin block chain. Qeditas will support the publication of formal documents,
+the ownership of mathematical objects and propositions as intellectual property, the purchasing of rights to use such property and bounties on unproven
+conjectures. The hope is that this will be sufficient to motivate and reward
+participants to do the time consuming work of formalizing mathematics.
+
+
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\end{document}
+
