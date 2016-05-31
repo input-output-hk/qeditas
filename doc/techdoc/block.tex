@@ -298,7 +298,7 @@ from given block header data.
 \item {\func{valid\_blockheader}} determines if a block header is a valid block at the current height.
 In order to check if the block is valid the staked asset must be retrieved from
 the previous ledger.
-The staked asset must be a currency asset with $v$ cants.
+The staked asset must be a currency asset worth $v$ cants.
 The function {\func{valid\_blockheader\_a}} is called with the extra information given by this asset
 to check the following conditions:
 \begin{enumerate}
@@ -423,7 +423,7 @@ including the coinstake transaction and the underlying transactions listed in {\
 \item {\func{rewfn}} returns the number of cants of the reward at the current block height.
 The reward schedule is the same as Bitcoins (except for the amount of precision), except with the assumption that the first 350000 blocks have already passed (since this was the block height for the snapshot).
 We begin counting with a block height of $1$. From blocks $1$ to $70000$,
-the block reward is $25$ fraenks (25 trillion cants).
+the block reward is $25$ fraenks (2.5 trillion cants).
 After this the reward halves every $210000$ blocks.
 Since the initial distribution contained (slightly less than) 14 million fraenks, this leads to cap of 21 million fraenks.
 \item {\func{valid\_block}} checks if a block is valid at the given height.

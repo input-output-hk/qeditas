@@ -765,19 +765,19 @@ let signa_to_str s =
   Buffer.contents c
 
 (** * use serializations of theory/signatures to determine the burncost.
- 21 zerms (21 billion cants) per byte for each.
+ 21 zerms (2.1 billion cants) per byte for each.
  Option: In the protocol this could be the "base" burn cost which is halved every N blocks.
  That way, there wouldn't be a hard limit on the amount of theory/signatures that can be published.
  The N should be chosen so that storage capacity is expected to double in that time.
  **)
 
 let theory_burncost thy =
-  Int64.mul 21000000000L (Int64.of_int (String.length (theory_to_str thy)))
+  Int64.mul 2100000000L (Int64.of_int (String.length (theory_to_str thy)))
   
 let theoryspec_burncost s = theory_burncost (theoryspec_theory s)
 
 let signa_burncost s =
-  Int64.mul 21000000000L (Int64.of_int (String.length (signa_to_str s)))
+  Int64.mul 2100000000L (Int64.of_int (String.length (signa_to_str s)))
 
 let signaspec_burncost s = signa_burncost (signaspec_signa s)
 
