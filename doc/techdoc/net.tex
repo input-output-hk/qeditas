@@ -75,13 +75,6 @@ Messages are elements of type {\type{msg}}.
 The kinds of messages largely follow Bitcoin's messages, except there
 are additional messages:
 \begin{itemize}
-\item ${\constr{GetFramedCTree}}(v,b,t,f)$
-gives a block height $b$, a compact tree $t$ (of type {\type{ctre}})
-and a remote frame $f$ (of type {\type{rframe}}).
-The intention is to claim that $t$ is the approximation of the compact tree at height $b$
-where $f$ outlines the approximation.
-The 32-bit integer $v$ is a ``version number'' which is only included in case it's needed later.
-(Bitcoin messages often have such a version number.)
 \item ${\constr{MCTree}}(v,t)$ is the compact tree $t$ (of type {\type{ctre}}).
 The 32-bit integer $v$ is a ``version number'' which is only included in case it's needed later.
 \item ${\constr{Checkpoint}}(b,h)$ a ``checkpoint'' that the block at height $b$ has hash $h$.
@@ -133,12 +126,6 @@ when the last message was received,
 what requests are pending,
 the known inventory of the remote node
 and what inventory has been sent, what inventory has been requested.
-It also has the infrastructure to remember the remote frame of the other node
-(indicating which parts of the ledger tree is being followed)
-as well as the joins of remote frames one or two hops away. This was
-intended to help find a node from which a certain part of the tree could be requested.
-Other fields keep up with how much of the history of the block chain the remote node
-has, and how up to date the remote node is.
 
 
 

@@ -250,7 +250,7 @@ an {\type{addr\_preasset}} list (transaction outputs)
 and an output index (which should be $0$ in the initial call),
 and returns an {\type{addr\_asset}} list consisting of the fully elaborated output assets
 (assuming the transaction is published at block height $b$).
-\item {\func{preasset\_value}} returns the optional number of cants that a preasset is worth.
+\item {\func{preasset\_value}} returns the optional number of cants that a preasset is worth. % todo: update this for halving; depends on block height
 Only currency units and bounties are worth cants. For other preassets, {\val{None}} is returned.
 \item {\func{asset\_value}} returns the value of the underlying preasset.
 \item {\func{asset\_value\_sum}} returns the sum of the value of a list of assets (where {\val{None}} is counted as $0$).

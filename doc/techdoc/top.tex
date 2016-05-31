@@ -1,38 +1,13 @@
 {\bf{Warning:}} The top level code is only partially written and may possibly be rewritten completely.
 The information is this chapter is subject to changes in the near future.
 
-The files
-{\file{qeditascli.ml}} and {\file{qeditasd.ml}}
-are used to create executables
-{\exec{qeditasd}} and {\exec{qeditascli}}.
-These executables are intended to provide a basic user interface.
-In particular {\exec{qeditasd}} starts a ``daemon''
-which connects to other nodes, interacts with other nodes,
-handles a staking process (if staking is enabled)
-and tries to publish transactions and blocks.
-The executable {\exec{qeditascli}} provides a command line interface
-which may (or may not) interact with {\exec{qeditasd}}.
-The module {\module{commands}} handles commands and wallet information
-that is used by both {\file{qeditascli.ml}} and {\file{qeditasd.ml}}.
-
-\section{Files Instead of Sockets}
-
-Originally the
-two executables {\exec{qeditasd}} and {\exec{qeditascli}}
-were intended to mimic the Bitcoin daemon and command line interface.
-However, one of the goals was to have Qeditas run on the Tails Live CD (Debian) operating system.
-It seems that (apparently) Tails does not allow local sockets to be opened.
-As a consequence, files were used to handle some interaction between {\exec{qeditascli}}
-and {\exec{qeditasd}}. For example, {\exec{qeditascli}} can be used to create transactions
-which are then ``sent'' by placing them into a file where {\exec{qeditasd}} would read
-and publish them. This is unlikely to be a good choice for how the processes should interact,
-and it's possible there should simply not be two separate processes.
-Another choice would be to have a single {\exec{qeditas}}
-which handles the networking and staking in the background while providing a top level
-(similar to the Bitcoin Core debug console) for user interaction.
-Such a single executable would presumably work within Tails without requiring local sockets.
-For other operating systems, perhaps a daemon/command line interface set-up communicating via
-local sockets would still be appropriate.
+The file {\file{qeditas.ml}} is
+used to create an executable
+{\exec{qeditas}}.
+This executable starts several threads for networking, staking (optionally)
+and finally for a console-style command line interface.
+The module {\module{commands}} handles commands called using the command line
+interface.
 
 \section{Commands}
 
@@ -81,11 +56,7 @@ but are not yet included in a block.
 \end{itemize}
 
 The following functions are for loading and saving the state in certain files.
-\begin{itemize}
-\item {\func{load\_currentframe}} loads the current ``frame'' which is used
-to determine how the ledger tree is represented.
-\item {\func{save\_currentframe}} saves the current ``frame.'' Various commands
-could change the frame.
+\begin{itemize} % todo: update this to correspond to the current state of commands
 \item {\func{load\_recenttxs}} sets {\var{recenttxs}} by loading the contents fo {\file{recenttxs}}.
 \item {\func{load\_txpool}} sets {\var{txpool}} by loading the contents fo {\file{txpool}}.
 \item {\func{load\_wallet}} sets {\var{walletkeys}}, {\var{walletp2shs}},
@@ -123,7 +94,7 @@ Help for a specific command can be obtained as follows:
 \end{verbatim}
 Many of the commands implemented call functions from {\module{commands}}.
 
-\section{Daemon}
+\section{Daemon} % todo: update this to correspond to qeditas, not a daemon
 
 To understand what the daemon executable {\exec{qeditasd}} does,
 see the function {\func{main}} in the file {\file{qeditasd.ml}}.
@@ -166,15 +137,7 @@ the full information required to continue.)
 If the {\var{testnet}} configuration variable is set, then the difficulty is decreased significantly
 (setting {\var{genesistarget}} $2^{248}$ so that finding a hit to stake is not difficult
 and setting {\var{max\_target}} $2^{255}$, practically as high as possible).
-The ``current frame'' is loaded 
-and {\var{localframe}} is set to it
-and {\var{localframehash}} is set to its hash.
-The frame is needed because a ledger root will, in general, correspond to multiple
-ledger abbreviations since the abbreviation depends on the frame.
-The function {\func{load\_root\_abbrevs\_index}}
-loads the current information about the association of ledger hash roots with
-frame hashes and ledger abbreviation hashes.
-The ledger abbreviation hashes is the name of the file
+The ledger abbreviation hashes is the name of the file % todo: fix to be db
 in the {\dir{ctrees}} directory
 where the corresponding {\type{ctre}} is stored.
 

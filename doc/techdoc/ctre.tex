@@ -36,9 +36,6 @@ is no longer enforced by the type system.
 Note that {\coqmod{CTrees}} (mostly) corresponds to {\module{ctre}},
 while {\coqmod{LedgerStates}} and {\coqmod{MTrees}} are only needed in the theory
 and (for the most part) have no counterpart in the OCaml code.
-Note also that frames and compact tree abbreviation nodes are not
-represented in the Coq formalization as these were added later to the
-OCaml code.
 For more information, see~\cite{White2015b}.
 
 \subsection{Coin-age}
@@ -236,137 +233,9 @@ then the information will be in the resulting tree.
 \item {\func{print\_ctree}} and {\func{print\_ctree\_all}} print compact trees and are included for debugging purposes.
 \end{itemize}
 
-\subsection{Local Frames and Remote Frames}
+\subsection{Elements}
 
-A {\defin{frame}} specifies how to represent a compact tree,
-including information about which parts of the tree should
-be explicit and which should be summarized as a hash root.
-In addition, a local frame specifies when to save
-part of a compact tree in a file as an abbreviation.
-There are two types of frames implemented as the types
-{\type{frame}} (for {\defin{local frames}}) and {\type{rframe}} (for
-{\defin{remote frames}}).\footnote{In the Coq formalization, there is
-no notion of a frame. Local frames were implemented to have a way of
-saving parts of a compact tree in local files, to be loaded when
-needed. Remote frames were implemented to have a way of communicating
-to remote nodes which part of the compact tree are being explicitly
-stored and modified by a node. Such information would be useful for a
-node that wanted to request a previously unfollowed part of the
-compact tree. At the moment, local frames are used to save parts of
-compact trees in files in the {\dir{ctrees}} directory, while remote
-frames are not used at all.}
-
-Local frames $\cF$ (or simply {\defin{frames}}) are elements of the type {\type{frame}}, which is defined with the
-following constructors:
-\begin{itemize}
-\item ${\constr{FHash}}$ indicates that only the hash root of the corresponding compact tree should be stored.
-\item ${\constr{FAbbrev}}(\cF)$ indicates that the corresponding compact tree $\cC$ should be represented
-as an abbreviated pair of hash values $h_r$ and $h_a$.
-Here $h_r$ is the hash root of the compact tree and $h_a$ is a full hash of the
-compact tree $\cC'$ resulting from representing $\cC$ according to the frame $\cF$.
-\item ${\constr{FAll}}$ indicates that the full compact tree should be included.
-\item ${\constr{FLeaf}}(\overline{b},n)$ indicates that only the indicated leaf should be included, and all other nonempty parts should be approximated by ${\constr{CHash}}$-nodes.\footnote{This is intended to be useful if a node wants to follow specific addresses.}
-The optional value $n$ indicates how long of an asset prefix the nonempty hlist at the leaf should explicitly list. If $n$ is {\val{None}}, then all assets are listed.
-\item ${\constr{FBin}}(\cF_0,\cF_1)$ indicates that the left child of the compact tree should be represented according to $\cF_0$ and the right child according to $\cF_1$.
-\end{itemize}
-Elements of this type can be serialized and deserialized using
-{\serfunc{seo\_frame}}
-and
-{\serfunc{sei\_frame}}.
-
-Remote frames $\cR$ are elements of the type {\type{rframe}}
-and essentially consists of frames without abbreviation nodes.
-Hence the type is defined by four constructors which correspond to the other four
-constructors described above:
-\begin{itemize}
-\item ${\constr{RFHash}}$
-\item ${\constr{RFAll}}$
-\item ${\constr{RFLeaf}}(\overline{b},n)$
-\item ${\constr{RFBin}}(\cF_0,\cF_1)$
-\end{itemize}
-Elements of this type can be serialized and deserialized using
-{\serfunc{seo\_rframe}}
-and
-{\serfunc{sei\_rframe}}.
-
-The current local frame is stored in the variable
-{\var{localframe}} and the hash of the current local
-frame is stored in the variable {\var{localframehash}}.
-These values are intended to be set upon start-up
-by loading a value from a file (see {\func{load\_currentframe}})
-and be modifiable by the user.
-(There is code in {\file{qeditascli.ml}} to change the current frame
-using commands,
-calling some of the functions described below.)
-
-A remote frame of the form ${\constr{RFBin}}({\constr{RFAll}},{\constr{RFAll}})$
-is a redex with reduct ${\constr{RFAll}}$.
-A remote frame is normal if it has no redexes.
-
-We briefly describe some of the functions involving frames
-exported by the {\module{ctre}} module.
-\begin{itemize}
-\item {\func{frame\_filter\_ctree}} takes a local frame $\cF$ and a compact tree $\cC$
-and changes the representation of $\cC$ according to $\cF$.
-This means nodes in $\cC$ corresponding to ${\constr{FHash}}$ nodes in $\cF$
-are replaced by ${\constr{CHash}}$ nodes storing the hash root of the node.
-It also means nodes in $\cC$ corresponding to ${\constr{FAbbrev}}$ nodes in $\cF$
-are replaced by ${\constr{CAbbrev}}$ nodes storing the hash root and full hash of the node,
-saving the subtree in a file if necessary.
-It is possible that $\cC$ does not have enough information to form the
-representation required by $\cF$ (e.g., if a ${\constr{CHash}}$ node occurs in $\cC$ corresponds
-to ${\constr{FBin}}$ in $\cF$),
-in which case the exception {\exc{InsufficientInformation}} is raised.
-\item {\func{frame\_filter\_octree}} is a wrapper for {\func{frame\_filter\_ctree}} handling
-optional ctrees, sending {\val{None}} to {\val{None}}.
-\item {\func{rframe\_filter\_ctree}} is similar to {\func{frame\_filter\_ctree}} except using remote frames.
-\item {\func{rframe\_filter\_octree}} is similar to {\func{frame\_filter\_octree}} except using remote frames.
-\item {\func{normalize\_frame}} takes a local frame and creates a remote frame
-by removing abbreviation nodes and by normalizing the result.
-\item {\func{rframe\_lub}} combines two normalized remote
- frames to give a normalized remote frame
- describing what at least one of the two frames stores.
- The intention is that this function could be used for a peer to summarize
- what information at least one of its peers has, and then share this
- summary with all peers. In principle this could help locate a peer with specific
- information in the ledger tree.
-\item {\func{wrap\_frame}} ensures that a local frame starts with ${\constr{FAbbrev}}$, by adding it if necessary.
-\item {\func{hashframe}} hashes a frame to obtain a unique identifier for it.
-\item {\func{frame\_add\_leaf}} changes a frame so that a given leaf (specified by an address)
-will be explicit, possibly up to a given prefix length.
-\item {\func{frame\_set\_hash\_pos}} changes a frame so that a certain position (specific by a list of booleans) will be summarized by a hash root.
-\item {\func{frame\_set\_abbrev\_pos}} changes a frame so that a certain position will be abbreviated.
-\item {\func{frame\_set\_abbrev\_level}} changes a frame to ensure that every node at a certain
-level of a tree will be abbreviated.\footnote{One example of a frame that has been used to compute the initial distribution compact tree has abbreviations at levels $2$, $10$ and $18$. This means that the top two levels of the compact tree will end in abbreviations for the trees representing p2pkh addresses, p2sh addresses, term addresses and publication addresses. These subtrees in turn will have abbreviations corresponding to the first and second bytes of the addresses.}
-\item {\func{frame\_set\_all\_pos}} changes a frame so that everything below a certain position will be explicit.
-\item {\func{build\_rframe\_to\_req}} takes a local frame and a compact tree
-and finds the parts of the compact tree where information is missing.
-These missing parts are used to create a remote frame.
-The intention is that this remote frame can be used to request the missing
-information from peers.
-\item {\func{split\_rframe\_for\_reqs}} takes an integer $n$ and a remote frame
-and returns a list of remote frames with the given frame as a least upper bound.
-This is essentially computed by traversing to depth $n$ and partitioning the
-request into $2^n$ parts to request.
-The intention is to use this to factor large requests 
-into small requests of parts of the compact tree from peers.
-\item {\func{load\_root\_abbrevs\_index}} loads the contents of a file {\file{rootabbrevsindex}}
-which associates hash roots of compact trees
-to hashes of local frames and compact trees.
-This index is used to find the abbreviation for a compact tree given a hash root
-and hash of a local frame.
-The intention is to only store this information for the hash root for the top
-of a compact tree (corresponding to addresses, i.e., 162-bit sequences)
-and not subtrees (of which there are too many).
-\item {\func{lookup\_frame\_ctree\_root\_abbrev}} takes a hash root of a compact tree
-and the hash of a local frame
-and returns the hash of the compact tree
-(or raises the exception {\exc{Not\_found}}).
-Note that this hash is needed to load the abbreviation.
-\item {\func{lookup\_all\_ctree\_root\_abbrevs}} takes a hash root and returns a list of
-pairs of hash values, the first being the hash of a local frame
-and the second being the hash of a corresponding compact tree.
-\end{itemize}
+% todo: elements, credit Trent Russell
 
 \subsection{Transactions}
 
