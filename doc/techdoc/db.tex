@@ -1,2 +1,146 @@
-% todo: describe the database file based database, with modules that can be
-% reimplemented with, eg, leveldb if this decision is made later.
+For several data types we will need to manipulate persistent storage of values 
+indexed by a hash value. (We will call this a ``database'' although 
+it is only a key-value mapping.)
+One way to do this would be to use a standard library built for this purpose,
+such as leveldb.
+However, integrating leveldb with the OCaml code has proven challenging.
+Instead (at least for the moment) the database has been implemented
+by simply using files in directories.
+The particular implementation has been abstracted using a module type
+so that the implementation of the module can be easily replaced.\footnote{Trent Russell was responsible for the initial/current implementation of the database code.}
+
+The module type {\moduletype{dbtype}} is actually a functor type.
+It depends on a signature with
+\begin{itemize}
+\item a type {\tt{t}} (the type of the values to be stored),
+\item a string {\tt{basedir}} (indicating the top level directory where these key-value pairs will be stored) and
+\item functions {\tt{seival}} and {\tt{seoval}} for deserializating and serializing the data from and to channels.
+\end{itemize}
+An implementation of {\moduletype{dbtype}} must implement the following:
+\begin{itemize}
+\item {\func{dbget}} taking a hash value (as the key) to value of type {\tt{t}} (or raising {\exc{Not\_found}}).
+\item {\func{dbexists}} takes a hash value (as the key) and returns {\val{true}} if there is an entry with this key and returns {\val{false}} otherwise. (One could use {\func{dbget}} for this purpose, but {\func{dbget}} must take the time to deserialize corresponding the value.)
+\item {\func{dbput}} takes a hash value (as the key) and a value of type {\tt{t}} and stores the key-value pair.
+\item {\func{dbdelete}} takes a hash value (as the key) and deletes the entry with this key, if one exists. If there is no entry, {\func{dbdelete}} does nothing.
+\end{itemize}
+
+There is a functor {\module{Dbbasic}} which returns
+a module implementing {\moduletype{dbtype}}, given an implementation of {\tt{t}}, {\tt{basedir}}, {\tt{seival}} and {\tt{seoval}}.
+The implementation of {\module{Dbbasic}}
+uses subdirectories of {\tt{basedir}}
+with three files: {\file{index}},
+{\file{data}}
+and {\file{deleted}}.
+The file {\file{data}} contains serializations of the values stored in this directory
+and the file {\file{index}} contains the keys (hash values) along with integers giving
+the position of the corresponding data in {\file{data}}.
+The file {\file{deleted}} is a list of heys (hash values)
+that have been marked as deleted (but the keys are still in {\file{index}}
+and the value is still in {\file{data}}).
+
+The keys in {\file{index}} are ordered. The actual ordering is not important, as long
+as it is a total ordering. Since hash values are internally implemented as
+a 5-tuple signed 32-bit integers, the OCaml function {\func{compare}}
+can be used. This means $h = (x_0,x_1,x_2,x_3,x_4)$ is less than $k=(y_0,y_1,y_2,y_3,y_4)$
+if 
+$x_0 < y_0$ (as a signed 32-bit integer)
+or $x_0 = y_0$ and $x_1 < y_1$
+or $x_0 = y_0$, $x_1 = y_1$ and $x_2 < y_2$
+or $x_0 = y_0$, $x_1 = y_1$, $x_2 = y_2$ and $x_3 < y_3$
+or $x_0 = y_0$, $x_1 = y_1$, $x_2 = y_2$, $x_3 = y_3$ and $x_4 < y_4$.
+
+The maximum number of entries in the files in a directory is 65536,
+but new entries are also not allowed after the {\file{data}} file
+exceeds 100 MB.
+After no more entries are permitted in a directory,
+a subdirectory named using the next byte (in hex) of the key is
+created (if necessary) and this subdirectory is used, unless it is also full.
+
+Some auxiliary functions are used:
+\begin{itemize}
+\item {\func{find\_in\_deleted}} checks if a key is in the {\file{deleted}} file of a directory.
+\item {\func{load\_deleted}} loads all the hash values (keys) in the {\file{deleted}} file of a directory.
+\item {\func{undelete}} removes a key from the {\file{deleted}} file of a directory
+by loading all the deleted keys and then recreating the {\file{deleted}} file without given the key.
+\item {\func{count\_deleted}} gives the number of entries in the {\file{deleted}} file of a directory.
+\item {\func{find\_in\_index}}
+searches for a key
+by loading the {\file{index}} file and doing a binary search.
+If it is found, then the position of the value in the {\file{data}}
+file is returned. Otherwise, {\exc{Not\_found}} is raised.
+\item {\func{load\_index}} loads the index file as a list of pairs of hash values and positions.
+This list is reverse sorted by the hash values.
+\item {\func{count\_index}} gives the number of entries in the {\file{index}} file of a directory.
+\item {\func{dbfind}} and {\func{dbfind\_a}}
+are used to search for a subdirectory where the {\func{index}} file
+contains a given key, returning the directory and value position
+if one is found. If none is found, {\exc{Not\_found}}
+is raised.
+\item {\func{find\_next\_space}}, {\func{find\_next\_space\_a}} and {\func{find\_next\_space\_b}}
+are used to find the next appropriate subdirectory and position where a key
+can be included.
+\item {\func{defrag}} cleans up by actually deleting key-value pairs which have been deleted.
+\end{itemize}
+
+The implementation of {\module{Dbbasic}} works as follows:
+\begin{itemize}
+\item There are two hash table {\val{cache1}} and {\val{cache2}}
+which store (roughly) the last 128 to 256 entries looked up
+so that these can be returned again quickly.
+(When one cache hash 128 entries, the other is cleared and begins
+to be filled.)
+The internal functions {\func{add\_to\_cache}} and {\func{del\_from\_cache}}
+handle adding and removing key-value pairs fromt he cache.
+\item {\func{dbget}} tries to find the key in the cache.
+If it is not in the cache, {\func{dbfind}} is called to 
+try to find a subdirectory and value position.
+If one is found and the key has not been deleted, then
+the value is deserialized from the {\file{data}} file starting at the position
+and returned.
+Otherwise, {\exc{Not\_found}} is raised.
+\item {\func{dbexists}} is analogous to {\func{dbget}} except it
+does not deserialize the value if it is found.
+Instead it returns {\val{true}} if a subdirectory and value position were found
+(and the key is not marked as deleted),
+and returns {\val{false}} otherwise.
+\item {\func{dbput}} takes a key $k$ and value $v$.
+The function {\func{dbfind}} is called to find an entry for $k$ if one exists.
+If one is found and it has been marked as deleted, then undelete it.
+If one is found and it has not been deleted, then simply return -- as the
+key value pair already exists.
+Otherwise, call {\func{dbfind\_next\_space}} to find the next subdirectory
+and position where the new value can be stored (which is at the end of the {\file{data}} file,
+or $0$ if no {\file{data}} file yet exists).
+The function {\func{load\_index}} at this subdirectory is used
+to get a reverse sorted list of the current keys and positions.
+The list is reversed and the new key and position are merged into the list.
+This new list is stored in {\file{index}} replacing the previous contents.
+The value is deserialized and appended to the end of the {\file{data}} file.
+\item {\func{dbdelete}} takes a key and uses {\func{dbfind}} to find a subdirectory
+where the corresponding {\file{index}} file contains the key.
+If none is found, then do nothing.
+Assume a subdirectory is found.
+If the key is already in the {\file{deleted}} file of this subdirectory, then do nothing.
+Otherwise, append the key to the {\file{deleted}} file.
+If the number of deleted entries in this subdirectory exceeds 1024, then {\func{defrag}} is called.
+\end{itemize}
+
+One simple database module {\module{DbBlacklist}}
+is defined by giving {\module{Dbbasic}} the type {\type{bool}} and 
+base directory {\dir{blacklist}}.
+This is intended to save keys corresponding to some blacklisted data that
+should not be requested from peers.
+
+Other instantions of {\module{Dbbasic}}
+occur where the corresponding data types are defined.
+For assets this is in {\module{assets}}
+and
+for (signed) transactions this is in {\module{tx}}
+(see Chapter~\ref{chap:assetstx}).
+For hcons elements and ctree elements,
+giving approximations of parts of ledger trees,
+this is in {\module{ctre}}
+(see Chapter~\ref{chap:ctre}).
+For block headers and blocks,
+this is in {\module{block}}
+(see Chapter~\ref{chap:block}).
