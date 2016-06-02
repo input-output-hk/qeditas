@@ -250,8 +250,25 @@ an {\type{addr\_preasset}} list (transaction outputs)
 and an output index (which should be $0$ in the initial call),
 and returns an {\type{addr\_asset}} list consisting of the fully elaborated output assets
 (assuming the transaction is published at block height $b$).
-\item {\func{preasset\_value}} returns the optional number of cants that a preasset is worth. % todo: update this for halving; depends on block height
+\item {\func{preasset\_value}} takes a preasset, a birthday (which should
+be the birthday of the corresponding asset) and a block height
+and returns the optional number of cants that a preasset is worth.
 Only currency units and bounties are worth cants. For other preassets, {\val{None}} is returned.
+If the preasset is a bounty preasset with $v$ cants, then the value is $v$ cants.
+If the birthday is not $0$ (so the preasset was not part of the initial distribution)
+and the preasset is a currency preasset with $v$ cants, then the value is $v$ cants.
+Currency assets from the initial distribution (with birthday $0$) are treated in a special manner.
+In particular, their value will halve along with the block rewards.
+Suppose the birthday is $0$ and the preasset is a currency asset with $v$ cants.
+Until block height $280,000$, the preasset is worth $v$ cants.
+Block height $280,000$ is when the second reward halving occurs and should
+occur roughly 5 years after the network begins running.
+For the next $210,000$ blocks after block height $280,000$ the value
+is divided in half (rounding down).
+The value continues to be divided in half each $210,000$ blocks from that point on
+until block height $11,410,000$ at which point all currency preassets with birthday $0$
+have value $0$ cants.
+Block height $11,410,000$ should occur after roughly 200 years.\footnote{The code for halving the value of the unclaimed initial distribution was added by Trent Russell in early 2016, at his suggestion.}
 \item {\func{asset\_value}} returns the value of the underlying preasset.
 \item {\func{asset\_value\_sum}} returns the sum of the value of a list of assets (where {\val{None}} is counted as $0$).
 \item {\func{output\_signaspec\_uses\_objs}} takes
