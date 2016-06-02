@@ -1201,28 +1201,31 @@ let setsigpipeignore () =
 
 let process_new_tx h hh =
   try
-    let stx1 = DbTx.dbget h in
-    let (tx1,_) = stx1 in
+    let tx1 = DbTx.dbget h in
     let txid = hashtx tx1 in
     if not (txid = h) then (*** wrong hash, remove it but don't blacklist the (wrong) hashval ***)
       begin
         Printf.fprintf !log "WARNING: Received tx with different hash as advertised, removing %s\nThis may be due to a bug or due to a misbehaving peer.\n" hh; flush !log;
 	DbTx.dbdelete h;
+	DbTxSignatures.dbdelete h;
       end
     else if tx_valid tx1 then
       begin (*** checking the validity of signatures and support depend on the current ledger; delay this here in favor of checking them before including them in a block we're actively trying to stake; note that the relevant properties are checked when they are included in a block as part of checking a block is valid ***)
-        Hashtbl.add stxpool txid stx1;
+	let txsigs1 = DbTxSignatures.dbget h in
+        Hashtbl.add stxpool txid (tx1,txsigs1);
       end
     else
       (*** in this case, reject the tx since it's definitely not valid ***)
      begin
        DbBlacklist.dbput h true;
        DbTx.dbdelete h;
+       DbTxSignatures.dbdelete h;
      end
   with (*** in some cases, failure should lead to blacklist and removal of the tx, but it's not clear which cases; if it's in a block we might need to distinguish between definitely incorrect vs. possibly incorrect ***)
   | Not_found ->
       Printf.fprintf !log "Problem with tx, deleting it\n"; flush !log;
       DbTx.dbdelete h;
+      DbTxSignatures.dbdelete h;
   | e ->
       Printf.fprintf !log "exception %s\n" (Printexc.to_string e); flush !log;
       ()
@@ -1471,7 +1474,9 @@ let rec find_best_validated_block_from fromnode bestcumulstk =
     bestcumulstk
 
 let publish_stx txh stx1 =
-  DbTx.dbput txh stx1;
+  let (tx1,txsigs1) = stx1 in
+  DbTx.dbput txh tx1;
+  DbTxSignatures.dbput txh txsigs1;
   Hashtbl.add published_stx txh ()
 
 let publish_block bhh (bh,bd) =
