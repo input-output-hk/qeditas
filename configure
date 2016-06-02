@@ -27,7 +27,7 @@ if [ ! $DATADIR ]; then
     DATADIR=$HOME/.qeditas
 fi
 if [ ! -d $DATADIR ]; then
-    echo "$DATADIR is not a directory; create it first or give an existing directory with -datadir=<dir>"
+  mkdir $DATADIR
 fi
 if [ ! -d $DATADIR/testnet ]; then
   mkdir $DATADIR/testnet
