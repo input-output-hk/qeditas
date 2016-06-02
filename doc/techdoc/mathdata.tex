@@ -373,7 +373,7 @@ and the publication address where the theory specification is stored in the ledg
 The function {\func{theoryspec\_burncost}} computes the number of cants that must be burned
 to publish the theory specification. It does this by computing the underlying theory with {\func{theoryspec\_theory}},
 serializing the theory, taking the number of bytes of the serialization and multiplying this by
-$21$ billion).
+$2.1$ billion).
 
 % {\func{theory\_to\_str}} returns a string representation of the theory and {\func{str\_to\_theory}} returns a theory given a string representation of the type. In this case, {\func{theory\_to\_str}} is used elsewhere in the code. In particular, the length of the string (the serialization of the theory) is used to calculate how many zerms must be burned in order to publish the theory (21 zerms must be burned for each character in the string). There is a burn fee for publishing theories since every node must keep the theory locally (in a {\type{ttree}}) in order to check documents.
 
@@ -451,7 +451,7 @@ The function {\func{signaspec\_burncost}} computes the number of cants which mus
 be burned
 to publish the signature specification. It does this by computing the underlying signature with {\func{signaspec\_signa}},
 serializing the signature, taking the number of bytes of the serialization and multiplying this by
-$21$ billion).
+$2.1$ billion).
 
 % {\func{signa\_to\_str}} returns a string representation of the signature and {\func{str\_to\_signa}} returns a signature given a string representation of the type. As with theories, {\func{signa\_to\_str}} is used elsewhere in the code.  In particular, the length of the string (the serialization of the signature) is used to calculate how many zerms must be burned in order to publish the signature (21 zerms must be burned for each character in the string). There is a burn fee for publishing signatures since every node must keep the signature locally (in an {\type{stree}}) in order to check documents.
 
