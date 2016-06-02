@@ -1086,19 +1086,6 @@ let ctree_addr alpha c z =
 
 exception InsufficientInformation
 
-(*** archive_unused_ctrees/remove_unused_ctrees:
-    c1 is the ctree at blockheight blkh and c2 is the ctree at blockheight blkh+1.
-    Assume blkh+1 has been buried beneath 256 blocks and so is now being included
-    as a rolling checkpoint. We can archive/delete subtrees of c1 which do not occur in c2.
-    If archiving, put the hashes into 'archive' file along with the blockheight.
-    Users can later call a command to actually move or delete the archived files at or up to some
-    block height.
-    If removing, then delete the files immediately.
- ***)
-let add_to_archive ch blkh ha =
-   seocf (seo_int64 seoc blkh (ch,None));
-   seocf (seo_hashval seoc ha (ch,None))
-
 let rec process_unused_ctrees_1 a c =
    match c with
    | CLeft(cl) ->
@@ -1151,25 +1138,6 @@ let rec process_unused_ctrees_2 a c1 c2 =
          process_unused_ctrees_1 a c1r
      end
    | _ -> ()
-
-let archive_unused_ctrees blkh c1 c2 =
-  ensure_dir_exists !ctreedatadir;
-  let fn = Filename.concat !ctreedatadir "archive" in
-  if not (Sys.file_exists fn) then
-    begin
-      let ch = open_out_gen [Open_wronly;Open_binary;Open_creat] 0o644 fn in
-      process_unused_ctrees_2 (add_to_archive ch blkh) c1 c2;
-      close_out ch      
-    end
-  else
-    begin
-      let ch = open_out_gen [Open_wronly;Open_binary;Open_append] 0o644 fn in
-      process_unused_ctrees_2 (add_to_archive ch blkh) c1 c2;
-      close_out ch      
-    end
-
-let remove_unused_ctrees c1 c2 =
-   process_unused_ctrees_2 remove_hashed_ctree c1 c2
 
 let ctree_rights_balanced tr alpha ownr rtot1 rtot2 rtot3 outpl =
   match ownr with

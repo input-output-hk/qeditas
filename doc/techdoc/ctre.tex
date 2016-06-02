@@ -90,7 +90,7 @@ this lock time is very long at first (16384 blocks, roughly 4 months), but reduc
 128 blocks (roughly 1 day) over the course of the first 114688 blocks (roughly 2 years).
 The function {\var{reward\_locktime}} takes a given block height and
 returns the minimum number of blocks a reward must be locked.
-For the first 16834 blocks, the reward locktime is $16384$ (the same as {\var{maximum\_age}}).
+For the first 16384 blocks, the reward locktime is $16384$ (the same as {\var{maximum\_age}}).
 Every 16384 blocks, the reward locktime is halved
 until it reaches 128, where it remains indefinitely.
 
@@ -120,19 +120,22 @@ The constructors for {\type{hlist}} are as follows:
 \item ${\constr{HHash}}(h)$ approximates a nonempty asset list with hash root $h$.\footnote{The hash root of an asset list does not seem to be explicitly defined in the code. However, it could be defined using {\func{ohashlist}} and {\func{hashasset}} and this seems to be the intended hash root.}
 \item ${\constr{HNil}}$ approximates the empty asset list.
 \item ${\constr{HCons}}(a,\cH)$ where $a$ is an asset and $\cH$ is an hlist.
+\item ${\constr{HConsH}}(h,\cH)$ where $h$ is an asset id (a hash value) and $\cH$ is an hlist.
 \end{itemize}
-The idea is that an hlist explicit lists a prefix of the assets ending with a hash root
+The idea is that an hlist explicitly lists a prefix of the assets (or references to the assets
+by their id) ending with a hash root
 summarizing the rest of the asset list. It is also possible for the hlist to list all the assets.
-Elements of this type can be serialized and deserialized using
+Values of this type can be serialized and deserialized using
 {\serfunc{seo\_hlist}}
 and {\serfunc{sei\_hlist}}.
 
-The type {\type{nehlist}} represents nonempty hlists and has two constructors:
+The type {\type{nehlist}} represents nonempty hlists and has three constructors:
 \begin{itemize}
 \item ${\constr{NehHash}}(h)$ corresponds to the hlist ${\constr{HHash}}(h)$.
 \item ${\constr{NehCons}}(a,\cH)$ corresponds to the hlist ${\constr{HCons}}(a,\cH)$.
+\item ${\constr{NehConsH}}(h,\cH)$ corresponds to the hlist ${\constr{HConsH}}(h,\cH)$.
 \end{itemize}
-Elements of this type can be serialized and deserialized using
+Values of this type can be serialized and deserialized using
 {\serfunc{seo\_nehlist}}
 and
 {\serfunc{sei\_nehlist}}.
@@ -172,30 +175,22 @@ Compact trees $\cC$ are values of type ${\type{ctree}}$, which is defined by the
 at the location determined by the bit sequence (list of booleans) $\overline{b}$
 and containing the nonempty hlist $\cH$.
 \item ${\constr{CHash}}(h)$ is a compact tree with a hash $h$. This approximates every compact tree with hash root $h$.
-\item ${\constr{CAbbrev}}(h_r,h_a)$ is an abbreviation for a compact tree with hash root $h_r$
-and which hashes to give $h_a$.
-The actual compact tree which hashes to $h_a$
-should be saved in a file which can be loaded into memory as needed.\footnote{In the corresponding Coq code, there is no notion of an abbreviation node. This was added in the implementation because too much memory is consumed if one attempts to keep entire compact trees in memory.}
 \item ${\constr{CLeft}}(\cC)$ is the compact tree with $\cC$ as its left child and the empty tree as its right child.
 \item ${\constr{CRight}}(\cC)$ is the compact tree with the empty tree as its left child and $\cC$ as its right child.
 \item ${\constr{CBin}}(\cC_0,\cC_1)$ is the compact tree with two nonempty children: $\cC_0$ on the left and $\cC_1$ on the right.
 \end{itemize}
-Elements of type ${\type{ctree}}$ can be serialized and deserialized using
+Values of type ${\type{ctree}}$ can be serialized and deserialized using
 {\serfunc{seo\_ctree}}
 and
 {\serfunc{sei\_ctree}}.
 
-Three hashing functions are important:
+The following functions are important:
 \begin{itemize}
-\item {\func{hashctree}} computes a unique hash value for a compact tree.
-This is used to obtain a unique name identifying a compact tree
-and is used, in particular, to give names to files storing a binary
-representation of the compact tree.
 \item {\func{ctree\_hashroot}} computes a hash root for the compact tree.
 Many different compact trees will give the same hash roots, however they will
 always approximate the same ledger state.
-For example, they can differ in where they include ${\constr{CHash}}$
-and ${\constr{CAbbrev}}$ nodes, as well has the level of detail included in
+For example, they can differ in where they include ${\constr{CHash}}$ nodes,
+as well has the level of detail included in
 hlists at the leaves.
 \item {\func{octree\_hashroot}} takes an optional compact tree and returns an optional hash value.
 It simply returns {\val{None}} for the empty compact tree {\val{None}}
@@ -204,22 +199,11 @@ and returns the result of {\func{ctree\_hashroot}} otherwise.
 It traverses to leaf in the ctree following the bit sequence.
 It then tries to look up the asset with the asset id in the nonempty hlist at the leaf.
 If the leaf is empty or the asset is not found, then {\val{None}} is returned. Otherwise, the asset is returned.
-\item {\func{remove\_hashed\_ctree}} deletes a file in which an abbreviated compact tree has been saved.
-\item {\func{archive\_unused\_ctrees}} uses the difference between two compact trees to determine which compact tree abbreviations can be ``archived.'' The intention is that once a block height has become a checkpoint,
-then the nodes in the compact tree unused beyond that height will no longer be needed.
-These nodes are simply listed in a file {\file{archive}} and can be explicitly deleted later.
-\item {\func{remove\_unused\_ctrees}} is similar to {\func{archive\_unused\_ctrees}} except that
-it actually deletes the files.
-\item {\func{ctree\_pre}} takes a bit sequence, a compact tree and an integer
-and returns the subtree located where the bit sequence indicates (or {\val{None}} if
-the subtree is empty, hence implicit) along with the depth.\footnote{It is unclear why the depth is returned or even computed as it seems to be simply the length of the bit sequence added to the integer. It is possible this is simply a remnant of some debugging information.}
 \item {\func{ctree\_addr}} given an address and a compact tree,
 returns the leaf (as a compact tree) at that address.
 This leaf could either be {\val{None}} indicating no assets are held at the address,
 or it could be a nonempty hlist, approximating the assets held at the address.
 It also returns the depth, which should always be 162, so it can be ignored.
-\item {\func{get\_ctree\_abbrev}} loads and returns a ctree given its hash, or
-raises the {\exc{Failure}} exception if the appropriate file cannot be found.
 \item {\func{octree\_lub}} takes the ``least upper bound'' of two optional compact trees.
 These are assumed to be ``compatible'' in the sense that they must have the same hash root.
 This means either both will be empty ({\val{None}})
@@ -235,7 +219,111 @@ then the information will be in the resulting tree.
 
 \subsection{Elements}
 
-% todo: elements, credit Trent Russell
+As noted above, the purpose of having ${\constr{CHash}}(h)$ nodes in compact trees
+and having ${\constr{HHash}}(h)$ nodes in hlists
+is to work with small approximations of larger structures.
+We will need to save some of these small approximations as
+key-value pairs in a database (see Chapter~\ref{chap:db}).
+This, however, introduces a problem: many different ctrees will have hash root $h$
+and can be approximated by the compact tree ${\constr{CHash}}(h)$.
+If we wish to use $h$ as the key, there must be a unique compact tree (at least up to the level of detail included)
+that corresponds
+to $h$. A similar situation occurs when considering hlists.
+
+To resolve these problems, we introduce a notion of {\em{elements}}
+for hlists and compact trees.\footnote{The notion of an element was introduced and coded by Trent Russell in early 2016. This replaced earlier code which used ``frames'' and ``abbrev'' nodes in compact trees.}
+A compact tree element will be defined so that there is at most one compact tree element with a given hash root.
+We consider the case of hlists (and nehlists) first, as this is simpler.
+
+First, empty hlists obviously do not need to be stored. It is clear that if the hashroot of an hlist is {\val{None}}, then the hlist list is {\constr{HNil}}.
+Hence we only need to consider cons pairs.
+We say an {\em{hcons element}} is a pair $(h,k)$ where $h$ is a hash value and $k$
+is an optional hash value.
+The idea is that the hlist (or nehlist) corresponds to a nonempty asset list where
+the first asset has asset id $h$ and the rest of the asset list has hash root $k$ (or {\val{None}}
+if there are no more assets on the list).
+The weakest approximation of this asset list as an hlist
+that retains the $h$ and $k$ is
+${\constr{HConsH}}(h,{\constr{HHash}}(k))$ if $k$ is not ${\val{None}}$
+and
+${\constr{HConsH}}(h,{\constr{HNil}})$ if $k$ is not ${\val{None}}$
+otherwise.
+As an nehlist, the corresponding approximations are
+${\constr{NehConsH}}(h,{\constr{HHash}}(k))$ if $k$ is not ${\val{None}}$
+and
+${\constr{NehConsH}}(h,{\constr{HNil}})$ if $k$ is not ${\val{None}}$.
+
+The module {\module{DbHConsElt}} implements a database for storing hcons elements
+(see Chapter~\ref{chap:db}).
+At the moment, this uses the basic file storage implementation {\module{Dbbasic}}.
+
+The function {\func{save\_hlist\_elements}} takes an arbitrary hlist
+and splits it into elements, saving the corresponding assets in the
+{\module{DbAsset}} database
+and the corresponding hcons elements in the database {\module{DbHConsElt}}.
+This ensures that there is enough information to reconstruct the
+hlist from the hash root and the information in the database.
+The function {\func{save\_nehlist\_elements}} performs a similar
+function for values of type {\type{nehlist}}.
+
+The function {\func{get\_hcons\_element}} takes a hash value and
+uses {\func{dbget}} to try to look up the hcons element from the database.
+If it is not found in the database,
+then the data is requested from network peers\footnote{This is not currently implemented. Some earlier code to do this is commented out.}
+and the exception {\exc{GettingRemoteData}} is raised.
+The idea is that the next time ${\constr{get\_hcons\_element}}$ is
+called the compact tree element
+may have been put into the database after it was received from a peer.
+The functions {\func{get\_hlist\_element}} and {\func{get\_nehlist\_element}}
+call {\func{get\_hcons\_element}} and, if the hcons element is found,
+returns the information packaged as a value of type {\type{hlist}} or {\type{nehlist}}.
+
+Compact tree elements are defined to give full information for 9 levels, using
+${\constr{CHash}}(h)$ at the ninth level (and using ${\constr{NehHash}}(h)$ for all leaves).
+We can define this more formally as follows:
+\begin{itemize}
+\item A compact tree is {\em{elemental at level 0}} if it is of the form ${\constr{CHash}}(h)$.
+\item A compact tree is {\em{elemental at level $i+1$}} if it is one of the following forms:
+${\constr{CLeaf}}(\overline{b},{\constr{NehHash}}(h))$,
+${\constr{CLeft}}(c_0)$ where $c_0$ is elemental at level $i$,
+${\constr{CRight}}(c_1)$ where $c_1$ is elemental at level $i$
+or
+${\constr{CBin}}(c_0,c_1)$ where $c_0$ and $c_1$ is elemental at level $i$.
+\item A compact tree is an {\em{element}} if it is elemental at level $9$.
+\end{itemize}
+The function ${\func{ctree\_element\_p}}$ checks if a compact tree is an element
+and the auxiliary function ${\func{ctree\_element\_a}}$ checks if a compact
+tree is elemental at level $i$.
+
+The ${\func{ctree\_super\_element\_a}}$ checks if a compact tree has
+at least as much explicit information as a compact tree that is elemental at level $i$.
+Likewise, the ${\func{ctree\_super\_element\_p}}$ checks if a compact tree
+has at least as much explicit information as a compact tree element.
+Such compact trees can be used to extract an approximating element.
+The function ${\func{super\_element\_to\_element}}$ computes such an approximation
+using the function ${\func{super\_element\_to\_element\_a}}$
+that computes an approximation that is elemental at a given level.
+
+The module {\module{DbCTreeElt}} implements a database for storing compact tree elements
+(see Chapter~\ref{chap:db}).
+At the moment, this uses the basic file storage implementation {\module{Dbbasic}}.
+
+The function ${\func{save\_ctree\_elements}}$
+takes a compact tree and factors it into elements which are saved into
+the database, returning the compact tree ${\constr{CHash}}(h)$ where $h$ is the hash root
+of the compact tree.
+The function makes use of ${\func{save\_ctree\_elements\_a}}$ 
+which constructs intermediate elemental compact trees
+and uses ${\func{dbput}}$ to save the constructed elements into the database.
+
+The function ${\constr{get\_ctree\_element}}$ takes a hash value and
+uses ${\func{dbget}}$ to try to extract the corresponding compact tree element
+from the database.
+If it is not found, then it is requested from peers\footnote{This is not currently implemented. Some earlier code to do this is commented out.}
+and the exception ${\exc{GettingRemoteData}}$ is raised.
+The idea is that the next time ${\constr{get\_ctree\_element}}$ is
+called the compact tree element
+may have been put into the database after it was received from a peer.
 
 \subsection{Transactions}
 
