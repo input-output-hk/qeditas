@@ -753,7 +753,6 @@ let ensure_dir_exists d =
   | _ -> raise (Failure("Problem with " ^ d))
 
 exception FoundHashval of hashval
-exception GettingRemoteData
 
 module DbHConsElt =
   Dbbasic
@@ -883,17 +882,6 @@ let rec save_ctree_elements_a tr i =
 let save_ctree_elements tr =
   let (tre,r) = save_ctree_elements_a tr 0 in
   r
-
-let get_asset h =
-  try
-    DbAsset.dbget h
-  with Not_found -> (*** request it and fail ***)
-(***
-      let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qasset " ^ hh) (Unix.environment()) in
-    ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
-(*    raise (Failure ("could not resolve a needed asset " ^ hh ^ "; requesting from peers")) *)
-***)
-    raise GettingRemoteData
 
 let load_hlist_element h =
   match DbHConsElt.dbget h with

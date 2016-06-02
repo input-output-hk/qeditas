@@ -9,6 +9,7 @@ open Hash
 open Cryptocurr
 open Signat
 open Script
+open Assets
 open Ctre
 open Net
 
@@ -410,7 +411,7 @@ let rec printassets_a ctr =
 	    Printf.printf "%s: no information\n" (addr_qedaddrstr alpha);
       )
       al4;
-  with Ctre.GettingRemoteData ->
+  with GettingRemoteData ->
     Printf.printf "Requesting remote data...please wait...\n"; flush stdout;
     Unix.sleep 2;
     printassets_a ctr

@@ -40,7 +40,6 @@ val ctree_lookup_asset : hashval -> ctree -> bool list -> asset option
 
 exception NotSupported
 exception InsufficientInformation
-exception GettingRemoteData
 
 module DbHConsElt :
     sig

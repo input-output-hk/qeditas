@@ -363,3 +363,16 @@ let sei_addr_asset i c = sei_prod sei_addr sei_asset i c
 
 module DbAsset = Dbbasic (struct type t = asset let basedir = "asset" let seival = sei_asset seic let seoval = seo_asset seoc end)
 
+exception GettingRemoteData
+
+let get_asset h =
+  try
+    DbAsset.dbget h
+  with Not_found -> (*** request it and fail ***)
+(***
+      let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qasset " ^ hh) (Unix.environment()) in
+    ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
+(*    raise (Failure ("could not resolve a needed asset " ^ hh ^ "; requesting from peers")) *)
+***)
+    raise GettingRemoteData
+
