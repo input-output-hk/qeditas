@@ -419,6 +419,20 @@ as well as the burn cost required to publish theory specifications
 and signature specifications.
 \end{itemize}
 
+\subsection{Asset Database}
+
+The module {\module{DbAsset}} implements a database for storing assets
+(see Chapter~\ref{chap:db}).
+At the moment, this uses the basic file storage implementation {\module{Dbbasic}}.
+The function {\func{get\_asset}} takes a hash value (an asset id) and
+uses {\func{dbget}} to try to look up the asset from the database.
+If it is not found in the database,
+then the asset is requested from network peers\footnote{This is not currently implemented. Some earlier code to do this is commented out.}
+and the exception {\exc{GettingRemoteData}} is raised.
+The idea is that the next time ${\constr{get\_asset}}$ is
+called the asset
+may have been put into the database after it was received from a peer.
+
 \subsection{Creation of Objects and Propositions}\label{sec:outputcreates}
 
 Let $h$ be a theory identifier (an optional hash value),
@@ -505,7 +519,7 @@ and will make use of these values at the time.
 \section{Transactions}
 
 The module \module{tx} defines a type {\type{tx}} for transactions,
-a type {\type{stx}} for signated transactions
+a type {\type{stx}} for signed transactions
 and functions for testing the validity of transactions and signed transactions.
 Here {\defin{validity}} of a transaction refers only to properties that
 can be checked without reference to the state of the ledger.
@@ -550,13 +564,15 @@ new objects and propositions.)
 The serialization and deserialization functions are
 {\serfunc{seo\_tx}},
 {\serfunc{sei\_tx}},
+{\serfunc{seo\_txsigs}},
+{\serfunc{sei\_txsigs}},
 {\serfunc{seo\_stx}}
 and
 {\serfunc{sei\_stx}}.
 
 We briefly describe the following exported functions:
 \begin{itemize}
-\item {\func{hashtx}} hashes a transaction, giving the identifier for the transaction.
+\item {\func{hashtx}} hashes a transaction, giving the identifier for the transaction (the {\defin{transaction id}}).
 Note that this does not depend on signatures, and so transaction malleability is not an issue.
 \item {\func{tx\_inputs}} is a projection function giving the input list of a transaction.
 \item {\func{tx\_outputs}} is a projection function giving the output list of a transaction.
@@ -606,4 +622,15 @@ theories created by publishing theory specifications.
 and uses it to update the current (possibly empty) {\type{stree}} by including any new
 signatures created by publishing signature specifications.
 \end{itemize}
+
+\subsection{Databases for Transactions and Signatures}
+
+The module {\module{DbTx}} implements a database for storing transactions
+and the module {\module{DbTxSignatures}} implements a database for storing
+transaction signatures
+(see Chapter~\ref{chap:db}).
+In both cases the key is the transaction id (the hash of the transaction,
+not including the signatures).
+To recover a value of type {\type{stx}} both of the values are required.
+At the moment, both of these use the basic file storage implementation {\module{Dbbasic}}.
 
