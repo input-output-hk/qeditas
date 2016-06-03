@@ -5,11 +5,138 @@ The file {\file{qeditas.ml}} is
 used to create an executable
 {\exec{qeditas}}.
 This executable starts several threads for networking, staking (optionally)
-and finally for a console-style command line interface.
+and finally for a console-style interface.
 The module {\module{commands}} handles commands called using the command line
 interface.
 
-\section{Commands}
+\section{Main Executable}
+
+To understand what the executable {\exec{qeditas}} does,
+see the code near the end of the file {\file{qeditas.ml}}.
+We describe the tasks {\exec{qeditas}} executes briefly.
+The function {\func{initialize}}
+is called first and is described in Section~\ref{sec:init}.
+Next the function {\func{initnetwork}} is called,
+see Section~\ref{sec:initnetwork}.
+If the configuration variable {\var{staking}} is set to {\val{true}},
+then a thread is created which calls the function {\func{stakingthread}},
+see Section~\ref{sec:stakingthread}.
+Finally, a main loop begins for reading and processing commands
+from the console begins,
+see Section~\ref{sec:mainloop}.
+
+
+\subsection{Initialization}\label{sec:init}
+
+The {\func{initialize}} function begins by checking the command line arguments for an option
+of the form \verb+-datadir=...+
+which would override the default data directory (usually {\dir{.qeditas}}
+in the user's home directory).
+It then reads the config file {\file{qeditas.conf}} in the data directory.
+This may override some default values in the {\module{config}} module.
+It then reads the other command line arguments which may again override
+some values in the {\module{config}} module.
+If the {\var{testnet}} configuration variable is {\val{true}},
+then the {\dir{testnet}} subdirectory of the main data directory is used.
+This implies the testnet will have its own databases, its own wallet, and so on.
+The database directory is set and configured and a log file is opened.
+
+The code then checks if either the {\var{seed}} variable in {\module{config}}
+has been set to a nonempty string. (It should be a 40 character hex string.)
+The current code in {\module{setconfig}} sets {\var{seed}} to
+\begin{verbatim}
+68324ba252550a4cb02b7279cf398b9994c0c39f
+\end{verbatim}
+unless it is specifically set in the configuration file or on the command line.
+The value above is the last 20 bytes of the hash of Bitcoin block 378800,
+and was a value included only for testing purposes.
+The intention was to choose a Bitcoin block height roughly one week in the future
+when the time came for Qeditas to launch. The last 20 bytes of that block hash would
+be the value for {\var{seed}}. The purpose of this value is to initialize the
+current stake modifier and the future stake modifier (see {\func{set\_genesis\_stakemods}}).
+These stake modifiers affect which assets will stake within the first 512 blocks.
+In particular it affects the genesis block (at Qeditas block height).
+For the launch to be fair, these stake modifiers should not be predictable before launch.
+This goal could be accomplished in other ways.
+The possibility is left open in the future that {\var{seed}} is not set but
+that a checkpoint has been set so that a node can begin following the block chain
+from that checkpoint. (The full history is not required. Each ledger tree contains
+the full information required to continue.)
+
+If the {\var{testnet}} configuration variable is set, then the difficulty is decreased significantly
+(setting {\var{genesistarget}} $2^{200}$ so that finding a hit to stake is not difficult
+and setting {\var{max\_target}} $2^{230}$, practically as high as possible).
+
+The function {\func{initblocktree}} from the {\module{net}} module
+is called.\footnote{The blocktree code is not yet fully written or documented. It is intended to store the headers giving the best block chain in addition to orphaned headers.}
+
+Next the wallet is loaded using {\func{load\_wallet}} in the {\module{commands}} module see Section~\ref{sec:commands}.
+
+A random 64-bit nonce is obtained from {\file{/dev/urandom}} in order to prevent
+the node from connecting to itself.
+The variable {\var{this\_nodes\_nonce]} from the {\module{net}} module
+is set to the nonce.
+
+\subsection{Initialization of the Network}\label{sec:initnetwork}
+
+The {\func{initnetwork}} function starts several threads to
+handle connections to the network.
+First, if the configuration variable {\var{ip}}
+has been set to an IP-address, then
+a listener socket is opened and a thread
+is started to listen for incoming connections (using
+the function {\func{netlistener}}).
+Then the function {\func{netseeker}} is called which
+loads the known peers
+and calls {\func{netseeker\_loop}}.
+The loop tries to connect to peers
+every 10 minutes, unless the maximum number of connections has been reached.
+
+Each time a connection is created, a thread is created for that thread
+(using {\func{connlistener}} for message handling)
+and the corresponding information is added to a global {\func{netconns}}.
+
+Most of this networking code is in the {\module{net}} module, which is
+currently only partially written.
+
+\subsection{Staking}\label{sec:stakingthread}
+
+The function {\func{stakingthread}} loops
+and once a minute checks to see if
+the next chances to stake have been calculated
+for the current best block.
+If not, {\func{compute\_staking\_chances}}
+is called to compute the chances to stake
+(based on the staking assets in the wallet)
+for the next 1 or 2 hours.
+
+\subsection{Main Loop}\label{sec:mainloop}
+
+This main loop prints a prompt (see the configuration variable {\var{prompt}}),
+reads a line and sends this line to {\func{do\_command}}.
+If the user presses CTRL-D, the {\exc{End\_of\_file}} exception is raised
+resulting in the process exiting.
+The process will also exit if the user issues the command {\command{exit}}.
+A command may also raise the exception {\exc{Exit}} which will be silently ignored
+and the loop continues, issuing prompt and waiting for the next command.
+All other exceptions are displayed to the user before the loop continues.
+
+The supported commands are still in the process of being implemented.
+The code for executing most commands is in the {\module{commands}} module
+which we describe in Section~\ref{sec:commands}.
+Here are a few that are currently supported:
+\begin{itemize}
+\item {\command{exit}} - exit qeditas.
+\item {\command{printassets}} {\it{[ledger root in hex]}} - print the assets held at the addresses in the wallet in the ledger with the given root. This only prints the visible assets. Some assets will be missing if the local approximation of the compact tree does not include the assets explicitly. If the ledger root is omitted, then the ledger root of the most recent best block is used.
+\item {\command{importprivkey}} - import a private key in Qeditas WIF format.
+\item {\command{importbtcprivkey}} - import a private key in Bitcoin WIF format.
+\item {\command{importwatchaddr}} - import a Qeditas address for watching assets, without importing the corresponding private key.
+\item {\command{importwatchbtcaddr}} - import a Bitcoin address as a Qeditas address for watching assets, without importing the corresponding private key.
+\item {\command{importendorsement}} - import a Bitcoin signed message to allow a Qeditas private key (held in the wallet) to sign for a corresponding Bitcoin address. This is the safe way to claim assets in the initial distribution.
+\item {\command{btctoqedaddr}} - give the Qeditas address that corresponds to a given Bitcoin address.
+\end{itemize}
+
+\section{Commands}\label{sec:commands}
 
 The module {\module{commands}} is intended to support a variety of commands a user may need.
 At the moment it only supports limited wallet and transaction creation commands.
@@ -77,165 +204,4 @@ mentioned in the wallet.
 \item {\func{importwatchaddr}} imports a Qeditas address to watch.
 \item {\func{importwatchbtcaddr}} imports a Bitcoin address in order to watch the corresponding Qeditas address.
 \end{itemize}
-
-\section{Command Line Interface}
-
-The file {\file{qeditascli.ml}} has a partial implementation of a command line interface.
-The value {\val{commhelp}} gives a list of some intended Qeditas commands
-along with how many arguments the command may take and help strings.
-The help contents can be viewed via the executable itself as follows:
-\begin{verbatim}
-./bin/qeditascli help
-\end{verbatim}
-(Note: this does not require the daemon to be running.)
-Help for a specific command can be obtained as follows:
-\begin{verbatim}
-./bin/qeditascli help importendorsement
-\end{verbatim}
-Many of the commands implemented call functions from {\module{commands}}.
-
-\section{Daemon} % todo: update this to correspond to qeditas, not a daemon
-
-To understand what the daemon executable {\exec{qeditasd}} does,
-see the function {\func{main}} in the file {\file{qeditasd.ml}}.
-We describe the tasks {\exec{qeditasd}} briefly.
-
-\subsection{Initialization}
-
-It begins by checking the command line arguments for an option
-of the form \verb+-datadir=...+
-which would override the default data directory (usually {\dir{.qeditas}}
-in the user's home directory).
-It then reads the config file {\file{qeditas.conf}} in the data directory.
-This may override some default values in the {\module{config}} module.
-It then reads the other command line arguments which may again override
-some values in the {\module{config}} module.
-
-The code then checks if either the {\var{seed}} variable in {\module{config}}
-has been set to a nonempty string. (It should be a 40 character hex string.)
-The current code in {\module{setconfig}} sets {\var{seed}} to
-\begin{verbatim}
-68324ba252550a4cb02b7279cf398b9994c0c39f
-\end{verbatim}
-unless it is specifically set in the configuration file or on the command line.
-The value above is the last 20 bytes of the hash of Bitcoin block 378800,
-and was a value included only for testing purposes.
-The intention was to choose a Bitcoin block height roughly one week in the future
-when the time came for Qeditas to launch. The last 20 bytes of that block hash would
-be the value for {\var{seed}}. The purpose of this value is to initialize the
-current stake modifier and the future stake modifier (see {\func{set\_genesis\_stakemods}}).
-These stake modifiers affect which assets will stake within the first 512 blocks.
-In particular it affects the genesis block (at Qeditas block height).
-For the launch to be fair, these stake modifiers should not be predictable before launch.
-This goal could be accomplished in other ways.
-
-The possibility is left open in the future that {\var{seed}} is not set but
-that a checkpoint has been set so that a node can begin following the block chain
-from that checkpoint. (The full history is not required. Each ledger tree contains
-the full information required to continue.)
-
-If the {\var{testnet}} configuration variable is set, then the difficulty is decreased significantly
-(setting {\var{genesistarget}} $2^{248}$ so that finding a hit to stake is not difficult
-and setting {\var{max\_target}} $2^{255}$, practically as high as possible).
-The ledger abbreviation hashes is the name of the file % todo: fix to be db
-in the {\dir{ctrees}} directory
-where the corresponding {\type{ctre}} is stored.
-
-A random seed is generated by reading 512 bits from {\file{/dev/random}} (or {\file{/dev/urandom}} for the testnet)
-and this seed is used to generate random values in the future by hashing the value and taking
-some of the bits when required.
-{\bf{Warning:}} This is (probably) unsafe and should not be used in production.
-Cryptographically safe random values should be obtained when required.
-The code is the way it currently is simply because it was under development and
-being tested.
-
-The random value above is used to set {\var{this\_nodes\_nonce}} which prevents the node
-from connecting to itself.
-
-If {\var{ip}} and {\var{port}} are set, then a listener socket is opened (via {\func{openlistener}})
-to listen for incoming connections.
-
-If {\var{staking}} is set, then the wallet is loaded and the function {\func{start\_staking}}
-starts a {\exec{qeditasstk}} process which independently searches for an asset that can stake.
-This process is stopped when a hit is found and is restarted each time a decision is reached
-to being staking on top of a new block.
-
-The function {\func{sethungsignalhandler}} sets the signal handler for timeouts to raise the exception {\exc{Hung}}.
-This is used to create functions that do not wait indefinitely for input or connections.
-
-The function {\func{loadknownpeers}} loads a file with recent peers.
-Then {\func{search\_for\_conns}} is called which tries to connect to these recent peers,
-and, if no connections succeed, tries to connect to fallback nodes ({\func{getfallbacknodes}}).
-
-Recent transactions and the transaction pool is loaded ({\func{load\_recenttxs}} and {\func{load\_txpool}}.
-
-At this point the daemon is ready to enter the main process loop.
-
-\subsection{Main Process Loop}
-
-Currently the testnet sleeps for 1 second between many of the steps of the main loop.
-This is simply to make the output reasonable while testing.
-
-The next paragraphs are only relevant if {\var{staking}} is set to {\val{true}},
-otherwise they can be skipped.
-
-The process checks to see if a hit has been found (by reading from the
-stdout of the {\exec{qeditasstk}} process). If a hit has been found, it is likely
-for some timestamp some seconds in the future.
-In preparation to stake, a block is created, possibly including transactions from the transaction pool.
-The code checks that the block is valid and, if so, sets {\var{waitingblock}}
-to a value that remembers when the hit will be valid and information about the new block.
-Staking pauses until either a new block is received or until the time is reached
-that the found hit will be valid.
-
-If {\var{waitingblock}} is set and the current time is at least the time the hit is valid,
-then the new block header is inserted into the sorted {\var{recentblockheader}} list
-and the remaining block information is saved.
-An inventory message with the block header, the block delta skeleton and the block delta
-is broadcast to all connections.
-Staking is restarted, presumably on top of this new block.
-
-Assume there is no {\var{waitingblock}}.
-If no staking process is running, then start a staking process.
-If there is a staking process, check if it is staking on top of the block with the most
-cumulative stake. If not, restart staking on top of the current best block.
-
-From this point on in the main process loop, the value of {\var{staking}} is not relevant.
-
-If there is a listener process, {\func{accept\_nohang}} checks (with a timeout of 0.1s)
-if there is a connection to accept. If so, {\func{initialize\_conn\_accept}} begins the
-handshake protocol.
-
-For each preconnection on {\var{preconns}}, progress in the handshaking protocol is attempted.
-The handshake protocol requires one process to send a {\constr{Version}} message,
-with a {\constr{Verack}} sent back followed by a {\constr{Version}} message
-and a final {\constr{Verack}}. This follows the Bitcoin handshake.
-If the handshake fails, the connection is dropped and removed from {\var{preconns}}.
-If the handshake succeeds, the connection is moved from {\var{preconns}} to {\var{conns}}.
-
-We next turn to handling the connections on {\var{conns}}.
-Here the connection state ({\type{connstate}}) plays an important role.
-
-Each connection on {\var{conns}} is checked for incoming messages.
-
-If there is an incoming message, {\func{handle\_msg}} is called to
-perform the appropriate actions.
-Assume there is no incoming message.
-If some request was pending for more than 90s (e.g., a {\constr{Ping}} message
-expecting a {\constr{Pong}} reply), then mark the close connection 
-and mark it as no longer alive. If there have been no messages in 90 minutes,
-send a {\constr{Ping}} and save this in {\var{pending}}.
-
-Each connection that is no longer alive is removed from {\var{conns}}.
-
-At the end of the main loop process, there are some checks to see if more connections should be searched
-for. Also, {\func{handle\_orphans}} and {\func{handle\_delayed}}
-are called in order to double check that the node is not missing a chain with more cumulative stake.
-(Such chains were being missed during testing. It's unclear if 
-{\func{handle\_orphans}} and {\func{handle\_delayed}} fixed the problem or not.)
-
-
-
-
-
 
