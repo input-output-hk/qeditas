@@ -467,6 +467,16 @@ and (possibly) the number of cants being forfeited.
 \end{enumerate}
 \end{itemize}
 
+\section{Databases for Block Information}
+
+There are three databases for blocks, all using the hash of the block header as the key.
+The module {\module{DbBlockHeader}} is a database for block headers,
+the module {\module{DbBlockDelta}} is a database for block deltas,
+and the module
+{\module{DbBlockDeltaH}} is a database for block deltas that only store the
+transaction ids instead of the full signed transactions.
+At the moment, all of these use the basic file storage implementation {\module{Dbbasic}}.
+
 \section{Chains}
 
 There are additional types
@@ -480,9 +490,9 @@ and the second component is a list of the previous blocks or block headers
 in reverse order.
 
 The variable {\var{genesisledgerroot}} gives the ledger root of the initial compact tree
-with the initial distribution. The value is (as of December 2015):
+with the initial distribution. The value is (as of June 2016):
 \begin{verbatim}
-af8de840af01805f1dbe9f1312c388efeea1e619
+66c029f4c29b351785c0480cedc9449b64332dfa
 \end{verbatim}
 
 \begin{itemize}
