@@ -272,7 +272,7 @@ If it is not found in the database,
 then the data is requested from network peers\footnote{This is not currently implemented. Some earlier code to do this is commented out.}
 and the exception {\exc{GettingRemoteData}} is raised.
 The idea is that the next time ${\constr{get\_hcons\_element}}$ is
-called the compact tree element
+called the hcons element
 may have been put into the database after it was received from a peer.
 The functions {\func{get\_hlist\_element}} and {\func{get\_nehlist\_element}}
 call {\func{get\_hcons\_element}} and, if the hcons element is found,
