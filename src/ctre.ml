@@ -212,7 +212,8 @@ type ctree =
 let rec print_ctree_r c n =
   for i = 1 to n do Printf.printf " " done;
   match c with
-  | CLeaf(bl,hl) -> Printf.printf "Leaf\n"
+  | CLeaf(bl,NehHash(h)) -> Printf.printf "Leaf %s\n" (hashval_hexstring h)
+  | CLeaf(bl,hl) -> Printf.printf "Leaf ...\n"
   | CHash(h) -> Printf.printf "H %s\n" (hashval_hexstring h)
   | CLeft(c0) -> Printf.printf "L\n"; print_ctree_r c0 (n+1)
   | CRight(c1) -> Printf.printf "R\n"; print_ctree_r c1 (n+1)
