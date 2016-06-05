@@ -649,6 +649,34 @@ let do_command l =
 	| _ -> raise (Failure "importendorsement should be given three arguments: a b s where s is a signature made with the private key for address a endorsing to address b")
       end
   | "btctoqedaddr" -> List.iter Commands.btctoqedaddr al
+  | "printasset" ->
+      begin
+	match al with
+	| [h] -> Commands.printasset (hexstring_hashval h)
+	| _ -> raise (Failure "printasset <assetid>")
+      end
+  | "printhconselt" ->
+      begin
+	match al with
+	| [h] -> Commands.printhconselt (hexstring_hashval h)
+	| _ -> raise (Failure "printhconselt <hashval>")
+      end
+  | "printctreeelt" ->
+      begin
+	match al with
+	| [h] -> Commands.printctreeelt (hexstring_hashval h)
+	| _ -> raise (Failure "printctreeelt <hashval>")
+      end
+  | "printctreeinfo" ->
+      begin
+	match al with
+	| [] ->
+	    let best = !bestnode in
+	    let BlocktreeNode(_,_,_,_,_,currledgerroot,_,_,_,_,_,_,_,_,_) = best in
+	    Commands.printctreeinfo currledgerroot
+	| [h] -> Commands.printctreeinfo (hexstring_hashval h)
+	| _ -> raise (Failure "printctreeinfo [ledgerroot]")
+      end
   | _ ->
       (Printf.fprintf stdout "Ignoring unknown command: %s\n" c; List.iter (fun a -> Printf.printf "%s\n" a) al; flush stdout);;
 

@@ -29,6 +29,10 @@ val save_wallet : unit -> unit
 
 val printassets : unit -> unit
 val printassets_at_ledger : string -> unit
+val printctreeinfo : hashval -> unit
+val printctreeelt : hashval -> unit
+val printhconselt : hashval -> unit
+val printasset : hashval -> unit
 
 val btctoqedaddr : string -> unit
 val importprivkey : string -> unit

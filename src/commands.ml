@@ -426,4 +426,130 @@ let printassets_at_ledger ledgerroot =
   Printf.printf "Assets in ledger with root %s:\n" ledgerroot; flush stdout;
   let ctr = Ctre.CHash(hexstring_hashval ledgerroot) in
   printassets_a ctr
-    
+
+let printasset h =
+  try
+    match DbAsset.dbget h with
+    | (aid,bday,obl,Currency(v)) ->
+	Printf.printf "%s [%Ld] Currency %Ld\n" (hashval_hexstring aid) bday v
+    | (aid,bday,obl,Bounty(v)) ->
+	Printf.printf "%s [%Ld] Bounty %Ld\n" (hashval_hexstring aid) bday v;
+    | (aid,bday,obl,OwnsObj(gamma,Some(r))) ->
+	Printf.printf "%s [%Ld] OwnsObj %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma)) r;
+    | (aid,bday,obl,OwnsObj(gamma,None)) ->
+	Printf.printf "%s [%Ld] OwnsObj %s None\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma));
+    | (aid,bday,obl,OwnsProp(gamma,Some(r))) ->
+	Printf.printf "%s [%Ld] OwnsProp %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma)) r;
+    | (aid,bday,obl,OwnsProp(gamma,None)) ->
+	Printf.printf "%s [%Ld] OwnsProp %s None\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma));
+    | (aid,bday,obl,OwnsNegProp) ->
+	Printf.printf "%s [%Ld] OwnsNegProp\n" (hashval_hexstring aid) bday;
+    | (aid,bday,obl,RightsObj(gamma,r)) ->
+	Printf.printf "%s [%Ld] RightsObj %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (termaddr_addr gamma)) r;
+    | (aid,bday,obl,RightsProp(gamma,r)) ->
+	Printf.printf "%s [%Ld] RightsProp %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (termaddr_addr gamma)) r;
+    | (aid,bday,obl,Marker) ->
+	Printf.printf "%s [%Ld] Marker (Intention to Publish)\n" (hashval_hexstring aid) bday;
+    | (aid,bday,obl,TheoryPublication(_,_,_)) ->
+	Printf.printf "%s [%Ld] Theory\n" (hashval_hexstring aid) bday;
+    | (aid,bday,obl,SignaPublication(_,_,_,_)) ->
+	Printf.printf "%s [%Ld] Signature\n" (hashval_hexstring aid) bday;
+    | (aid,bday,obl,DocPublication(_,_,_,_)) ->
+	Printf.printf "%s [%Ld] Document\n" (hashval_hexstring aid) bday;
+  with Not_found ->
+    Printf.printf "No asset %s found\n" (hashval_hexstring h)
+
+let printhconselt h =
+  try
+    let (aid,k) = DbHConsElt.dbget h in
+    Printf.printf "assetid %s\n" (hashval_hexstring aid);
+    match k with
+    | Some(k) -> Printf.printf "next hcons elt %s\n" (hashval_hexstring k)
+    | None -> Printf.printf "last on the list\n"
+  with Not_found ->
+    Printf.printf "No hcons elt %s found\n" (hashval_hexstring h)
+
+let printctreeelt h =
+  try
+    let c = DbCTreeElt.dbget h in
+    print_ctree c
+  with Not_found ->
+    Printf.printf "No ctree elt %s found\n" (hashval_hexstring h)
+
+let printctreeinfo h =
+  try
+    let c = DbCTreeElt.dbget h in
+    let n = ref 0 in
+    let v = ref 0L in
+    let b = ref 0L in
+    let e = ref 1 in
+    let l = ref 0 in
+    let a = ref 0 in
+    let own = ref 0 in
+    let rght = ref 0 in
+    let mrk = ref 0 in
+    let pub = ref 0 in
+    let ah = ref 0 in
+    let hh = ref 0 in
+    let ch = ref 0 in
+    let rec hconseltinfo (aid,k) =
+      try
+	let (_,_,_,preast) = DbAsset.dbget aid in
+	incr a;
+	match preast with
+	| Currency(u) -> v := Int64.add u !v
+	| Bounty(u) -> b := Int64.add u !b
+	| OwnsObj(_,_) -> incr own
+	| OwnsProp(_,_) -> incr own
+	| OwnsNegProp -> incr own
+	| RightsObj(_,_) -> incr rght
+	| RightsProp(_,_) -> incr rght
+	| Marker -> incr mrk
+	| _ -> incr pub
+      with Not_found ->
+	incr ah;
+	match k with
+	| None -> ()
+	| Some(k) ->
+	    try
+	      hconseltinfo (DbHConsElt.dbget k)
+	    with Not_found ->
+	      incr hh
+    in
+    let rec ctreeeltinfo c =
+      match c with
+      | CHash(h) ->
+	  begin
+	    try
+	      incr e;
+	      ctreeeltinfo (DbCTreeElt.dbget h)
+	    with Not_found -> incr ch
+	  end
+      | CLeaf(_,NehHash(h)) ->
+	  begin
+	    try
+	      incr l;
+	      hconseltinfo (DbHConsElt.dbget h)
+	    with Not_found -> incr hh
+	  end
+      | CLeaf(_,_) -> raise (Failure "ctree was not an element")
+      | CLeft(c0) -> ctreeeltinfo c0
+      | CRight(c1) -> ctreeeltinfo c1
+      | CBin(c0,c1) -> ctreeeltinfo c0; ctreeeltinfo c1
+    in
+    ctreeeltinfo c;
+    Printf.printf "Number of abstract unknown ctrees %d\n" !ch;
+    Printf.printf "Number of abstract unknown hcons elts %d\n" !hh;
+    Printf.printf "Number of abstract unknown assets %d\n" !ah;
+    Printf.printf "Number of known ctree elts %d\n" !e;
+    Printf.printf "Number of known leaves %d\n" !l;
+    Printf.printf "Number of known assets %d\n" !a;
+    Printf.printf "Number of ownership assets %d\n" !own;
+    Printf.printf "Number of rights assets %d\n" !rght;
+    Printf.printf "Number of marker assets %d\n" !mrk;
+    Printf.printf "Number of publication assets %d\n" !pub;
+    Printf.printf "Total cants in known currency assets %Ld\n" !v;
+    Printf.printf "Total cants in known bounty assets %Ld\n" !b;
+  with Not_found ->
+    Printf.printf "No ctree %s found\n" (hashval_hexstring h)
+  
