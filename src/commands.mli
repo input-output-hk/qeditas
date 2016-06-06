@@ -28,7 +28,7 @@ val load_wallet : unit -> unit
 val save_wallet : unit -> unit
 
 val printassets : unit -> unit
-val printassets_at_ledger : string -> unit
+val printassets_in_ledger : hashval -> unit
 val printctreeinfo : hashval -> unit
 val printctreeelt : hashval -> unit
 val printhconselt : hashval -> unit

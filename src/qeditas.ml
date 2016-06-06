@@ -637,7 +637,7 @@ let do_command l =
       Printf.printf "network time %Ld (median skew of %d)\n" tm skew;
       flush stdout;
   | "printassets" when al = [] -> Commands.printassets()
-  | "printassets" -> List.iter Commands.printassets_at_ledger al
+  | "printassets" -> List.iter (fun h -> Commands.printassets_in_ledger (hexstring_hashval h)) al
   | "importprivkey" -> List.iter Commands.importprivkey al
   | "importbtcprivkey" -> List.iter Commands.importbtcprivkey al
   | "importwatchaddr" -> List.iter Commands.importwatchaddr al

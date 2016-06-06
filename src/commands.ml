@@ -353,79 +353,119 @@ let importwatchbtcaddr a =
   walletwatchaddrs := alpha::!walletwatchaddrs;
   save_wallet() (*** overkill, should append if possible ***)
 
-let rec printassets_a ctr =
-  try
-    let al1 = List.map (fun (k,b,(x,y),w,h,z) -> (z,Ctre.ctree_addr (hashval_p2pkh_addr h) ctr None)) !walletkeys in
-    let al2 = List.map (fun (h,z,scr) -> (z,Ctre.ctree_addr (hashval_p2sh_addr h) ctr None)) !walletp2shs in
-    let al3 = List.map (fun (alpha,beta,(x,y),recid,fcomp,esg) -> let alpha2 = payaddr_addr alpha in (alpha2,Ctre.ctree_addr alpha2 ctr None)) !walletendorsements in
-    let al4 = List.map (fun alpha -> (alpha,Ctre.ctree_addr alpha ctr None)) !walletwatchaddrs in
-    Printf.printf "Controlled p2pkh assets:\n";
-    List.iter
-      (fun (z,x) ->
-	match x with
-	| (Some(hl),_) ->
-	    Printf.printf "%s:\n" z;
-	    Ctre.print_hlist (Ctre.nehlist_hlist hl)
-	| (None,_) ->
-	    Printf.printf "%s: empty\n" z;
-	| _ ->
-	    Printf.printf "%s: no information\n" z;
-      )
-      al1;
-    Printf.printf "Possibly controlled p2sh assets:\n";
-    List.iter
-      (fun (z,x) ->
-	match x with
-	| (Some(hl),_) ->
-	    Printf.printf "%s:\n" z;
-	    Ctre.print_hlist (Ctre.nehlist_hlist hl)
-	| (None,_) ->
-	    Printf.printf "%s: empty\n" z;
-	| _ ->
-	    Printf.printf "%s: no information\n" z;
-      )
-      al2;
-    Printf.printf "Assets via endorsement:\n";
-    List.iter
-      (fun (alpha2,x) ->
-	match x with
-	| (Some(hl),_) ->
-	    Printf.printf "%s:\n" (addr_qedaddrstr alpha2);
-	    Ctre.print_hlist (Ctre.nehlist_hlist hl)
-	| (None,_) ->
-	    Printf.printf "%s: empty\n" (addr_qedaddrstr alpha2);
-	| _ ->
-	    Printf.printf "%s: no information\n" (addr_qedaddrstr alpha2);
-      )
-      al3;
-    Printf.printf "Watched assets:\n";
-    List.iter
-      (fun (alpha,x) ->
-	match x with
-	| (Some(hl),_) ->
-	    Printf.printf "%s:\n" (addr_qedaddrstr alpha);
-	    Ctre.print_hlist (Ctre.nehlist_hlist hl)
-	| (None,_) ->
-	    Printf.printf "%s: empty\n" (addr_qedaddrstr alpha);
-	| _ ->
-	    Printf.printf "%s: no information\n" (addr_qedaddrstr alpha);
-      )
-      al4;
-  with GettingRemoteData ->
-    Printf.printf "Requesting remote data...please wait...\n"; flush stdout;
-    Unix.sleep 2;
-    printassets_a ctr
-  
+let printassets_in_ledger ledgerroot =
+  let ctr = Ctre.CHash(ledgerroot) in
+  let warned = ref false in
+  let al1 = ref [] in
+  let al2 = ref [] in
+  let al3 = ref [] in
+  let al4 = ref [] in
+  let handler f =
+    try
+      for i = 1 to 20 do
+	try
+	  f();
+	  raise Exit
+	with GettingRemoteData ->
+	  if !netconns = [] then
+	    begin (** ignore if there are no connections **)
+	      if not !warned then
+		begin
+		  Printf.printf "Warning: The complete ledger is not in the local database and there are no connections to request missing data.\n";
+		  Printf.printf "Some assets in the ledger might not be displayed.\n";
+		  warned := true
+		end;
+	      raise Exit
+	    end
+	  else
+	    begin
+	      Printf.printf "Some data is being requested from remote nodes...please wait...\n"; flush stdout;
+	      Unix.sleep 2;
+	    end
+      done;
+      if not !warned then
+	begin
+	  Printf.printf "Warning: The complete ledger is not in the local database.\n";
+	  Printf.printf "Remote data is being requested, but is taking too long.\n";
+	  Printf.printf "Some assets in the ledger might not be displayed.\n";
+	  warned := true
+	end
+    with Exit -> ()
+  in
+  List.iter
+    (fun (k,b,(x,y),w,h,z) ->
+      handler (fun () -> al1 := (z,Ctre.ctree_addr (hashval_p2pkh_addr h) ctr None)::!al1))
+    !walletkeys;
+  List.iter
+    (fun (h,z,scr) ->
+      handler (fun () -> al2 := (z,Ctre.ctree_addr (hashval_p2sh_addr h) ctr None)::!al2))
+    !walletp2shs;
+  List.iter
+    (fun (alpha,beta,(x,y),recid,fcomp,esg) -> 
+      let alpha2 = payaddr_addr alpha in
+      handler (fun () -> al3 := (alpha2,Ctre.ctree_addr alpha2 ctr None)::!al3))
+    !walletendorsements;
+  List.iter
+    (fun alpha ->
+      handler (fun () -> al4 := (alpha,Ctre.ctree_addr alpha ctr None)::!al4))
+    !walletwatchaddrs;
+  Printf.printf "Assets in ledger with root %s:\n" (hashval_hexstring ledgerroot);
+  Printf.printf "Controlled p2pkh assets:\n";
+  List.iter
+    (fun (z,x) ->
+      match x with
+      | (Some(hl),_) ->
+	  Printf.printf "%s:\n" z;
+	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
+      | (None,_) ->
+	  Printf.printf "%s: empty\n" z;
+      | _ ->
+	  Printf.printf "%s: no information\n" z;
+    )
+    !al1;
+  Printf.printf "Possibly controlled p2sh assets:\n";
+  List.iter
+    (fun (z,x) ->
+      match x with
+      | (Some(hl),_) ->
+	  Printf.printf "%s:\n" z;
+	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
+      | (None,_) ->
+	  Printf.printf "%s: empty\n" z;
+      | _ ->
+	  Printf.printf "%s: no information\n" z;
+    )
+    !al2;
+  Printf.printf "Assets via endorsement:\n";
+  List.iter
+    (fun (alpha2,x) ->
+      match x with
+      | (Some(hl),_) ->
+	  Printf.printf "%s:\n" (addr_qedaddrstr alpha2);
+	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
+      | (None,_) ->
+	  Printf.printf "%s: empty\n" (addr_qedaddrstr alpha2);
+      | _ ->
+	  Printf.printf "%s: no information\n" (addr_qedaddrstr alpha2);
+    )
+    !al3;
+  Printf.printf "Watched assets:\n";
+  List.iter
+    (fun (alpha,x) ->
+      match x with
+      | (Some(hl),_) ->
+	  Printf.printf "%s:\n" (addr_qedaddrstr alpha);
+	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
+      | (None,_) ->
+	  Printf.printf "%s: empty\n" (addr_qedaddrstr alpha);
+      | _ ->
+	  Printf.printf "%s: no information\n" (addr_qedaddrstr alpha);
+    )
+    !al4
+
 let printassets () =
   let BlocktreeNode(_,_,_,_,_,ledgerroot,_,_,_,_,_,_,_,_,_) = !bestnode in
-  Printf.printf "Assets in ledger with root %s:\n" (hashval_hexstring ledgerroot); flush stdout;
-  let ctr = Ctre.CHash(ledgerroot) in
-  printassets_a ctr
-
-let printassets_at_ledger ledgerroot =
-  Printf.printf "Assets in ledger with root %s:\n" ledgerroot; flush stdout;
-  let ctr = Ctre.CHash(hexstring_hashval ledgerroot) in
-  printassets_a ctr
+  printassets_in_ledger ledgerroot
 
 let printasset h =
   try
