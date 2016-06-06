@@ -250,23 +250,29 @@ let defrag d seival seoval =
   let datf = Filename.concat d "data" in
   let del = load_deleted d in
   let chd = open_in_bin datf in
+  let l = in_channel_length chd in
   let dat =
     ref (List.map
 	   (fun (k,p) ->
 	     if List.mem k del then
 	       None
-	     else
+	     else if p < l then
 	       begin
 		 seek_in chd p;
 		 let (v,_) = seival (chd,None) in
 		 Some(v)
+	       end
+	     else
+	       begin
+		 close_in chd;
+		 raise (Failure ("Corrupted data file " ^ datf))
 	       end)
 	   !ind)
   in
   close_in chd;
   Sys.remove (Filename.concat d "deleted");
-  let chi = open_out_gen [Open_wronly;Open_trunc;Open_binary] 0b110110000 indf in
   let chd = open_out_gen [Open_wronly;Open_trunc;Open_binary] 0b110110000 datf in
+  let newind = ref [] in
   try
     while not (!ind = []) do
       match (!ind,!dat) with
@@ -275,10 +281,8 @@ let defrag d seival seoval =
 	  dat := dr;
 	  if not (List.mem k del) then
 	    let p = pos_out chd in
-	    let ci2 = seo_hashval seoc k (chi,None) in
-	    let ci2 = seo_int32 seoc (Int32.of_int p) ci2 in
+	    newind := List.merge (fun (h',p') (k',q') -> compare h' k') !newind [(k,p)];
 	    let cd2 = seoval v (chd,None) in
-	    seocf ci2;
 	    seocf cd2;
       | ((k,_)::ir,None::dr) ->
 	  ind := ir;
@@ -286,10 +290,21 @@ let defrag d seival seoval =
       | _ ->
 	  raise (Failure ("impossible"))
     done;
-    close_out chi;
-    close_out chd
+    let chi = open_out_gen [Open_wronly;Open_trunc;Open_binary] 0b110110000 indf in
+    begin
+      try
+	List.iter (fun (k,p) ->
+	  let ci2 = seo_hashval seoc k (chi,None) in
+	  let ci2 = seo_int32 seoc (Int32.of_int p) ci2 in
+	  seocf ci2)
+	  !newind;
+	close_out chi;
+	close_out chd
+      with exc ->
+	close_out chi;
+	raise exc
+    end
   with exc ->
-    close_out chi;
     close_out chd;
     raise exc
 
@@ -361,7 +376,13 @@ module Dbbasic : dbtype = functor (M:sig type t val basedir : string val seival 
 	    let datf = Filename.concat di "data" in
 	    if Sys.file_exists datf then
 	      let c = open_in_bin datf in
+	      let l = in_channel_length c in
 	      try
+		if p >= l then
+		  begin
+		    close_in c;
+		    raise (Failure ("Corrupted data file " ^ datf))
+		  end;
 		seek_in c p;
 		let (v,_) = M.seival (c,None) in
 		close_in c;
