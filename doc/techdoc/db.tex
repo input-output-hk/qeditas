@@ -87,10 +87,10 @@ The implementation of {\module{Dbbasic}} works as follows:
 \item There are two hash table {\val{cache1}} and {\val{cache2}}
 which store (roughly) the last 128 to 256 entries looked up
 so that these can be returned again quickly.
-(When one cache hash 128 entries, the other is cleared and begins
+(When one cache has 128 entries, the other is cleared and begins
 to be filled.)
 The internal functions {\func{add\_to\_cache}} and {\func{del\_from\_cache}}
-handle adding and removing key-value pairs fromt he cache.
+handle adding and removing key-value pairs from the cache.
 \item {\func{dbget}} tries to find the key in the cache.
 If it is not in the cache, {\func{dbfind}} is called to 
 try to find a subdirectory and value position.
