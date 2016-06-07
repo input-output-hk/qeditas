@@ -6,6 +6,7 @@ open Big_int;;
 open Utils;;
 open Ser;;
 open Hash;;
+open Net;;
 open Db;;
 open Secp256k1;;
 open Signat;;
@@ -14,7 +15,7 @@ open Tx;;
 open Ctre;;
 open Ctregraft;;
 open Block;;
-open Net;;
+open Blocktree;;
 open Setconfig;;
 
 let currstaking : (int64 * big_int * hashval * blocktree * (stakemod * stakemod * big_int)) option ref = ref None;;
@@ -685,6 +686,7 @@ let initialize () =
     datadir_from_command_line(); (*** if -datadir=... is on the command line, then set Config.datadir so we can find the config file ***)
     process_config_file();
     process_config_args(); (*** settings on the command line shadow those in the config file ***)
+    if not !Config.testnet then (Printf.printf "Qeditas can only be run on testnet for now. Please give the -testnet command line argument.\n"; exit 0);
     let datadir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
     let dbdir = Filename.concat datadir "db" in
     dbconfig dbdir; (*** configure the database ***)

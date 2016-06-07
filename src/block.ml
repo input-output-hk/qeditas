@@ -5,6 +5,7 @@
 open Ser
 open Sha256
 open Hash
+open Net
 open Db
 open Big_int
 open Mathdata

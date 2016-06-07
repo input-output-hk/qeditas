@@ -6,12 +6,13 @@ open Big_int
 open Config
 open Ser
 open Hash
+open Net
 open Cryptocurr
 open Signat
 open Script
 open Assets
 open Ctre
-open Net
+open Blocktree
 
 let walletkeys = ref []
 let walletp2shs = ref []

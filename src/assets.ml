@@ -4,6 +4,7 @@
 
 open Ser
 open Hash
+open Net
 open Db
 open Mathdata
 
@@ -362,8 +363,6 @@ let seo_addr_asset o a c = seo_prod seo_addr seo_asset o a c
 let sei_addr_asset i c = sei_prod sei_addr sei_asset i c
 
 module DbAsset = Dbbasic (struct type t = asset let basedir = "asset" let seival = sei_asset seic let seoval = seo_asset seoc end)
-
-exception GettingRemoteData
 
 let get_asset h =
   try

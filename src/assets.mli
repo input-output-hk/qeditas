@@ -91,6 +91,4 @@ module DbAsset :
       val dbdelete : Hash.hashval -> unit
     end
 
-exception GettingRemoteData
-
 val get_asset : hashval -> asset

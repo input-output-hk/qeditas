@@ -6,6 +6,7 @@ open Big_int
 open Ser
 open Sha256
 open Hash
+open Net
 open Db
 open Mathdata
 open Assets
