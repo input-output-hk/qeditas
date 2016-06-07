@@ -103,11 +103,11 @@ let myaddr () =
       ""
 
 let fallbacknodes = [
-"172.246.252.93:20805"
+(* ":20805" *)
 ]
 
 let testnetfallbacknodes = [
-"172.246.252.93:20804"
+(* ":20804" *)
 ]
 
 let getfallbacknodes () =
