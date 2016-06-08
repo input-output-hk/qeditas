@@ -92,6 +92,43 @@ let int_of_msgtype mt =
   | Checkpoint -> 32
   | AntiCheckpoint -> 33
 
+let string_of_msgtype mt =
+  match mt with
+  | Version -> "Version"
+  | Verack -> "Verack"
+  | Addr -> "Addr"
+  | Inv -> "Inv"
+  | GetData -> "GetData"
+  | MNotFound -> "MNotFound"
+  | GetSTxs -> "GetSTxs"
+  | GetTxs -> "GetTxs"
+  | GetTxSignatures -> "GetTxSignatures"
+  | GetBlocks -> "GetBlocks"
+  | GetBlockdeltas -> "GetBlockdeltas"
+  | GetBlockdeltahs -> "GetBlockdeltahs"
+  | GetHeaders -> "GetHeaders"
+  | MSTx -> "MSTx"
+  | MTx -> "MTx"
+  | MTxSignature -> "MTxSignature"
+  | MBlock -> "MBlock"
+  | Headers -> "Headers"
+  | MBlockdelta -> "MBlockdelta"
+  | MBlockdeltah -> "MBlockdeltah"
+  | GetAddr -> "GetAddr"
+  | Mempool -> "Mempool"
+  | Alert -> "Alert"
+  | Ping -> "Ping"
+  | Pong -> "Pong"
+  | Reject -> "Reject"
+  | GetCTreeElement -> "GetCTreeElement"
+  | GetHConsElement -> "GetHConsElement"
+  | GetAsset -> "GetAsset"
+  | CTreeElement -> "CTreeElement"
+  | HConsElement -> "HConsElement"
+  | Asset -> "Asset"
+  | Checkpoint -> "Checkpoint"
+  | AntiCheckpoint -> "AntiCheckpoint"
+
 let myaddr () =
   match !Config.ip with
   | Some(ip) -> 
@@ -286,6 +323,8 @@ type connstate = {
     mutable last_height : int64; (*** how up to date the node is ***)
   }
 
+let msgtype_handler : (msgtype,in_channel * out_channel * connstate * string -> unit) Hashtbl.t = Hashtbl.create 50
+
 let send_msg_real c replyto mt ms =
   let magic = if !Config.testnet then 0x51656454l else 0x5165644dl in
   let msl = String.length ms in
@@ -394,8 +433,84 @@ let handle_msg replyto mt sin sout cs mh m =
 	with Not_found -> () (*** Reply to unknown request, ignore for now ***)
       end
   | None ->
-      match mt with
-      | _ -> raise (Failure "unwritten; to do")
+      if cs.handshakestep < 5 then
+	begin
+	  match mt with
+	  | Version ->
+	      let (((vers,srvs,tm,addr_recv,addr_from,n),(ua,fhh,ffh,lh,relay,lastchkpt)),_) =
+		sei_prod
+		  (sei_prod6 sei_int32 sei_int64 sei_int64 sei_string sei_string sei_int64)
+		  (sei_prod6 sei_string sei_int64 sei_int64 sei_int64 sei_bool (sei_option (sei_prod sei_int64 sei_hashval)))
+		  seis (m,String.length m,None,0,0)
+	      in
+	      begin
+		if n = !this_nodes_nonce then
+		  raise SelfConnection
+		else
+		  let minvers = if vers > Version.protocolversion then Version.protocolversion else 0l in
+		  let mytm = Int64.of_float (Unix.time()) in
+		  let tmskew = Int64.sub tm mytm in
+		  if tmskew > 7200L then
+		    raise (ProtocolViolation("Peer rejected due to excessive time skew"))
+		  else
+		    let tmskew = Int64.to_int tmskew in
+		    if cs.handshakestep = 1 then
+		      begin
+			send_msg sout Verack "";
+			let vm = Buffer.create 100 in
+			seosbf
+			  (seo_prod
+			     (seo_prod6 seo_int32 seo_int64 seo_int64 seo_string seo_string seo_int64)
+			     (seo_prod6 seo_string seo_int64 seo_int64 seo_int64 seo_bool (seo_option (seo_prod seo_int64 seo_hashval)))
+			     seosb
+			     ((minvers,0L,mytm,addr_from,myaddr(),!this_nodes_nonce),
+			      (Version.useragent,0L,0L,0L,true,None))
+			     (vm,None));
+			send_msg sout Version (Buffer.contents vm);
+			cs.handshakestep <- 3;
+			cs.peertimeskew <- tmskew;
+			cs.useragent <- ua;
+			cs.protvers <- minvers;
+			cs.addrfrom <- addr_from;
+			cs.first_header_height <- fhh;
+			cs.first_full_height <- ffh;
+			cs.last_height <- lh;
+		      end
+		    else if cs.handshakestep = 4 then
+		      begin
+			send_msg sout Verack;
+			cs.handshakestep <- 5;
+			cs.peertimeskew <- tmskew;
+			cs.useragent <- ua;
+			cs.protvers <- minvers;
+			cs.addrfrom <- addr_from;
+			cs.first_header_height <- fhh;
+			cs.first_full_height <- ffh;
+			cs.last_height <- lh;
+		      end
+		    else
+		      raise (ProtocolViolation "Handshake failed")
+	      end
+	  | Verack ->
+	      begin
+		if cs.handshakestep = 2 then
+		  cs.handshakestep <- 4
+		else if cs.handshakestep = 3 then
+		  cs.handshakestep <- 5
+		else
+		  raise (ProtocolViolation("Unexpected Verack"))
+	      end
+	  | _ -> raise (ProtocolViolation "Handshake failed")
+	end
+      else
+      try
+	let f = Hashtbl.find msgtype_handler mt in
+	f(sin,sout,cs,m)
+      with Not_found ->
+	match mt with
+	| Version -> raise (ProtocolViolation "Version message after handshake")
+	| Verack -> raise (ProtocolViolation "Verack message after handshake")
+	| _ -> raise (Failure ("No handler found for message type " ^ (string_of_msgtype mt)))
 
 let connlistener (s,sin,sout,gcs) =
   try
