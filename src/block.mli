@@ -118,6 +118,10 @@ module DbBlockDeltaH :
       val dbdelete : Hash.hashval -> unit
     end
 
+val get_blockheader : hashval -> blockheader
+val get_blockdelta : hashval -> blockdelta
+val get_blockdeltah : hashval -> blockdeltah
+
 val coinstake : block -> tx
 
 val incrstake : int64 -> int64

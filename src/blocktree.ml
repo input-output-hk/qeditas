@@ -138,20 +138,48 @@ type validationstatus = Waiting of float | Valid | Invalid
 
 type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * targetinfo * int32 * int64 * big_int * int64 * validationstatus ref * bool ref * (hashval * blocktree) list ref
 
-let genesistimestamp = 1456079627L;;
+let genesistimestamp = 1465665893L;;
 let genesisblocktreenode = ref (BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),600l,genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []));;
 
 let lastcheckpointnode = ref !genesisblocktreenode;;
 
 let bestnode = ref !genesisblocktreenode;;
 
+let node_recent_stakers n =
+  let BlocktreeNode(_,rs,_,_,_,_,_,_,_,_,_,_,_,_,_) = n in
+  !rs
+
 let node_prevblockhash n =
   let BlocktreeNode(_,_,pbh,_,_,_,_,_,_,_,_,_,_,_,_) = n in
   pbh
 
+let node_theoryroot n =
+  let BlocktreeNode(_,_,_,tr,_,_,_,_,_,_,_,_,_,_,_) = n in
+  tr
+
+let node_signaroot n =
+  let BlocktreeNode(_,_,_,_,sr,_,_,_,_,_,_,_,_,_,_) = n in
+  sr
+
+let node_ledgerroot n =
+  let BlocktreeNode(_,_,_,_,_,lr,_,_,_,_,_,_,_,_,_) = n in
+  lr
+
+let node_targetinfo n =
+  let BlocktreeNode(_,_,_,_,_,_,_,ti,_,_,_,_,_,_,_) = n in
+  ti
+
 let node_timestamp n =
   let BlocktreeNode(_,_,_,_,_,_,_,_,_,tm,_,_,_,_,_) = n in
   tm
+
+let node_cumulstk n =
+  let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,cs,_,_,_,_) = n in
+  cs
+
+let node_children_ref n =
+  let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,_,_,_,_,chr) = n in
+  chr
 
 let print_best_node () =
   let BlocktreeNode(_,_,pbh,_,_,_,_,_,_,_,_,_,_,_,_) = !bestnode in

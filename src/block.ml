@@ -375,6 +375,27 @@ module DbBlockHeader = Dbbasic (struct type t = blockheader let basedir = "block
 module DbBlockDelta = Dbbasic (struct type t = blockdelta let basedir = "blockdelta" let seival = sei_blockdelta seic let seoval = seo_blockdelta seoc end)
 module DbBlockDeltaH = Dbbasic (struct type t = blockdeltah let basedir = "blockdeltah" let seival = sei_blockdeltah seic let seoval = seo_blockdeltah seoc end)
 
+let get_blockheader h = 
+  try
+    DbBlockHeader.dbget h
+  with Not_found -> (*** request it and fail ***)
+(*** missing code to ask peers for data ***)
+    raise GettingRemoteData
+
+let get_blockdelta h = 
+  try
+    DbBlockDelta.dbget h
+  with Not_found -> (*** request it and fail ***)
+(*** missing code to ask peers for data ***)
+    raise GettingRemoteData
+
+let get_blockdeltah h = 
+  try
+    DbBlockDeltaH.dbget h
+  with Not_found -> (*** request it and fail ***)
+(*** missing code to ask peers for data ***)
+    raise GettingRemoteData
+
 let blockdelta_blockdeltah bd =
   (bd.stakeoutput,bd.forfeiture,bd.prevledgergraft,List.map (fun (tau,_) -> hashtx tau) bd.blockdelta_stxl)
 
