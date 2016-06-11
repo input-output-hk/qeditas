@@ -12,7 +12,7 @@ open Block
 
 type validationstatus = Waiting of float | Valid | Invalid
 
-type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * targetinfo * int32 * int64 * big_int * int64 * validationstatus ref * bool ref * (hashval * blocktree) list ref
+type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * int64 * big_int * int64 * validationstatus ref * bool ref * (hashval * blocktree) list ref
 
 val genesisblocktreenode : blocktree ref
 val lastcheckpointnode : blocktree ref

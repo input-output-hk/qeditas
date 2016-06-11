@@ -65,7 +65,7 @@ let rec hlist_stakingassets alpha hl =
 
 let compute_staking_chances n fromtm totm =
    let i = ref fromtm in
-   let BlocktreeNode(par,children,prevblk,thyroot,sigroot,currledgerroot,prevtinfo,currtinfo,deltm,tmstamp,prevcumulstk,blkhght,validated,blacklisted,succl) = n in
+   let BlocktreeNode(par,children,prevblk,thyroot,sigroot,currledgerroot,currtinfo,tmstamp,prevcumulstk,blkhght,validated,blacklisted,succl) = n in
    let (csm1,fsm1,tar1) = currtinfo in
    let c = CHash(currledgerroot) in
    (*** collect assets allowed to stake now ***)
@@ -246,16 +246,13 @@ let stakingthread () =
 	    else
 	      begin (** go ahead and form the block; then publish it at the right time ***)
 		let prevledgerroot = node_ledgerroot best in
-		let (csm,fsmprev,tar) = node_targetinfo best in
+		let (csm0,fsm0,tar0) = node_targetinfo best in
 		let pbhtm = node_timestamp best in
+		let deltm = Int64.to_int32 (Int64.sub tm pbhtm) in
 		let newrandbit = rand_bit() in
-		let fsm = stakemod_pushbit newrandbit fsmprev in
-		let (csm,fsm,tar) =
-		  if blkh = 1L then
-		    (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
-		  else
-		    (csm,fsm,tar)
-		in
+		let fsm = stakemod_pushbit newrandbit fsm0 in
+		let csm = stakemod_pushbit (stakemod_lastbit fsm0) fsm0 in
+		let tar = retarget tar0 deltm in
 		let alpha2 = p2pkhaddr_addr alpha in
 		let stkoutl = [(alpha2,(None,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))] in
 		let coinstk : tx = ([(alpha2,aid)],stkoutl) in
@@ -305,7 +302,6 @@ let stakingthread () =
 		let (prevcforheader,cgr) = factor_inputs_ctree_cgraft [(alpha2,aid)] prevcforblock in
 		let newcr = save_ctree_elements !dync in
 (*		    Hashtbl.add recentledgerroots newcr (blkh,newcr); *)
-		let deltm = Int64.to_int32 (Int64.sub tm pbhtm) in
 		let bhdnew : blockheaderdata
 		    = { prevblockhash = pbhh;
 			newtheoryroot = None; (*** leave this as None for now ***)
@@ -373,7 +369,7 @@ let stakingthread () =
 		    (Printf.printf "Not a valid first block.\n"; flush stdout; raise Not_found)
 		else
 		  begin
-		    if valid_block None None blkh (bhnew,bdnew) then
+		    if valid_block None None blkh (csm0,fsm0,tar0) (bhnew,bdnew) then
 		      (Printf.printf "New block is valid\n"; flush stdout)
 		    else
 		      (Printf.printf "New block is not valid\n"; flush stdout; raise Not_found);
@@ -405,12 +401,7 @@ let stakingthread () =
 		  DbBlockHeader.dbput bhdnewh (bhdnew,bhsnew);
 		  DbBlockDelta.dbput bhdnewh bdnew;
 		  let newnode =
-		    match pbhh with
-		    | None ->
-			BlocktreeNode(Some(best),ref [],pbhh,ottree_hashroot !dyntht,ostree_hashroot !dynsigt,ctree_hashroot !dync,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),bhdnew.tinfo,deltm,tm,csnew,blkh,ref Valid,ref false,ref []) (*** this shouldn't need to be handled separately; something is wrong with the handling of stake modifiers at the first block; seems genesis sm is used for the first two blocks instead of just the first block ***)
-		    | Some(pbhh) ->
-			let (pbhd,_) = get_blockheader pbhh in
-			BlocktreeNode(Some(best),ref [],Some(pbhh),ottree_hashroot !dyntht,ostree_hashroot !dynsigt,ctree_hashroot !dync,pbhd.tinfo,bhdnew.tinfo,deltm,tm,csnew,blkh,ref Valid,ref false,ref [])
+		    BlocktreeNode(Some(best),ref [],pbhh,ottree_hashroot !dyntht,ostree_hashroot !dynsigt,ctree_hashroot !dync,bhdnew.tinfo,tm,csnew,blkh,ref Valid,ref false,ref [])
 		  in
 		  record_recent_staker alpha newnode 6;
 		  bestnode := newnode;
@@ -548,7 +539,7 @@ let do_command l =
 	match al with
 	| [] ->
 	    let best = !bestnode in
-	    let BlocktreeNode(_,_,_,_,_,currledgerroot,_,_,_,_,_,_,_,_,_) = best in
+	    let BlocktreeNode(_,_,_,_,_,currledgerroot,_,_,_,_,_,_,_) = best in
 	    Commands.printctreeinfo currledgerroot
 	| [h] -> Commands.printctreeinfo (hexstring_hashval h)
 	| _ -> raise (Failure "printctreeinfo [ledgerroot]")
