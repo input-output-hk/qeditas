@@ -21,7 +21,7 @@ type stakemod = int64 * int64 * int64 * int64
 
 let genesiscurrentstakemod : stakemod ref = ref (0L,0L,0L,0L)
 let genesisfuturestakemod : stakemod ref = ref (0L,0L,0L,0L)
-let genesistimestamp : int64 ref = ref 1465665893L
+let genesistimestamp : int64 ref = ref 1465759361L
 
 let set_genesis_stakemods x =
   let (x4,x3,x2,x1,x0) = hexstring_hashval x in
