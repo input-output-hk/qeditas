@@ -133,76 +133,6 @@ let in_nehlist a hl =
   | NehConsH(_,hr) -> in_hlist a hr
   | _ -> false
 
-let rec hlist_lookup_asset k hl =
-  match hl with
-  | HCons(a,hr) when assetid a = k -> Some(a)
-  | HCons(_,hr) -> hlist_lookup_asset k hr
-  | HConsH(_,hr) -> hlist_lookup_asset k hr
-  | _ -> None
-
-let nehlist_lookup_asset k hl =
-  match hl with
-  | NehCons(a,hr) when assetid a = k -> Some(a)
-  | NehCons(_,hr) -> hlist_lookup_asset k hr
-  | NehConsH(_,hr) -> hlist_lookup_asset k hr
-  | _ -> None
-
-let rec hlist_lookup_marker hl =
-  match hl with
-  | HCons(a,hr) when assetpre a = Marker -> Some(a)
-  | HCons(_,hr) -> hlist_lookup_marker hr
-  | HConsH(_,hr) -> hlist_lookup_marker hr
-  | _ -> None
-
-let nehlist_lookup_marker hl =
-  match hl with
-  | NehCons(a,hr) when assetpre a = Marker -> Some(a)
-  | NehCons(_,hr) -> hlist_lookup_marker hr
-  | NehConsH(_,hr) -> hlist_lookup_marker hr
-  | _ -> None
-
-let rec hlist_lookup_obj_owner hl =
-  match hl with
-  | HCons((_,_,_,OwnsObj(beta,r)),hr) -> Some(beta,r)
-  | HCons(_,hr) -> hlist_lookup_obj_owner hr
-  | HConsH(_,hr) -> hlist_lookup_obj_owner hr
-  | _ -> None
-
-let nehlist_lookup_obj_owner hl =
-  match hl with
-  | NehCons((_,_,_,OwnsObj(beta,r)),hr) -> Some(beta,r)
-  | NehCons(_,hr) -> hlist_lookup_obj_owner hr
-  | NehConsH(_,hr) -> hlist_lookup_obj_owner hr
-  | _ -> None
-
-let rec hlist_lookup_prop_owner hl =
-  match hl with
-  | HCons((_,_,_,OwnsProp(beta,r)),hr) -> Some(beta,r)
-  | HCons(_,hr) -> hlist_lookup_prop_owner hr
-  | HConsH(_,hr) -> hlist_lookup_prop_owner hr
-  | _ -> None
-
-let nehlist_lookup_prop_owner hl =
-  match hl with
-  | NehCons((_,_,_,OwnsProp(beta,r)),hr) -> Some(beta,r)
-  | NehCons(_,hr) -> hlist_lookup_prop_owner hr
-  | NehConsH(_,hr) -> hlist_lookup_prop_owner hr
-  | _ -> None
-
-let rec hlist_lookup_neg_prop_owner hl =
-  match hl with
-  | HCons((_,_,_,OwnsNegProp),hr) -> true
-  | HCons(_,hr) -> hlist_lookup_neg_prop_owner hr
-  | HConsH(_,hr) -> hlist_lookup_neg_prop_owner hr
-  | _ -> false
-
-let nehlist_lookup_neg_prop_owner hl =
-  match hl with
-  | NehCons((_,_,_,OwnsNegProp),hr) -> true
-  | NehCons(_,hr) -> hlist_lookup_neg_prop_owner hr
-  | NehConsH(_,hr) -> hlist_lookup_neg_prop_owner hr
-  | _ -> false
-
 type ctree =
   | CLeaf of bool list * nehlist
   | CHash of hashval
@@ -576,20 +506,6 @@ let rec hlist_new_assets nw old =
   | [] -> old
   | a::nwr -> HCons(a,hlist_new_assets nwr old)
 
-let rec remove_assets_hlist hl spent =
-  match hl with
-  | HCons((h,bh,obl,u) as a,hr) ->
-      if List.mem h spent then
-	remove_assets_hlist hr spent
-      else
-	HCons(a,remove_assets_hlist hr spent)
-  | HConsH(h,hr) ->
-      if List.mem h spent then
-	remove_assets_hlist hr spent
-      else
-	HConsH(h,remove_assets_hlist hr spent)
-  | _ -> hl
-
 (** * serialization **)
 let rec seo_hlist o hl c =
   match hl with
@@ -814,6 +730,88 @@ let save_nehlist_elements hl =
       r
   | NehHash(r) -> r
 
+(*** do not request remote data ***)
+let rec hlist_lookup_asset k hl =
+  match hl with
+  | HCons(a,hr) when assetid a = k -> Some(a)
+  | HConsH(h,hr) when h = k ->
+      begin
+	try
+	  Some(DbAsset.dbget h)
+	with Not_found -> None
+      end
+  | HHash(h) ->
+      begin
+	try
+	  let (h1,h2) = DbHConsElt.dbget h in
+	  match h2 with
+	  | Some(h2) -> hlist_lookup_asset k (HConsH(h1,HHash(h2)))
+	  | None -> hlist_lookup_asset k (HConsH(h1,HNil))
+	with Not_found -> None
+      end
+  | HCons(_,hr) -> hlist_lookup_asset k hr
+  | HConsH(_,hr) -> hlist_lookup_asset k hr
+  | _ -> None
+
+(*** do not request remote data ***)
+let nehlist_lookup_asset k hl = hlist_lookup_asset k (nehlist_hlist hl)
+
+let rec hlist_lookup_marker hl =
+  match hl with
+  | HCons(a,hr) when assetpre a = Marker -> Some(a)
+  | HCons(_,hr) -> hlist_lookup_marker hr
+  | HConsH(_,hr) -> hlist_lookup_marker hr
+  | _ -> None
+
+let nehlist_lookup_marker hl =
+  match hl with
+  | NehCons(a,hr) when assetpre a = Marker -> Some(a)
+  | NehCons(_,hr) -> hlist_lookup_marker hr
+  | NehConsH(_,hr) -> hlist_lookup_marker hr
+  | _ -> None
+
+let rec hlist_lookup_obj_owner hl =
+  match hl with
+  | HCons((_,_,_,OwnsObj(beta,r)),hr) -> Some(beta,r)
+  | HCons(_,hr) -> hlist_lookup_obj_owner hr
+  | HConsH(_,hr) -> hlist_lookup_obj_owner hr
+  | _ -> None
+
+let nehlist_lookup_obj_owner hl =
+  match hl with
+  | NehCons((_,_,_,OwnsObj(beta,r)),hr) -> Some(beta,r)
+  | NehCons(_,hr) -> hlist_lookup_obj_owner hr
+  | NehConsH(_,hr) -> hlist_lookup_obj_owner hr
+  | _ -> None
+
+let rec hlist_lookup_prop_owner hl =
+  match hl with
+  | HCons((_,_,_,OwnsProp(beta,r)),hr) -> Some(beta,r)
+  | HCons(_,hr) -> hlist_lookup_prop_owner hr
+  | HConsH(_,hr) -> hlist_lookup_prop_owner hr
+  | _ -> None
+
+let nehlist_lookup_prop_owner hl =
+  match hl with
+  | NehCons((_,_,_,OwnsProp(beta,r)),hr) -> Some(beta,r)
+  | NehCons(_,hr) -> hlist_lookup_prop_owner hr
+  | NehConsH(_,hr) -> hlist_lookup_prop_owner hr
+  | _ -> None
+
+let rec hlist_lookup_neg_prop_owner hl =
+  match hl with
+  | HCons((_,_,_,OwnsNegProp),hr) -> true
+  | HCons(_,hr) -> hlist_lookup_neg_prop_owner hr
+  | HConsH(_,hr) -> hlist_lookup_neg_prop_owner hr
+  | _ -> false
+
+let nehlist_lookup_neg_prop_owner hl =
+  match hl with
+  | NehCons((_,_,_,OwnsNegProp),hr) -> true
+  | NehCons(_,hr) -> hlist_lookup_neg_prop_owner hr
+  | NehConsH(_,hr) -> hlist_lookup_neg_prop_owner hr
+  | _ -> false
+
 module DbCTreeElt =
   Dbbasic
     (struct
@@ -915,6 +913,21 @@ let get_nehlist_element h =
   match get_hcons_element h with
   | (aid,Some(k)) -> NehConsH(aid,HHash(k))
   | (aid,None) -> NehConsH(aid,HNil)
+
+let rec remove_assets_hlist hl spent =
+  match hl with
+  | HCons((h,bh,obl,u) as a,hr) ->
+      if List.mem h spent then
+	remove_assets_hlist hr spent
+      else
+	HCons(a,remove_assets_hlist hr spent)
+  | HConsH(h,hr) ->
+      if List.mem h spent then
+	remove_assets_hlist hr spent
+      else
+	HConsH(h,remove_assets_hlist hr spent)
+  | HHash(h) -> remove_assets_hlist (get_hlist_element h) spent
+  | _ -> hl
 
 let rec ctree_super_element_a tr i =
   if i > 0 then
@@ -1182,7 +1195,12 @@ let rec ctree_full_approx_addr tr bl =
 let rec ctree_supports_addr tr bl =
   match tr with
   | CLeaf(_,_) -> true
-  | CHash(_) -> false
+  | CHash(h) ->
+      begin
+	try
+	  ctree_supports_addr (DbCTreeElt.dbget h) bl
+	with Not_found -> false
+      end
   | CLeft(trl) ->
       begin
 	match bl with
@@ -1228,11 +1246,17 @@ let rec ctree_supports_asset a tr bl =
 	| [] -> raise (Failure "Level problem") (*** should never happen ***)
       end
 
+(*** do not request remote data ***)
 let rec ctree_lookup_asset k tr bl =
   match tr with
   | CLeaf(br,hl) when br = bl -> nehlist_lookup_asset k hl
   | CLeaf(_,_) -> None
-  | CHash(h) -> None
+  | CHash(h) ->
+      begin
+	try
+	  ctree_lookup_asset k (DbCTreeElt.dbget h) bl
+	with Not_found -> None
+      end
   | CLeft(trl) ->
       begin
 	match bl with
@@ -1257,7 +1281,12 @@ let rec ctree_lookup_addr_assets tr bl =
   match tr with
   | CLeaf(br,hl) when br = bl -> (nehlist_hlist hl)
   | CLeaf(_,_) -> HNil
-  | CHash(h) -> HNil
+  | CHash(h) ->
+      begin
+	try
+	  ctree_lookup_addr_assets (DbCTreeElt.dbget h) bl
+	with Not_found -> HNil
+      end
   | CLeft(trl) ->
       begin
 	match bl with
@@ -1305,6 +1334,7 @@ let rec ctree_lookup_marker tr bl =
 
 exception NotSupported
 
+(*** do not request remote data ***)
 let rec ctree_lookup_input_assets inpl tr =
   match inpl with
   | [] -> []
