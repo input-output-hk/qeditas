@@ -478,7 +478,7 @@ let handle_msg replyto mt sin sout cs mh m =
 		      end
 		    else if cs.handshakestep = 4 then
 		      begin
-			send_msg sout Verack;
+			send_msg sout Verack "";
 			cs.handshakestep <- 5;
 			cs.peertimeskew <- tmskew;
 			cs.useragent <- ua;
