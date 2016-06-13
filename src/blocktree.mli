@@ -26,6 +26,7 @@ val node_ledgerroot : blocktree -> hashval
 val node_targetinfo : blocktree -> targetinfo
 val node_timestamp : blocktree -> int64
 val node_cumulstk : blocktree -> big_int
+val node_blockheight : blocktree -> int64
 val node_children_ref : blocktree -> (hashval * blocktree) list ref
 val eq_node : blocktree -> blocktree -> bool
 val find_best_validated_block_from : blocktree -> big_int -> big_int

@@ -176,6 +176,10 @@ let node_cumulstk n =
   let BlocktreeNode(_,_,_,_,_,_,_,_,cs,_,_,_,_) = n in
   cs
 
+let node_blockheight n =
+  let BlocktreeNode(_,_,_,_,_,_,_,_,_,blkh,_,_,_) = n in
+  blkh
+
 let node_children_ref n =
   let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,_,_,chr) = n in
   chr
