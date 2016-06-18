@@ -3,6 +3,6 @@
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 let clientdescr = "Qeditas (alpha)"
-let clientversion = "0.0.1rc2"
+let clientversion = "0.0.1"
 let useragent = clientdescr ^ " " ^ clientversion
 let protocolversion = 0l
