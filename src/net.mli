@@ -68,6 +68,8 @@ type connstate = {
     mutable last_height : int64; (*** how up to date the node is ***)
   }
 
+val msgtype_handler : (msgtype,in_channel * out_channel * connstate * string -> unit) Hashtbl.t
+
 val netlistenerth : Thread.t option ref
 val netseekerth : Thread.t option ref
 val netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * connstate option ref)) list ref

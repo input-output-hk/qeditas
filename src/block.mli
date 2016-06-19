@@ -22,6 +22,7 @@ val genesisfuturestakemod : stakemod ref
 val genesisledgerroot : hashval ref
 val genesistarget : big_int ref
 val max_target : big_int ref
+val genesistimestamp : int64 ref
 
 val stakemod_pushbit : bool -> stakemod -> stakemod
 val stakemod_lastbit : stakemod -> bool
@@ -118,6 +119,10 @@ module DbBlockDeltaH :
       val dbdelete : Hash.hashval -> unit
     end
 
+val get_blockheader : hashval -> blockheader
+val get_blockdelta : hashval -> blockdelta
+val get_blockdeltah : hashval -> blockdeltah
+
 val coinstake : block -> tx
 
 val incrstake : int64 -> int64
@@ -130,11 +135,11 @@ val check_hit_b : int64 -> int64 -> obligation -> int64
   -> stakemod -> big_int -> int64 -> hashval -> p2pkhaddr -> postor option -> bool
 val check_hit_a : int64 -> int64 -> obligation -> int64
   -> targetinfo -> int64 -> hashval -> p2pkhaddr -> postor option -> bool
-val check_hit : int64 -> blockheaderdata -> int64 -> obligation -> int64 -> bool
+val check_hit : int64 -> targetinfo -> blockheaderdata -> int64 -> obligation -> int64 -> bool
 
 val hash_blockheaderdata : blockheaderdata -> hashval
 
-val valid_blockheader : int64 -> blockheader -> bool
+val valid_blockheader : int64 -> targetinfo -> blockheader -> bool
 
 val ctree_of_block : block -> ctree
 
@@ -146,7 +151,7 @@ val cumul_stake : big_int -> big_int -> int32 -> big_int
 val latesttht : ttree option ref
 val latestsigt : stree option ref
 
-val valid_block : ttree option -> stree option -> int64 -> block -> bool
+val valid_block : ttree option -> stree option -> int64 -> targetinfo -> block -> bool
 
 val blockheader_succ_a : int32 -> int64 -> targetinfo -> blockheader -> bool
 val blockheader_succ : blockheader -> blockheader -> bool

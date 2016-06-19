@@ -136,25 +136,56 @@ let sigtree : (hashval,Mathdata.stree) Hashtbl.t = Hashtbl.create 1000;;
 
 type validationstatus = Waiting of float | Valid | Invalid
 
-type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * targetinfo * int32 * int64 * big_int * int64 * validationstatus ref * bool ref * (hashval * blocktree) list ref
+type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * int64 * big_int * int64 * validationstatus ref * bool ref * (hashval * blocktree) list ref
 
-let genesistimestamp = 1456079627L;;
-let genesisblocktreenode = ref (BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),600l,genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []));;
+let genesisblocktreenode = ref (BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []));;
 
 let lastcheckpointnode = ref !genesisblocktreenode;;
 
 let bestnode = ref !genesisblocktreenode;;
 
+let node_recent_stakers n =
+  let BlocktreeNode(_,rs,_,_,_,_,_,_,_,_,_,_,_) = n in
+  !rs
+
 let node_prevblockhash n =
-  let BlocktreeNode(_,_,pbh,_,_,_,_,_,_,_,_,_,_,_,_) = n in
+  let BlocktreeNode(_,_,pbh,_,_,_,_,_,_,_,_,_,_) = n in
   pbh
 
+let node_theoryroot n =
+  let BlocktreeNode(_,_,_,tr,_,_,_,_,_,_,_,_,_) = n in
+  tr
+
+let node_signaroot n =
+  let BlocktreeNode(_,_,_,_,sr,_,_,_,_,_,_,_,_) = n in
+  sr
+
+let node_ledgerroot n =
+  let BlocktreeNode(_,_,_,_,_,lr,_,_,_,_,_,_,_) = n in
+  lr
+
+let node_targetinfo n =
+  let BlocktreeNode(_,_,_,_,_,_,ti,_,_,_,_,_,_) = n in
+  ti
+
 let node_timestamp n =
-  let BlocktreeNode(_,_,_,_,_,_,_,_,_,tm,_,_,_,_,_) = n in
+  let BlocktreeNode(_,_,_,_,_,_,_,tm,_,_,_,_,_) = n in
   tm
 
+let node_cumulstk n =
+  let BlocktreeNode(_,_,_,_,_,_,_,_,cs,_,_,_,_) = n in
+  cs
+
+let node_blockheight n =
+  let BlocktreeNode(_,_,_,_,_,_,_,_,_,blkh,_,_,_) = n in
+  blkh
+
+let node_children_ref n =
+  let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,_,_,chr) = n in
+  chr
+
 let print_best_node () =
-  let BlocktreeNode(_,_,pbh,_,_,_,_,_,_,_,_,_,_,_,_) = !bestnode in
+  let BlocktreeNode(_,_,pbh,_,_,_,_,_,_,_,_,_,_) = !bestnode in
   match pbh with
   | Some(h) -> Printf.fprintf !log "bestnode pbh %s\n" (hashval_hexstring h); flush !log
   | None -> Printf.fprintf !log "bestnode pbh (genesis)\n"; flush !log
@@ -168,7 +199,7 @@ let earlyblocktreenodes : (int64 * blocktree) list ref = ref [];;
 let tovalidatelist : (validationstatus ref * (unit -> unit)) list ref = ref [];;
 
 let initblocktree () =
-  genesisblocktreenode := BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),600l,genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []);
+  genesisblocktreenode := BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []);
   lastcheckpointnode := !genesisblocktreenode;
   bestnode := !genesisblocktreenode;
   Hashtbl.add blkheadernode None !genesisblocktreenode
@@ -246,8 +277,8 @@ let process_new_tx h hh =
 let rec processdelayednodes tm btnl =
   match btnl with
   | (tm2,n2)::btnr when tm2 <= tm ->
-    let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
-    let BlocktreeNode(_,_,pbh,_,_,_,_,_,_,_,newcumulstk,_,_,_,_) = n2 in
+    let BlocktreeNode(_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
+    let BlocktreeNode(_,_,pbh,_,_,_,_,_,newcumulstk,_,_,_,_) = n2 in
     if gt_big_int newcumulstk bestcumulstk then
       begin
         Printf.fprintf !log "New best blockheader %s\n" (match pbh with Some(h) -> hashval_hexstring h | None -> "(genesis)"); flush !log;
@@ -281,7 +312,7 @@ let add_to_headers_file h =
 let rec is_recent_staker stkaddr n i =
   if i > 0 then
     begin
-      let BlocktreeNode(par,stakers,_,_,_,_,_,_,_,_,_,_,_,_,_) = n in
+      let BlocktreeNode(par,stakers,_,_,_,_,_,_,_,_,_,_,_) = n in
       if List.mem stkaddr !stakers then
 	true
       else
@@ -295,7 +326,7 @@ let rec is_recent_staker stkaddr n i =
 let rec record_recent_staker stkaddr n i =
   if i > 0 then
     begin
-      let BlocktreeNode(par,stakers,_,_,_,_,_,_,_,_,_,_,_,_,_) = n in
+      let BlocktreeNode(par,stakers,_,_,_,_,_,_,_,_,_,_,_) = n in
       stakers := stkaddr::!stakers;
       match par with
       | Some(p) -> record_recent_staker stkaddr p (i-1)
@@ -310,15 +341,16 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
   begin
     try
       let prevnode = Hashtbl.find blkheadernode prevblkh in
-      let BlocktreeNode(_,_,_,thyroot,sigroot,ledgerroot,prevtinfo,currtinfo,deltm,tmstamp,prevcumulstk,blkhght,validated,blacklisted,succl) = prevnode in
+      let BlocktreeNode(_,_,_,thyroot,sigroot,ledgerroot,currtinfo,tmstamp,prevcumulstk,blkhght,validated,blacklisted,succl) = prevnode in
       if !blacklisted then (*** child of a blacklisted node, drop and blacklist it ***)
         begin
 	  DbBlacklist.dbput h true;
 	  DbBlockHeader.dbdelete h;
         end
-      else if valid_blockheader blkhght blkh1 && equ_tinfo blkhd1.tinfo currtinfo
-             && ((blkhght = 1L && blkhd1.prevblockhash = None && ctree_hashroot blkhd1.prevledger = !genesisledgerroot && blkhd1.deltatime = 600l)
-		 || (blkhght > 1L && blockheader_succ_a deltm tmstamp prevtinfo blkh1))
+      else if
+	valid_blockheader blkhght currtinfo blkh1
+          && 
+	blockheader_succ_a (Int64.to_int32 (Int64.sub blkhd1.timestamp tmstamp)) tmstamp currtinfo blkh1
       then
 	begin
           Hashtbl.add blkheaders h ();
@@ -332,7 +364,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 	  let tar2 = retarget tar1 blkhd1.deltatime in
           let newcumulstake = cumul_stake prevcumulstk tar1 blkhd1.deltatime in
 	  let validated = ref (if knownvalid then Valid else Waiting(Unix.time())) in
-          let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],Some(h),blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,(csm1,fsm1,tar1),(csm2,fsm2,tar2),blkhd1.deltatime,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
+          let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],Some(h),blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,(csm2,fsm2,tar2),blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
 	  (*** add it as a leaf, indicate that we want the block delta to validate it, and check if it's the best ***)
 	  Hashtbl.add blkheadernode (Some(h)) newnode;
           succl := (h,newnode)::!succl;
@@ -362,11 +394,11 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 		in
 		let blk = (blkh1,blkdel) in
 		if known_thytree_p thyroot && known_sigtree_p sigroot then (*** these should both be known if the parent block has been validated ***)
-		  if valid_block (lookup_thytree thyroot) (lookup_sigtree sigroot) blkhght blk then
+		  if valid_block (lookup_thytree thyroot) (lookup_sigtree sigroot) blkhght blkhd1.tinfo blk then
 		    begin (*** if valid_block succeeds, then latesttht and latestsigt will be set to the transformed theory tree and signature tree ***)
 		      validated := Valid;
 		      if not initialization then add_to_validheaders_file hh;
-                      let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
+                      let BlocktreeNode(_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
 		      if gt_big_int newcumulstake bestcumulstk then bestnode := newnode;
 		      add_thytree blkhd1.newtheoryroot !latesttht;
 		      add_sigtree blkhd1.newsignaroot !latestsigt;
@@ -397,7 +429,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
           if Int64.of_float (Unix.time()) < tmstamp then (*** delay it ***)
             earlyblocktreenodes := insertnewdelayed (tmstamp,newnode) !earlyblocktreenodes
           else
-            let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
+            let BlocktreeNode(_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
             if gt_big_int newcumulstake bestcumulstk then
 	      begin
                 Printf.fprintf !log "New best blockheader %s\n" hh; flush !log;
@@ -465,7 +497,7 @@ let init_headers () =
   init_headers_a (Filename.concat (datadir()) "headers") false
 
 let rec find_best_validated_block_from fromnode bestcumulstk =
-  let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,cumulstk,_,validatedp,blklistp,succl) = fromnode in
+  let BlocktreeNode(_,_,_,_,_,_,_,_,cumulstk,_,validatedp,blklistp,succl) = fromnode in
   if not !blklistp && !validatedp = Valid then
     begin
       let newbestcumulstk = ref

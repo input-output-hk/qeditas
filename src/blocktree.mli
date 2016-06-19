@@ -12,17 +12,26 @@ open Block
 
 type validationstatus = Waiting of float | Valid | Invalid
 
-type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * targetinfo * int32 * int64 * big_int * int64 * validationstatus ref * bool ref * (hashval * blocktree) list ref
+type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * int64 * big_int * int64 * validationstatus ref * bool ref * (hashval * blocktree) list ref
 
 val genesisblocktreenode : blocktree ref
 val lastcheckpointnode : blocktree ref
 val bestnode : blocktree ref
 val initblocktree : unit -> unit
+val node_recent_stakers : blocktree -> hashval list
 val node_prevblockhash : blocktree -> hashval option
+val node_theoryroot : blocktree -> hashval option
+val node_signaroot : blocktree -> hashval option
+val node_ledgerroot : blocktree -> hashval
+val node_targetinfo : blocktree -> targetinfo
 val node_timestamp : blocktree -> int64
+val node_cumulstk : blocktree -> big_int
+val node_blockheight : blocktree -> int64
+val node_children_ref : blocktree -> (hashval * blocktree) list ref
 val eq_node : blocktree -> blocktree -> bool
 val find_best_validated_block_from : blocktree -> big_int -> big_int
 val is_recent_staker : hashval -> blocktree -> int -> bool
+val record_recent_staker : hashval -> blocktree -> int -> unit
 
 val print_best_node : unit -> unit
 

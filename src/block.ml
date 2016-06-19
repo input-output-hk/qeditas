@@ -21,6 +21,7 @@ type stakemod = int64 * int64 * int64 * int64
 
 let genesiscurrentstakemod : stakemod ref = ref (0L,0L,0L,0L)
 let genesisfuturestakemod : stakemod ref = ref (0L,0L,0L,0L)
+let genesistimestamp : int64 ref = ref 1465759361L
 
 let set_genesis_stakemods x =
   let (x4,x3,x2,x1,x0) = hexstring_hashval x in
@@ -375,6 +376,27 @@ module DbBlockHeader = Dbbasic (struct type t = blockheader let basedir = "block
 module DbBlockDelta = Dbbasic (struct type t = blockdelta let basedir = "blockdelta" let seival = sei_blockdelta seic let seoval = seo_blockdelta seoc end)
 module DbBlockDeltaH = Dbbasic (struct type t = blockdeltah let basedir = "blockdeltah" let seival = sei_blockdeltah seic let seoval = seo_blockdeltah seoc end)
 
+let get_blockheader h = 
+  try
+    DbBlockHeader.dbget h
+  with Not_found -> (*** request it and fail ***)
+(*** missing code to ask peers for data ***)
+    raise GettingRemoteData
+
+let get_blockdelta h = 
+  try
+    DbBlockDelta.dbget h
+  with Not_found -> (*** request it and fail ***)
+(*** missing code to ask peers for data ***)
+    raise GettingRemoteData
+
+let get_blockdeltah h = 
+  try
+    DbBlockDeltaH.dbget h
+  with Not_found -> (*** request it and fail ***)
+(*** missing code to ask peers for data ***)
+    raise GettingRemoteData
+
 let blockdelta_blockdeltah bd =
   (bd.stakeoutput,bd.forfeiture,bd.prevledgergraft,List.map (fun (tau,_) -> hashtx tau) bd.blockdelta_stxl)
 
@@ -510,8 +532,8 @@ let check_hit_a blkh bday obl v tinf tmstmp stkid stkaddr strd =
   let (csm,fsm,tar) = tinf in
   check_hit_b blkh bday obl v csm tar tmstmp stkid stkaddr strd
 
-let check_hit blkh bh bday obl v =
-  check_hit_a blkh bday obl v bh.tinfo bh.timestamp bh.stakeassetid bh.stakeaddr bh.stored
+let check_hit blkh tinf bh bday obl v =
+  check_hit_a blkh bday obl v tinf bh.timestamp bh.stakeassetid bh.stakeaddr bh.stored
 
 let coinstake b =
   let ((bhd,bhs),bd) = b in
@@ -537,7 +559,7 @@ let hash_blockheaderdata bh =
 		   (hashpair (hashint64 bh.timestamp) (hashint32 bh.deltatime))
 		   (ctree_hashroot bh.prevledger))))))
 
-let valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v) =
+let valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v) =
   begin
     match bhs.blocksignatendorsement with
     | None -> verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) bhd.stakeaddr bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
@@ -549,7 +571,7 @@ let valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v) =
     &&
   bhd.stakeassetid = aid
     &&
-  check_hit blkh bhd bday obl v
+  check_hit blkh tinfo bhd bday obl v
     &&
   bhd.deltatime > 0l
     &&
@@ -573,10 +595,10 @@ let valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v) =
 	end
   end
 
-let valid_blockheader blkh (bhd,bhs) =
+let valid_blockheader blkh tinfo (bhd,bhs) =
   match ctree_lookup_asset bhd.stakeassetid bhd.prevledger (addr_bitseq (p2pkhaddr_addr bhd.stakeaddr)) with
   | Some(aid,bday,obl,Currency(v)) -> (*** stake belongs to staker ***)
-      valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v)
+      valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v)
   | _ -> false
 
 let ctree_of_block (b:block) =
@@ -650,10 +672,10 @@ let check_poforfeit blkh ((bhd1,bhs1),(bhd2,bhs2),bhl1,bhl2,v,fal) tr =
 let latesttht : ttree option ref = ref None
 let latestsigt : stree option ref = ref None
 
-let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
+let valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs =
   let ((bhd,bhs),bd) = b in
   (*** The header is valid. ***)
-  valid_blockheader_a blkh (bhd,bhs) (aid,bday,obl,v)
+  valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v)
     &&
   tx_outputs_valid bd.stakeoutput
     &&
@@ -873,13 +895,13 @@ let valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs =
   latestsigt := newsigt;
   bhd.newsignaroot = ostree_hashroot newsigt
 
-let valid_block tht sigt blkh (b:block) =
+let valid_block tht sigt blkh tinfo (b:block) =
   let ((bhd,_),_) = b in
   let stkaddr = p2pkhaddr_addr bhd.stakeaddr in
   let stkaddrbs = addr_bitseq stkaddr in
   match ctree_lookup_asset bhd.stakeassetid bhd.prevledger stkaddrbs with
   | Some(aid,bday,obl,Currency(v)) -> (*** stake belongs to staker ***)
-      valid_block_a tht sigt blkh b (aid,bday,obl,v) stkaddr stkaddrbs
+      valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs
   | _ -> false
 
 type blockchain = block * block list
@@ -931,8 +953,9 @@ let rec valid_blockchain_aux blkh bl =
   match bl with
   | ((bh,bd)::(pbh,pbd)::br) ->
       if blkh > 1L then
+	let (pbhd,_) = pbh in
 	let (tht,sigt) = valid_blockchain_aux (Int64.sub blkh 1L) ((pbh,pbd)::br) in
-	if blockheader_succ pbh bh && valid_block tht sigt blkh (bh,bd) then
+	if blockheader_succ pbh bh && valid_block tht sigt blkh pbhd.tinfo (bh,bd) then
 	  (txout_update_ottree (tx_outputs (tx_of_block (bh,bd))) tht,
 	   txout_update_ostree (tx_outputs (tx_of_block (bh,bd))) sigt)
 	else
@@ -941,11 +964,10 @@ let rec valid_blockchain_aux blkh bl =
 	raise NotSupported
   | [(bh,bd)] ->
       let (bhd,bhs) = bh in
-      if blkh = 1L && valid_block None None blkh (bh,bd)
+      if blkh = 1L && valid_block None None blkh (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bh,bd)
 	  && bhd.prevblockhash = None
 	  && ctree_hashroot bhd.prevledger = !genesisledgerroot
-	  && eq_tinfo bhd.tinfo (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
-	  && bhd.deltatime = 600l
+	  && blockheader_succ_a (Int64.to_int32 (Int64.sub bhd.timestamp !genesistimestamp)) !genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) bh
       then
 	(txout_update_ottree (tx_outputs (tx_of_block (bh,bd))) None,
 	 txout_update_ostree (tx_outputs (tx_of_block (bh,bd))) None)
@@ -964,23 +986,22 @@ let rec valid_blockheaderchain_aux blkh bhl =
   match bhl with
   | (bh::pbh::bhr) ->
       if blkh > 1L then
+	let (pbhd,_) = pbh in
 	valid_blockheaderchain_aux (Int64.sub blkh 1L) (pbh::bhr)
 	  && blockheader_succ pbh bh
-	  && valid_blockheader blkh bh
+	  && valid_blockheader blkh pbhd.tinfo bh
       else
 	false
   | [(bhd,bhs)] ->
       blkh = 1L
 	&&
-      valid_blockheader blkh (bhd,bhs)
+      valid_blockheader blkh (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bhd,bhs)
 	&&
       bhd.prevblockhash = None
 	&&
       ctree_hashroot bhd.prevledger = !genesisledgerroot
 	&&
-      eq_tinfo bhd.tinfo (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget)
-	&&
-      bhd.deltatime = 600l
+      blockheader_succ_a (Int64.to_int32 (Int64.sub bhd.timestamp !genesistimestamp)) !genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bhd,bhs)
   | [] -> false
 
 let valid_blockheaderchain blkh bhc =
