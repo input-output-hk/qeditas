@@ -190,16 +190,34 @@ let hashval_from_addrstr b =
   let (_,_,x0,x1,x2,x3,x4,_) = big_int_md256 (frombase58 b) in
   (x0,x1,x2,x3,x4)
 
+let calc_checksum pre rm1 =
+  let s = Buffer.create 21 in
+  Buffer.add_char s (Char.chr (pre mod 256));
+  let c = seo_hashval seosb rm1 (s,None) in
+  seosbf c;
+  let (sh30,_,_,_,_,_,_,_) = sha256dstr (Buffer.contents s) in
+  sh30
+
 let qedaddrstr_addr b =
-  let (_,p,x0,x1,x2,x3,x4,_) = big_int_md256 (frombase58 b) in
+  let (_,p,x0,x1,x2,x3,x4,cksm) = big_int_md256 (frombase58 b) in
+  if p < 0l || p > 8000l then raise (Failure "Not a valid Qeditas address (bad prefix)");
+  if not (cksm = calc_checksum (Int32.to_int p) (x0,x1,x2,x3,x4)) then raise (Failure "Not a valid Qeditas address (checksum incorrect)");
   if p = 58l then
-    (0,x0,x1,x2,x3,x4)
+    if !Config.testnet then raise (Failure "Qeditas mainnet address given while using testnet") else (0,x0,x1,x2,x3,x4)
   else if p = 120l then
-    (1,x0,x1,x2,x3,x4)
+    if !Config.testnet then raise (Failure "Qeditas mainnet address given while using testnet") else (1,x0,x1,x2,x3,x4)
   else if p = 66l then
-    (2,x0,x1,x2,x3,x4)
+    if !Config.testnet then raise (Failure "Qeditas mainnet address given while using testnet") else (2,x0,x1,x2,x3,x4)
   else if p = 56l then
-    (3,x0,x1,x2,x3,x4)
+    if !Config.testnet then raise (Failure "Qeditas mainnet address given while using testnet") else (3,x0,x1,x2,x3,x4)
+  else if p = 7409l then
+    if not !Config.testnet then raise (Failure "Qeditas testnet address given while using mainnet") else (0,x0,x1,x2,x3,x4)
+  else if p = 7471l then
+    if not !Config.testnet then raise (Failure "Qeditas testnet address given while using mainnet") else (1,x0,x1,x2,x3,x4)
+  else if p = 7416l then
+    if not !Config.testnet then raise (Failure "Qeditas testnet address given while using mainnet") else (2,x0,x1,x2,x3,x4)
+  else if p = 7406l then
+    if not !Config.testnet then raise (Failure "Qeditas testnet address given while using mainnet") else (3,x0,x1,x2,x3,x4)
   else
     raise (Failure "Not a Qeditas address")
 
@@ -224,23 +242,17 @@ let hashval_btcaddrstr rm1 =
   ((String.make (c0+1) '1') ^ (base58 a))
 
 let hashval_gen_addrstr pre rm1 =
-  let s = Buffer.create 21 in
-  Buffer.add_char s (Char.chr pre);
-  let c = seo_hashval seosb rm1 (s,None) in
-  seosbf c;
-  let (sh30,_,_,_,_,_,_,_) = sha256dstr (Buffer.contents s) in
+  let sh30 = calc_checksum pre rm1 in
   let (rm10,rm11,rm12,rm13,rm14) = rm1 in
   let a = md256_big_int (0l,Int32.of_int pre,rm10,rm11,rm12,rm13,rm14,sh30) in
   base58 a
 
 let addr_qedaddrstr alpha =
   let (p,x0,x1,x2,x3,x4) = alpha in
-  if p = 0 then
-    hashval_gen_addrstr 58 (x0,x1,x2,x3,x4)
-  else if p = 1 then
-    hashval_gen_addrstr 120 (x0,x1,x2,x3,x4)
-  else if p = 2 then
-    hashval_gen_addrstr 66 (x0,x1,x2,x3,x4)
-  else
-    hashval_gen_addrstr 56 (x0,x1,x2,x3,x4)
-
+  let pre =
+    if !Config.testnet then
+      if p = 0 then 7409 else if p = 1 then 7471 else if p = 2 then 7416 else 7406
+    else
+      if p = 0 then 58 else if p = 1 then 120 else if p = 2 then 66 else 56
+  in
+  hashval_gen_addrstr pre (x0,x1,x2,x3,x4)
