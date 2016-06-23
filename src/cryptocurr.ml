@@ -256,3 +256,30 @@ let addr_qedaddrstr alpha =
       if p = 0 then 58 else if p = 1 then 120 else if p = 2 then 66 else 56
   in
   hashval_gen_addrstr pre (x0,x1,x2,x3,x4)
+
+let fraenks_of_cants v =
+  let w = Int64.div v 100000000000L in
+  let d = Int64.to_string (Int64.rem v 100000000000L) in
+  let dl = String.length d in
+  let ez = ref 0 in
+  begin
+    try
+      for i = dl-1 downto 0 do
+	if d.[i] = '0' then
+	  incr ez
+	else
+	  raise Exit
+      done
+    with Exit -> ()
+  end;
+  let b = Buffer.create 20 in
+  Buffer.add_string b (Int64.to_string w);
+  Buffer.add_char b '.';
+  for i = 1 to 11 - dl do
+    Buffer.add_char b '0'
+  done;
+  for i = 0 to dl - (1 + !ez) do
+    Buffer.add_char b d.[i]
+  done;
+  Buffer.contents b
+

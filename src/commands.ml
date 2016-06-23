@@ -303,7 +303,8 @@ let importendorsement a b s =
       match verifybitcoinmessage_recover (x4,x3,x2,x1,x0) recid fcomp esg ("endorse " ^ b) with
       | None -> raise (Failure "endorsement signature verification failed; not adding endorsement to wallet")
       | Some(x,y) ->
-	  Printf.printf "just verified endorsement signature:\naddrhex = %s\nrecid = %d\nfcomp = %s\nesgr = %s\nesgs = %s\nendorse %s\n" (hashval_hexstring (x4,x3,x2,x1,x0)) recid (if fcomp then "true" else "false") (let (r,s) = esg in string_of_big_int r) (let (r,s) = esg in string_of_big_int s) b; flush stdout;
+(*	  Printf.printf "just verified endorsement signature:\naddrhex = %s\nrecid = %d\nfcomp = %s\nesgr = %s\nesgs = %s\nendorse %s\n" (hashval_hexstring (x4,x3,x2,x1,x0)) recid (if fcomp then "true" else "false") (let (r,s) = esg in string_of_big_int r) (let (r,s) = esg in string_of_big_int s) b; flush stdout; *)
+	  Printf.printf "Verified endorsement; adding to wallet.\n";
 	  walletendorsements := (alphap,betap,(x,y),recid,fcomp,esg)::!walletendorsements;
 	  save_wallet() (*** overkill, should append if possible ***)
     end
@@ -338,9 +339,13 @@ let printassets_in_ledger ledgerroot =
   let ctr = Ctre.CHash(ledgerroot) in
   let warned = ref false in
   let al1 = ref [] in
+  let tot1 = ref 0L in
   let al2 = ref [] in
+  let tot2 = ref 0L in
   let al3 = ref [] in
+  let tot3 = ref 0L in
   let al4 = ref [] in
+  let tot4 = ref 0L in
   let handler f =
     try
       for i = 1 to 20 do
@@ -390,6 +395,11 @@ let printassets_in_ledger ledgerroot =
     (fun alpha ->
       handler (fun () -> al4 := (alpha,Ctre.ctree_addr alpha ctr None)::!al4))
     !walletwatchaddrs;
+  let sumcurr tot a =
+    match a with
+    | (_,_,_,Currency(v)) -> tot := Int64.add !tot v
+    | _ -> ()
+  in
   Printf.printf "Assets in ledger with root %s:\n" (hashval_hexstring ledgerroot);
   Printf.printf "Controlled p2pkh assets:\n";
   List.iter
@@ -397,7 +407,7 @@ let printassets_in_ledger ledgerroot =
       match x with
       | (Some(hl),_) ->
 	  Printf.printf "%s:\n" z;
-	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
+	  Ctre.print_hlist_gen (Ctre.nehlist_hlist hl) (sumcurr tot1)
       | (None,_) ->
 	  Printf.printf "%s: empty\n" z;
       | _ ->
@@ -410,7 +420,7 @@ let printassets_in_ledger ledgerroot =
       match x with
       | (Some(hl),_) ->
 	  Printf.printf "%s:\n" z;
-	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
+	  Ctre.print_hlist_gen (Ctre.nehlist_hlist hl) (sumcurr tot2)
       | (None,_) ->
 	  Printf.printf "%s: empty\n" z;
       | _ ->
@@ -423,7 +433,7 @@ let printassets_in_ledger ledgerroot =
       match x with
       | (Some(hl),_) ->
 	  Printf.printf "%s:\n" (addr_qedaddrstr alpha2);
-	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
+	  Ctre.print_hlist_gen (Ctre.nehlist_hlist hl) (sumcurr tot3)
       | (None,_) ->
 	  Printf.printf "%s: empty\n" (addr_qedaddrstr alpha2);
       | _ ->
@@ -436,13 +446,17 @@ let printassets_in_ledger ledgerroot =
       match x with
       | (Some(hl),_) ->
 	  Printf.printf "%s:\n" (addr_qedaddrstr alpha);
-	  Ctre.print_hlist (Ctre.nehlist_hlist hl)
+	  Ctre.print_hlist_gen (Ctre.nehlist_hlist hl) (sumcurr tot4)
       | (None,_) ->
 	  Printf.printf "%s: empty\n" (addr_qedaddrstr alpha);
       | _ ->
 	  Printf.printf "%s: no information\n" (addr_qedaddrstr alpha);
     )
-    !al4
+    !al4;
+  Printf.printf "Total p2pkh: %s fraenks\n" (fraenks_of_cants !tot1);
+  Printf.printf "Total p2sh: %s fraenks\n" (fraenks_of_cants !tot2);
+  Printf.printf "Total via endorsement: %s fraenks\n" (fraenks_of_cants !tot3);
+  Printf.printf "Total watched: %s fraenks\n" (fraenks_of_cants !tot4)
 
 let printassets () =
   let BlocktreeNode(_,_,_,_,_,ledgerroot,_,_,_,_,_,_,_) = !bestnode in

@@ -97,6 +97,7 @@ val sei_nehlist : (int -> 'a -> int * 'a) -> 'a -> nehlist * 'a
 val seo_ctree : (int -> int -> 'a -> 'a) -> ctree -> 'a -> 'a
 val sei_ctree : (int -> 'a -> int * 'a) -> 'a -> ctree * 'a
 
+val print_hlist_gen : hlist -> (asset -> unit) -> unit
 val print_hlist : hlist -> unit
 val print_hlist_to_buffer : Buffer.t -> int64 -> hlist -> unit
 val print_ctree : ctree -> unit

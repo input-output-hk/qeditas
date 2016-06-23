@@ -152,91 +152,76 @@ let rec print_ctree_r c n =
 
 let print_ctree c = print_ctree_r c 0
 
-let fraenks_of_cants v =
-  let w = Int64.div v 100000000000L in
-  let d = Int64.to_string (Int64.rem v 100000000000L) in
-  let dl = String.length d in
-  let ez = ref 0 in
-  begin
-    try
-      for i = dl-1 downto 0 do
-	if d.[i] = '0' then
-	  incr ez
-	else
-	  raise Exit
-      done
-    with Exit -> ()
-  end;
-  let b = Buffer.create 20 in
-  Buffer.add_string b (Int64.to_string w);
-  Buffer.add_char b '.';
-  for i = 1 to 11 - dl do
-    Buffer.add_char b '0'
-  done;
-  for i = 0 to dl - (1 + !ez) do
-    Buffer.add_char b d.[i]
-  done;
-  Buffer.contents b
-
-let rec print_hlist hl =
+let rec print_hlist_gen hl f =
   match hl with
   | HHash(h) -> Printf.printf "...%s...\n" (hashval_hexstring h)
   | HNil -> ()
-  | HCons((aid,bday,obl,Currency(v)),hr) ->
+  | HCons((aid,bday,obl,Currency(v)) as a,hr) ->
       begin
 	Printf.printf "%s [%Ld] Currency %s fraenk%s (%Ld cant%s)\n" (hashval_hexstring aid) bday (fraenks_of_cants v) (if v = 100000000000L then "" else "s") v (if v = 1L then "" else "s");
-	print_hlist hr
+	f a;
+	print_hlist_gen hr f
       end
-  | HCons((aid,bday,obl,Bounty(v)),hr) ->
+  | HCons((aid,bday,obl,Bounty(v)) as a,hr) ->
       begin
 	Printf.printf "%s [%Ld] Bounty %s fraenk%s (%Ld cant%s)\n" (hashval_hexstring aid) bday (fraenks_of_cants v) (if v = 100000000000L then "" else "s") v (if v = 1L then "" else "s");
-	print_hlist hr
+	f a;
+	print_hlist_gen hr f
       end
-  | HCons((aid,bday,obl,OwnsObj(gamma,Some(r))),hr) ->
+  | HCons((aid,bday,obl,OwnsObj(gamma,Some(r))) as a,hr) ->
       begin
 	Printf.printf "%s [%Ld] OwnsObj %s royalty fee %s fraenk%s\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma)) (fraenks_of_cants r) (if r = 100000000000L then "" else "s");
-	print_hlist hr
+	print_hlist_gen hr f
       end
-  | HCons((aid,bday,obl,OwnsObj(gamma,None)),hr) ->
+  | HCons((aid,bday,obl,OwnsObj(gamma,None)) as a,hr) ->
       begin
 	Printf.printf "%s [%Ld] OwnsObj %s None\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma));
-	print_hlist hr
+	f a;
+	print_hlist_gen hr f
       end
-  | HCons((aid,bday,obl,OwnsProp(gamma,Some(r))),hr) ->
+  | HCons((aid,bday,obl,OwnsProp(gamma,Some(r))) as a,hr) ->
       begin
 	Printf.printf "%s [%Ld] OwnsProp %s royalty fee %s fraenk%s\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma)) (fraenks_of_cants r) (if r = 100000000000L then "" else "s");
-	print_hlist hr
+	f a;
+	print_hlist_gen hr f
       end
-  | HCons((aid,bday,obl,OwnsProp(gamma,None)),hr) ->
+  | HCons((aid,bday,obl,OwnsProp(gamma,None)) as a,hr) ->
       begin
 	Printf.printf "%s [%Ld] OwnsProp %s None\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma));
-	print_hlist hr
+	f a;
+	print_hlist_gen hr f
       end
-  | HCons((aid,bday,obl,OwnsNegProp),hr) ->
+  | HCons((aid,bday,obl,OwnsNegProp) as a,hr) ->
       begin
 	Printf.printf "%s [%Ld] OwnsNegProp\n" (hashval_hexstring aid) bday;
-	print_hlist hr
+	f a;
+	print_hlist_gen hr f
       end
-  | HCons((aid,bday,obl,RightsObj(gamma,r)),hr) ->
+  | HCons((aid,bday,obl,RightsObj(gamma,r)) as a,hr) ->
       begin
 	Printf.printf "%s [%Ld] RightsObj %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (termaddr_addr gamma)) r;
-	print_hlist hr
+	f a;
+	print_hlist_gen hr f
       end
-  | HCons((aid,bday,obl,RightsProp(gamma,r)),hr) ->
+  | HCons((aid,bday,obl,RightsProp(gamma,r)) as a,hr) ->
       begin
 	Printf.printf "%s [%Ld] RightsProp %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (termaddr_addr gamma)) r;
-	print_hlist hr
+	f a;
+	print_hlist_gen hr f
       end
-  | HCons((aid,bday,obl,v),hr) ->
+  | HCons((aid,bday,obl,v) as a,hr) ->
       begin
 	Printf.printf "%s [%Ld]\n" (hashval_hexstring aid) bday;
-	print_hlist hr
+	f a;
+	print_hlist_gen hr f
       end
   | HConsH(aid,hr) ->
       begin
 	Printf.printf "%s *\n" (hashval_hexstring aid);
-	print_hlist hr
+	print_hlist_gen hr f
       end
+
+let print_hlist hl = print_hlist_gen hl (fun _ -> ())
 
 let right_trim c s =
   let l = ref ((String.length s) - 1) in
