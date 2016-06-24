@@ -282,21 +282,41 @@ let stakingthread () =
 			  Printf.printf "looked up assets\n"; flush stdout; (* delete me *) 
 			  if tx_signatures_valid blkh al ((tauin,tauout),sg) then
 			    begin
-			      Printf.printf "sigs valid\n"; flush stdout; (* delete me *) 
-			      let fee = ctree_supports_tx true false !dyntht !dynsigt blkh (tauin,tauout) !dync in
- 			      Printf.printf "fee %Ld\n" fee; flush stdout; (* delete me *)
-			      if fee <= 0L then
+			      let nfee = ctree_supports_tx true false !dyntht !dynsigt blkh (tauin,tauout) !dync in
+			      if nfee > 0L then
+				begin
+				  Printf.fprintf !log "tx %s has negative fees %Ld; removing from pool\n" (hashval_hexstring h) nfee;
+				  flush !log;
+				  Commands.remove_from_txpool h;
+				end
+			      else
 				begin
 				  Printf.printf "ctree supports tx\n"; flush stdout; (* delete me *) 
 				  let c = octree_ctree (tx_octree_trans blkh (tauin,tauout) (Some(!dync))) in
 				  otherstxs := (h,((tauin,tauout),sg))::!otherstxs;
-				  fees := Int64.sub !fees fee;
+				  fees := Int64.sub !fees nfee;
 				  dync := c;
 				  dyntht := txout_update_ottree tauout !dyntht;
 				  dynsigt := txout_update_ostree tauout !dynsigt;
 				end
 			    end
-			with _ -> ())
+			  else
+			    begin
+			      Printf.fprintf !log "tx %s has an invalid signature; removing from pool\n" (hashval_hexstring h);
+			      flush !log;
+			      Commands.remove_from_txpool h;
+			    end
+			with exn ->
+			  begin
+			    Printf.fprintf !log "Exception %s raised while trying to validate tx %s; this may mean the tx is not yet supported so leaving it in the pool\n" (Printexc.to_string exn) (hashval_hexstring h);
+			    flush !log;
+			  end
+		      else
+			begin
+			  Printf.fprintf !log "tx %s is invalid; removing from pool\n" (hashval_hexstring h);
+			  flush !log;
+			  Commands.remove_from_txpool h;
+			end)
 		  Commands.txpool;
 		let ostxs = !otherstxs in
 		let otherstxs = ref [] in
