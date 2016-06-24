@@ -19,6 +19,14 @@ open Block;;
 open Blocktree;;
 open Setconfig;;
 
+let exitfn : (int -> unit) ref = ref (fun n -> exit n);;
+
+let lock datadir =
+  let lf = Filename.concat datadir ".lock" in
+  let c = open_out lf in
+  close_out c;
+  exitfn := (fun n -> Sys.remove lf; exit n);;
+
 let stkth : Thread.t option ref = ref None;;
 
 let initnetwork () =
@@ -403,15 +411,15 @@ let stakingthread () =
 		  if valid_blockheader blkh (csm0,fsm0,tar0) bhnew then
 		    (Printf.fprintf !log "New block header is valid\n"; flush !log)
 		  else
-		    (Printf.fprintf !log "New block header is not valid\n"; flush !log; exit 0; raise Not_found);
+		    (Printf.fprintf !log "New block header is not valid\n"; flush !log; !exitfn 1; raise Not_found);
 		  if valid_block None None blkh (csm0,fsm0,tar0) (bhnew,bdnew) then
 		    (Printf.fprintf !log "New block is valid\n"; flush stdout)
 		  else
-		    (Printf.fprintf !log "New block is not valid\n"; flush !log; exit 0; raise Not_found);
+		    (Printf.fprintf !log "New block is not valid\n"; flush !log; !exitfn 1; raise Not_found);
 		  match pbhh with
-		  | None -> if blkh > 1L then (Printf.fprintf !log "No previous block but block height not 1\n"; flush !log; exit 0; raise Not_found)
+		  | None -> if blkh > 1L then (Printf.fprintf !log "No previous block but block height not 1\n"; flush !log; !exitfn 1; raise Not_found)
 		  | Some(pbhh) ->
-		      if blkh = 1L then (Printf.fprintf !log "Previous block indicated but block height is 1\n"; flush !log; exit 0; raise Not_found);
+		      if blkh = 1L then (Printf.fprintf !log "Previous block indicated but block height is 1\n"; flush !log; !exitfn 1; raise Not_found);
 		      let (pbhd,_) = get_blockheader pbhh in
 		      let tmpsucctest bhd1 bhd2 =
 			bhd2.timestamp = Int64.add bhd1.timestamp (Int64.of_int32 bhd2.deltatime)
@@ -427,7 +435,7 @@ let stakingthread () =
 		      if tmpsucctest pbhd bhdnew then
 			(Printf.fprintf !log "Valid successor block\n"; flush !log)
 		      else
-			(Printf.fprintf !log "Not a valid successor block\n"; flush !log; exit 0; raise Not_found)
+			(Printf.fprintf !log "Not a valid successor block\n"; flush !log; !exitfn 1; raise Not_found)
 		end;
 		let csnew = cumul_stake cs tar bhdnew.deltatime in
 		let nw = Unix.time() in
@@ -520,7 +528,7 @@ let do_command l =
   | "exit" ->
       (*** Could call Thread.kill on netth and stkth, but Thread.kill is not always implemented. ***)
       closelog();
-      exit 0
+      !exitfn 0
   | "getpeerinfo" ->
       remove_dead_conns();
       let ll = List.length !netconns in
@@ -594,8 +602,15 @@ let initialize () =
     datadir_from_command_line(); (*** if -datadir=... is on the command line, then set Config.datadir so we can find the config file ***)
     process_config_file();
     process_config_args(); (*** settings on the command line shadow those in the config file ***)
-    if not !Config.testnet then (Printf.printf "Qeditas can only be run on testnet for now. Please give the -testnet command line argument.\n"; exit 0);
+    if not !Config.testnet then (Printf.printf "Qeditas can only be run on testnet for now. Please give the -testnet command line argument.\n"; exit 1);
     let datadir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
+    if Sys.file_exists (Filename.concat datadir ".lock") then
+      begin
+	Printf.printf "Cannot start Qeditas. Do you already have Qeditas running? If not, remove the file %s.\n" (Filename.concat datadir ".lock");
+	flush stdout;
+	exit 1;
+      end;
+    lock datadir;
     let dbdir = Filename.concat datadir "db" in
     dbconfig dbdir; (*** configure the database ***)
     openlog(); (*** Don't open the log until the config vars are set, so if we know whether or not it's testnet. ***)
@@ -644,7 +659,7 @@ while true do
     do_command l
   with
   | Exit -> () (*** silently ignore ***)
-  | End_of_file -> closelog(); exit 0
+  | End_of_file -> closelog(); !exitfn 0
   | Failure(x) ->
       Printf.fprintf stdout "Ignoring Uncaught Failure: %s\n" x; flush stdout
   | exn -> (*** unexpected ***)
