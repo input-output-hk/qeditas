@@ -1461,10 +1461,10 @@ let rec ctree_supports_output_addrs exp req outpl tr =
 
 (*** return the fee (negative) or reward (positive) if supports tx, otherwise raise NotSupported ***)
 (*** this does not request remote data and does not allow local expansions of hash abbrevs ***)
-let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
+let ctree_supports_tx_2 exp req tht sigt blkh tx aal al tr =
   let (inpl,outpl) = tx in
   (*** Each output address must be supported. ***)
-  ctree_supports_output_addrs false false outpl tr;
+  ctree_supports_output_addrs exp req outpl tr;
   let objaddrs = obj_rights_mentioned outpl in
   let propaddrs = prop_rights_mentioned outpl in
   let susesobjs = output_signaspec_uses_objs outpl in
@@ -1480,12 +1480,12 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
   let createsnegpropsaddrs2 = List.map (fun (th,h) -> hashval_term_addr (hashtag (hashopair2 th h) 33l)) (output_creates_neg_props outpl) in
   (*** If an object or prop is included in a signaspec, then it must be royalty-free to use. ***)
   List.iter (fun (alphapure,alphathy) ->
-    let hl = ctree_lookup_addr_assets false false tr (addr_bitseq (termaddr_addr alphapure)) in
-    match hlist_lookup_obj_owner false false hl with
+    let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq (termaddr_addr alphapure)) in
+    match hlist_lookup_obj_owner exp req hl with
     | Some(_,Some(r)) when r = 0L ->
 	begin
-	  let hl = ctree_lookup_addr_assets false false tr (addr_bitseq (termaddr_addr alphathy)) in
-	  match hlist_lookup_obj_owner false false hl with
+	  let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq (termaddr_addr alphathy)) in
+	  match hlist_lookup_obj_owner exp req hl with
 	  | Some(_,Some(r)) when r = 0L -> ()
 	  | _ -> raise NotSupported
 	end
@@ -1493,12 +1493,12 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
     )
     susesobjs;
   List.iter (fun (alphapure,alphathy) ->
-    let hl = ctree_lookup_addr_assets false false tr (addr_bitseq (termaddr_addr alphapure)) in
-    match hlist_lookup_prop_owner false false hl with
+    let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq (termaddr_addr alphapure)) in
+    match hlist_lookup_prop_owner exp req hl with
     | Some(_,Some(r)) when r = 0L ->
 	begin
-	  let hl = ctree_lookup_addr_assets false false tr (addr_bitseq (termaddr_addr alphathy)) in
-	  match hlist_lookup_prop_owner false false hl with
+	  let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq (termaddr_addr alphathy)) in
+	  match hlist_lookup_prop_owner exp req hl with
 	  | Some(_,Some(r)) when r = 0L -> ()
 	  | _ -> raise NotSupported
 	end
@@ -1519,9 +1519,9 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
     al;
   (*** ensure rights are balanced ***)
   List.iter (fun alpha ->
-    let hl = ctree_lookup_addr_assets false false tr (addr_bitseq (termaddr_addr alpha)) in
-    if hlist_full_approx false false hl &&
-      ctree_rights_balanced tr alpha (hlist_lookup_obj_owner false false hl)
+    let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq (termaddr_addr alpha)) in
+    if hlist_full_approx exp req hl &&
+      ctree_rights_balanced tr alpha (hlist_lookup_obj_owner exp req hl)
 	(Int64.of_int (count_rights_used usesobjs alpha))
 	(rights_out_obj outpl alpha)
 	(count_obj_rights al alpha)
@@ -1532,9 +1532,9 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
       raise NotSupported)
     objaddrs;
   List.iter (fun alpha ->
-    let hl = ctree_lookup_addr_assets false false tr (addr_bitseq (termaddr_addr alpha)) in
-    if hlist_full_approx false false hl &&
-      ctree_rights_balanced tr alpha (hlist_lookup_prop_owner false false hl)
+    let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq (termaddr_addr alpha)) in
+    if hlist_full_approx exp req hl &&
+      ctree_rights_balanced tr alpha (hlist_lookup_prop_owner exp req hl)
 	(Int64.of_int (count_rights_used usesprops alpha))
 	(rights_out_prop outpl alpha)
 	(count_prop_rights al alpha)
@@ -1546,7 +1546,7 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
     propaddrs;
   (*** publications are correct, new, and were declared in advance by placing a marker in the right pubaddr ***)
   let ensure_addr_empty alpha =
-    match ctree_lookup_addr_assets false false tr (addr_bitseq alpha) with
+    match ctree_lookup_addr_assets exp req tr (addr_bitseq alpha) with
     | HNil -> ()
     | _ -> raise NotSupported
   in
@@ -1586,15 +1586,15 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	    try
 	      let gvtp th h a =
 		let alpha = hashval_term_addr (hashtag (hashopair2 th (hashpair h (hashtp a))) 32l) in
-		let hl = ctree_lookup_addr_assets false false tr (addr_bitseq alpha) in
-		match hlist_lookup_obj_owner false false hl with
+		let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq alpha) in
+		match hlist_lookup_obj_owner exp req hl with
 		| Some(beta,r) -> true
 		| None -> false
 	      in
 	      let gvkn th k =
 		let alpha = hashval_term_addr (hashtag (hashopair2 th k) 33l) in
-		let hl = ctree_lookup_addr_assets false false tr (addr_bitseq alpha) in
-		match hlist_lookup_prop_owner false false hl with (*** A proposition has been proven in a theory iff it has an owner. ***)
+		let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq alpha) in
+		match hlist_lookup_prop_owner exp req hl with (*** A proposition has been proven in a theory iff it has an owner. ***)
 		| Some(beta,r) -> true
 		| None -> false
 	      in
@@ -1625,15 +1625,15 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	    try
 	      let gvtp th h a =
 		let alpha = hashval_term_addr (hashtag (hashopair2 th (hashpair h (hashtp a))) 32l) in
-		let hl = ctree_lookup_addr_assets false false tr (addr_bitseq alpha) in
-		match hlist_lookup_obj_owner false false hl with
+		let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq alpha) in
+		match hlist_lookup_obj_owner exp req hl with
 		| Some(beta,r) -> true
 		| None -> false
 	      in
 	      let gvkn th k =
 		let alpha = hashval_term_addr (hashtag (hashopair2 th k) 33l) in
-		let hl = ctree_lookup_addr_assets false false tr (addr_bitseq alpha) in
-		match hlist_lookup_prop_owner false false hl with (*** A proposition has been proven in a theory iff it has an owner. ***)
+		let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq alpha) in
+		match hlist_lookup_prop_owner exp req hl with (*** A proposition has been proven in a theory iff it has an owner. ***)
 		| Some(beta,r) -> true
 		| None -> false
 	      in
@@ -1745,10 +1745,10 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	    with Not_found ->
 	      (*** if the ownership is being created ***)
 	      if (List.mem alpha createsobjsaddrs1 || List.mem alpha createsobjsaddrs2) && not (List.mem alpha !ownobjclaims) then
-		let hl = ctree_lookup_addr_assets false false tr (addr_bitseq alpha) in
+		let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq alpha) in
 		begin
 		  ownobjclaims := alpha::!ownobjclaims;
-		  match hlist_lookup_obj_owner false false hl with
+		  match hlist_lookup_obj_owner exp req hl with
 		  | Some(beta2,r2) -> raise NotSupported (*** already owned ***)
 		  | None -> ()
 		end
@@ -1771,10 +1771,10 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	    with Not_found ->
 	      (*** if the ownership is being created ***)
 	      if (List.mem alpha createspropsaddrs1 || List.mem alpha createspropsaddrs2) && not (List.mem alpha !ownpropclaims) then
-		let hl = ctree_lookup_addr_assets false false tr (addr_bitseq alpha) in
+		let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq alpha) in
 		begin
 		  ownpropclaims := alpha::!ownpropclaims;
-		  match hlist_lookup_prop_owner false false hl with
+		  match hlist_lookup_prop_owner exp req hl with
 		  | Some(beta2,r2) -> raise NotSupported (*** already owned ***)
 		  | None -> ()
 		end
@@ -1790,10 +1790,10 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
 	    with Not_found ->
 	      (*** if the ownership is being created ***)
 	      if (List.mem alpha createsnegpropsaddrs2) && not (List.mem alpha !ownnegpropclaims) then
-		let hl = ctree_lookup_addr_assets false false tr (addr_bitseq alpha) in
+		let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq alpha) in
 		begin
 		  ownpropclaims := alpha::!ownpropclaims;
-		  if hlist_lookup_neg_prop_owner false false hl then
+		  if hlist_lookup_neg_prop_owner exp req hl then
 		    raise NotSupported (*** already owned ***)
 		end
 	      else
@@ -1808,8 +1808,8 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
   List.iter (fun (th,tmh,tph) ->
     try
       let ensureowned alpha =
-	let hl = ctree_lookup_addr_assets false false tr (addr_bitseq alpha) in
-	match hlist_lookup_obj_owner false false hl with
+	let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq alpha) in
+	match hlist_lookup_obj_owner exp req hl with
 	| Some(beta2,r2) -> () (*** already owned ***)
 	| None -> (*** Since alpha was listed in full_needed we know alpha really isn't owned here ***)
 	    (*** ensure that it will be owned after the tx ***)
@@ -1826,8 +1826,8 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
   List.iter (fun (th,tmh) ->
     try
       let ensureowned alpha =
-	let hl = ctree_lookup_addr_assets false false tr (addr_bitseq alpha) in
-	match hlist_lookup_prop_owner false false hl with
+	let hl = ctree_lookup_addr_assets exp req tr (addr_bitseq alpha) in
+	match hlist_lookup_prop_owner exp req hl with
 	| Some(beta2,r2) -> () (*** already owned ***)
 	| None -> (*** Since alpha was listed in full_needed we know alpha really isn't owned here ***)
 	    (*** ensure that it will be owned after the tx ***)
@@ -1874,11 +1874,11 @@ let ctree_supports_tx_2 tht sigt blkh tx aal al tr =
   (*** finally, return the number of currency units created or destroyed ***)
   Int64.sub (out_cost outpl) (asset_value_sum blkh al)
 
-let ctree_supports_tx tht sigt blkh tx tr =
+let ctree_supports_tx exp req tht sigt blkh tx tr =
   let (inpl,outpl) = tx in
-  let aal = ctree_lookup_input_assets false false inpl tr in
+  let aal = ctree_lookup_input_assets exp req inpl tr in
   let al = List.map (fun (_,a) -> a) aal in
-  ctree_supports_tx_2 tht sigt blkh tx aal al tr
+  ctree_supports_tx_2 exp req tht sigt blkh tx aal al tr
 
 let rec hlist_lub hl1 hl2 =
   match hl1 with

@@ -73,8 +73,8 @@ val strip_bitseq_true0 : bool list list -> bool list list
 val strip_bitseq_false0 : bool list list -> bool list list
 
 val ctree_lookup_input_assets : bool -> bool -> addr_assetid list -> ctree -> (addr * asset) list
-val ctree_supports_tx : ttree option -> stree option -> int64 -> tx -> ctree -> int64
-val ctree_supports_tx_2 : ttree option -> stree option -> int64 -> tx -> (addr * asset) list -> asset list -> ctree -> int64
+val ctree_supports_tx : bool -> bool -> ttree option -> stree option -> int64 -> tx -> ctree -> int64
+val ctree_supports_tx_2 : bool -> bool -> ttree option -> stree option -> int64 -> tx -> (addr * asset) list -> asset list -> ctree -> int64
 
 val tx_octree_trans : int64 -> tx -> ctree option -> ctree option
 val txl_octree_trans : int64 -> tx list -> ctree option -> ctree option

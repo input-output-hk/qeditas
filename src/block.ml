@@ -730,7 +730,7 @@ let valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs =
   let tr = ctree_of_block b in (*** let tr be the ctree of the block, used often below ***)
   begin
     try
-      let z = ctree_supports_tx tht sigt blkh (coinstake b) tr in
+      let z = ctree_supports_tx false false tht sigt blkh (coinstake b) tr in (*** the ctree must support the tx without the need to expand hashes using the database or requesting from peers ***)
       z >= rewfn blkh
     with NotSupported -> false
   end
@@ -772,7 +772,7 @@ let valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs =
 		&& not (List.mem stakein inpl)
 		&& tx_signatures_valid blkh al stau
 		&& tx_valid tau
-		&& ctree_supports_tx_2 tht sigt blkh tau aal al tr <= 0L
+		&& ctree_supports_tx_2 false false tht sigt blkh tau aal al tr <= 0L
 	)
 	true
 	bd.blockdelta_stxl
