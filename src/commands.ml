@@ -380,20 +380,20 @@ let printassets_in_ledger ledgerroot =
   in
   List.iter
     (fun (k,b,(x,y),w,h,z) ->
-      handler (fun () -> al1 := (z,Ctre.ctree_addr (hashval_p2pkh_addr h) ctr None)::!al1))
+      handler (fun () -> al1 := (z,Ctre.ctree_addr true true (hashval_p2pkh_addr h) ctr None)::!al1))
     !walletkeys;
   List.iter
     (fun (h,z,scr) ->
-      handler (fun () -> al2 := (z,Ctre.ctree_addr (hashval_p2sh_addr h) ctr None)::!al2))
+      handler (fun () -> al2 := (z,Ctre.ctree_addr true true (hashval_p2sh_addr h) ctr None)::!al2))
     !walletp2shs;
   List.iter
     (fun (alpha,beta,(x,y),recid,fcomp,esg) -> 
       let alpha2 = payaddr_addr alpha in
-      handler (fun () -> al3 := (alpha2,Ctre.ctree_addr alpha2 ctr None)::!al3))
+      handler (fun () -> al3 := (alpha2,Ctre.ctree_addr true true alpha2 ctr None)::!al3))
     !walletendorsements;
   List.iter
     (fun alpha ->
-      handler (fun () -> al4 := (alpha,Ctre.ctree_addr alpha ctr None)::!al4))
+      handler (fun () -> al4 := (alpha,Ctre.ctree_addr true true alpha ctr None)::!al4))
     !walletwatchaddrs;
   let sumcurr tot a =
     match a with

@@ -36,7 +36,7 @@ type ctree =
 val ctree_hashroot : ctree -> hashval
 val octree_hashroot : ctree option -> hashval option
 
-val ctree_lookup_asset : hashval -> ctree -> bool list -> asset option
+val ctree_lookup_asset : bool -> bool -> hashval -> ctree -> bool list -> asset option
 
 exception NotSupported
 exception InsufficientInformation
@@ -65,14 +65,14 @@ val load_ctree : string -> ctree
 val get_hlist_element : hashval -> hlist
 val get_nehlist_element : hashval -> nehlist
 val get_ctree_element : hashval -> ctree
-val ctree_addr : addr -> ctree -> int option -> nehlist option * int
+val ctree_addr : bool -> bool -> addr -> ctree -> int option -> nehlist option * int
 
 val strip_bitseq_true : (bool list * 'a) list -> (bool list * 'a) list
 val strip_bitseq_false : (bool list * 'a) list -> (bool list * 'a) list
 val strip_bitseq_true0 : bool list list -> bool list list
 val strip_bitseq_false0 : bool list list -> bool list list
 
-val ctree_lookup_input_assets : addr_assetid list -> ctree -> (addr * asset) list
+val ctree_lookup_input_assets : bool -> bool -> addr_assetid list -> ctree -> (addr * asset) list
 val ctree_supports_tx : ttree option -> stree option -> int64 -> tx -> ctree -> int64
 val ctree_supports_tx_2 : ttree option -> stree option -> int64 -> tx -> (addr * asset) list -> asset list -> ctree -> int64
 

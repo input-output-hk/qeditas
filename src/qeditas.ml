@@ -89,7 +89,7 @@ let compute_staking_chances n fromtm totm =
    Commands.stakingassets := [];
    List.iter
      (fun (k,b,(x,y),w,h,alpha) ->
-       match ctree_addr (hashval_p2pkh_addr h) c None with
+       match ctree_addr true true (hashval_p2pkh_addr h) c None with
        | (Some(hl),_) ->
            hlist_stakingassets blkhght h (nehlist_hlist hl)
        | _ ->
@@ -100,7 +100,7 @@ let compute_staking_chances n fromtm totm =
       let (p,x4,x3,x2,x1,x0) = alpha in
       let (q,_,_,_,_,_) = beta in
       if not p && not q then (*** only p2pkh can stake ***)
-	match ctree_addr (payaddr_addr alpha) c None with
+	match ctree_addr true true (payaddr_addr alpha) c None with
 	| (Some(hl),_) ->
 	    hlist_stakingassets blkhght (x4,x3,x2,x1,x0) (nehlist_hlist hl)
 	| _ -> ())
@@ -272,7 +272,7 @@ let stakingthread () =
 		    Printf.fprintf !log "Trying to include tx %s\n" (hashval_hexstring h); flush stdout;
 		    if tx_valid (tauin,tauout) then
 		      try
-			let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets tauin !dync) in
+			let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true false tauin !dync) in
 			if tx_signatures_valid blkh al ((tauin,tauout),sg) then
 			  begin
 			    if ctree_supports_tx None None blkh (tauin,tauout) !dync >= 0L then

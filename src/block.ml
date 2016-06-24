@@ -21,7 +21,7 @@ type stakemod = int64 * int64 * int64 * int64
 
 let genesiscurrentstakemod : stakemod ref = ref (0L,0L,0L,0L)
 let genesisfuturestakemod : stakemod ref = ref (0L,0L,0L,0L)
-let genesistimestamp : int64 ref = ref 1465759361L
+let genesistimestamp : int64 ref = ref 1466784703L
 
 let set_genesis_stakemods x =
   let (x4,x3,x2,x1,x0) = hexstring_hashval x in
@@ -581,7 +581,7 @@ let valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v) =
     | Some(PostorTrm(th,m,a,h)) ->
 	let beta = hashopair2 th (hashpair (tm_hashroot m) (hashtp a)) in
 	begin
-	  match ctree_lookup_asset h bhd.prevledger (addr_bitseq (termaddr_addr beta)) with
+	  match ctree_lookup_asset false false h bhd.prevledger (addr_bitseq (termaddr_addr beta)) with
 	  | Some(_,_,_,OwnsObj(_,_)) -> true
 	  | _ -> false
 	end
@@ -589,14 +589,14 @@ let valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v) =
 	let prebeta = hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (pdoc_hashroot d))) in
 	let beta = hashval_pub_addr prebeta in
 	begin
-	  match ctree_lookup_asset h bhd.prevledger (addr_bitseq beta) with
+	  match ctree_lookup_asset false false h bhd.prevledger (addr_bitseq beta) with
 	  | Some(_,_,_,DocPublication(_,_,_,_)) -> true
 	  | _ -> false
 	end
   end
 
 let valid_blockheader blkh tinfo (bhd,bhs) =
-  match ctree_lookup_asset bhd.stakeassetid bhd.prevledger (addr_bitseq (p2pkhaddr_addr bhd.stakeaddr)) with
+  match ctree_lookup_asset false false bhd.stakeassetid bhd.prevledger (addr_bitseq (p2pkhaddr_addr bhd.stakeaddr)) with
   | Some(aid,bday,obl,Currency(v)) -> (*** stake belongs to staker ***)
       valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v)
   | _ -> false
@@ -641,7 +641,7 @@ let rec check_poforfeit_a blkh alpha alphabs v fal tr =
   match fal with
   | [] -> v = 0L
   | fa::far ->
-      match ctree_lookup_asset fa tr alphabs with
+      match ctree_lookup_asset false false fa tr alphabs with
       | Some(_,bday,Some(alpha2,_,r),Currency(u)) when r && Int64.add bday 6L >= blkh && payaddr_addr alpha2 = alpha ->
 	  check_poforfeit_a blkh alpha alphabs (Int64.sub v u) far tr
       | _ -> false
@@ -681,7 +681,7 @@ let valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs =
     &&
    (*** ensure that if the stake has an explicit obligation (e.g., it is borrowed for staking), then the obligation isn't changed; otherwise the staker could steal the borrowed stake; unchanged copy should be first output ***)
    begin
-     match ctree_lookup_asset bhd.stakeassetid bhd.prevledger stkaddrbs with
+     match ctree_lookup_asset false false bhd.stakeassetid bhd.prevledger stkaddrbs with
      | Some(_,_,Some(beta,n,r),Currency(v)) -> (*** stake may be on loan for staking ***)
 	 begin
 	   match bd.stakeoutput with
@@ -765,7 +765,7 @@ let valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs =
 		  with Not_found -> true
 		end
 	      in
-	      let aal = ctree_lookup_input_assets inpl tr in
+	      let aal = ctree_lookup_input_assets false false inpl tr in
 	      let al = List.map (fun (_,a) -> a) aal in
 	      norew
 		&& sgvb
@@ -882,7 +882,7 @@ let valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs =
   (*** The total inputs and outputs match up with the declared fee. ***)
   let tau = tx_of_block b in (*** let tau be the combined tx of the block ***)
   let (inpl,outpl) = tau in
-  let aal = ctree_lookup_input_assets inpl tr in
+  let aal = ctree_lookup_input_assets false false inpl tr in
   let al = List.map (fun (_,a) -> a) aal in
   (*** Originally I added totalfees to the out_cost, but this was wrong since the totalfees are in the stake output which is already counted in out_cost. I don't really need totalfees to be explicit. ***)
   out_cost outpl = Int64.add (asset_value_sum blkh al) (Int64.add (rewfn blkh) forfeitval)
@@ -899,7 +899,7 @@ let valid_block tht sigt blkh tinfo (b:block) =
   let ((bhd,_),_) = b in
   let stkaddr = p2pkhaddr_addr bhd.stakeaddr in
   let stkaddrbs = addr_bitseq stkaddr in
-  match ctree_lookup_asset bhd.stakeassetid bhd.prevledger stkaddrbs with
+  match ctree_lookup_asset false false bhd.stakeassetid bhd.prevledger stkaddrbs with
   | Some(aid,bday,obl,Currency(v)) -> (*** stake belongs to staker ***)
       valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs
   | _ -> false
