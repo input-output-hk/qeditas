@@ -765,7 +765,7 @@ let rec hlist_lookup_asset_gen exp req p hl =
 	let a = if req then get_asset h else DbAsset.dbget h in
 	hlist_lookup_asset_gen exp req p (HCons(a,hr))
       else
-	None
+	hlist_lookup_asset_gen exp req p hr (* Skip this one and search for another asset satisfying p. Note: This means that if the asset with id h satisfies p, we will miss it. This is even the case when p a means assetid a = h *)
   | HHash(h) ->
       if exp then
 	begin
