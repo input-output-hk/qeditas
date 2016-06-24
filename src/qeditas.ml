@@ -58,7 +58,7 @@ let rec hlist_stakingassets blkh alpha hl =
   | HCons((aid,bday,obl,Currency(v)),hr) ->
 (*** lock stakingassets ***)
       let ca = coinage blkh bday obl v in
-      if gt_big_int ca zero_big_int then
+      if gt_big_int ca zero_big_int && not (Hashtbl.mem Commands.unconfirmed_spent_assets aid) then
 	Commands.stakingassets := (alpha,aid,bday,obl,v)::!Commands.stakingassets;
 (*** unlock stakingassets ***)
       hlist_stakingassets blkh alpha hr
@@ -115,18 +115,18 @@ let compute_staking_chances n fromtm totm =
 	    begin
 	      let mtar = mult_big_int tar1 (coinage blkhght bday obl (incrstake v)) in
 	      let ntar = mult_big_int tar1 (coinage blkhght bday obl v) in
-	      output_string !log ("i := " ^ (Int64.to_string !i) ^ "\nh := " ^ (Hash.hashval_hexstring h) ^ "\nblkhght = " ^ (Int64.to_string blkhght) ^ "\n");
+(*	      output_string !log ("i := " ^ (Int64.to_string !i) ^ "\nh := " ^ (Hash.hashval_hexstring h) ^ "\nblkhght = " ^ (Int64.to_string blkhght) ^ "\n"); *)
 	      let (m3,m2,m1,m0) = csm1 in
-	      output_string !log ("csm1 := (" ^ (Int64.to_string m3) ^ "," ^ (Int64.to_string m2) ^ "," ^ (Int64.to_string m1) ^ "," ^ (Int64.to_string m0) ^ ")\n");
+(*	      output_string !log ("csm1 := (" ^ (Int64.to_string m3) ^ "," ^ (Int64.to_string m2) ^ "," ^ (Int64.to_string m1) ^ "," ^ (Int64.to_string m0) ^ ")\n");
 	      output_string !log ("ntar   := " ^ (string_of_big_int ntar) ^ "\n");
 	      output_string !log ("hitval := " ^ (string_of_big_int (hitval !i h csm1)) ^ "\n");
-	      flush !log;
+	      flush !log; *)
 	      (*** first check if it would be a hit with some storage component: ***)
 	      if lt_big_int (hitval !i h csm1) mtar then
 		begin (*** if so, then check if it's a hit without some storage component ***)
 		  if lt_big_int (hitval !i h csm1) ntar then
 		    begin
-                      output_string !log ("stake at time " ^ (Int64.to_string !i) ^ " in " ^ (Int64.to_string (Int64.sub !i (Int64.of_float (Unix.time()))))  ^ " seconds.\n"); flush !log;
+                      output_string !log ("stake at time " ^ (Int64.to_string !i) ^ " with " ^ (hashval_hexstring h) ^ " in " ^ (Int64.to_string (Int64.sub !i (Int64.of_float (Unix.time()))))  ^ " seconds.\n"); flush !log;
 		      let deltm = Int64.to_int32 (Int64.sub !i tmstamp) in
 		      let (_,_,tar) = currtinfo in
 		      let csnew = cumul_stake prevcumulstk tar deltm in
@@ -255,45 +255,60 @@ let stakingthread () =
 			Some(p2pkhaddr_payaddr alpha,Int64.add blkh (Int64.logand 2048L (rand_int64())),false) (* it is not marked as a reward *)
 		  | _ -> obl (* unless it's the default obligation, then the obligation cannot change when staking it *)
 		in
-		let stkoutl = [(alpha2,(obl2,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(rewfn blkh)))] in (* ah, need to add tx fees here *)
-		let coinstk : tx = ([(alpha2,aid)],stkoutl) in
 		let prevc = Some(CHash(prevledgerroot)) in
 		let octree_ctree c =
 		  match c with
 		  | Some(c) -> c
 		  | None -> raise (Failure "tree should not be empty")
 		in
-		let dync = ref (octree_ctree (tx_octree_trans blkh coinstk prevc)) in
+		let dync = ref (octree_ctree prevc) in
 		let dyntht = ref (lookup_thytree (node_theoryroot best)) in
 		let dynsigt = ref (lookup_sigtree (node_signaroot best)) in
+		let fees = ref 0L in
 		let otherstxs = ref [] in
 		Hashtbl.iter
 		  (fun h ((tauin,tauout),sg) ->
 		    Printf.fprintf !log "Trying to include tx %s\n" (hashval_hexstring h); flush stdout;
-		    if tx_valid (tauin,tauout) then
-		      try
-			let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true false tauin !dync) in
-			if tx_signatures_valid blkh al ((tauin,tauout),sg) then
-			  begin
-			    if ctree_supports_tx None None blkh (tauin,tauout) !dync >= 0L then
-			      begin
-				let c = octree_ctree (tx_octree_trans blkh (tauin,tauout) (Some(!dync))) in
-				otherstxs := (h,((tauin,tauout),sg))::!otherstxs;
-				dync := c;
-				dyntht := txout_update_ottree tauout !dyntht;
-				dynsigt := txout_update_ostree tauout !dynsigt;
-			      end
-			  end
-		      with _ -> ())
+		    Printf.printf "trying to include tx %s\n" (hashval_hexstring h); flush stdout; (* delete me *) 
+		    try
+		      ignore (List.find (fun (_,h) -> h = aid) tauin);
+		      Printf.printf "tx spends the staked asset; removing tx from pool\n"; flush stdout; (* delete me *)
+		      Commands.remove_from_txpool h
+		    with Not_found ->
+		      if tx_valid (tauin,tauout) then
+			try
+			  Printf.printf "txvalid %s\n" (hashval_hexstring h); flush stdout; (* delete me *) 
+			  let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true false tauin !dync) in
+			  Printf.printf "looked up assets\n"; flush stdout; (* delete me *) 
+			  if tx_signatures_valid blkh al ((tauin,tauout),sg) then
+			    begin
+			      Printf.printf "sigs valid\n"; flush stdout; (* delete me *) 
+			      let fee = ctree_supports_tx true false !dyntht !dynsigt blkh (tauin,tauout) !dync in
+ 			      Printf.printf "fee %Ld\n" fee; flush stdout; (* delete me *)
+			      if fee <= 0L then
+				begin
+				  Printf.printf "ctree supports tx\n"; flush stdout; (* delete me *) 
+				  let c = octree_ctree (tx_octree_trans blkh (tauin,tauout) (Some(!dync))) in
+				  otherstxs := (h,((tauin,tauout),sg))::!otherstxs;
+				  fees := Int64.sub !fees fee;
+				  dync := c;
+				  dyntht := txout_update_ottree tauout !dyntht;
+				  dynsigt := txout_update_ostree tauout !dynsigt;
+				end
+			    end
+			with _ -> ())
 		  Commands.txpool;
 		let ostxs = !otherstxs in
 		let otherstxs = ref [] in
 		List.iter
 		  (fun (h,stau) ->
-		    Hashtbl.remove Commands.txpool h;
+		    Commands.remove_from_txpool h;
 		    otherstxs := stau::!otherstxs)
 		  ostxs;
 		let othertxs = List.map (fun (tau,_) -> tau) !otherstxs in
+		let stkoutl = [(alpha2,(obl2,Currency(v)));(alpha2,(Some(p2pkhaddr_payaddr alpha,Int64.add blkh (reward_locktime blkh),true),Currency(Int64.add !fees (rewfn blkh))))] in
+		let coinstk : tx = ([(alpha2,aid)],stkoutl) in
+		dync := octree_ctree (tx_octree_trans blkh coinstk (Some(!dync)));
 		let prevcforblock =
 		  match
 		    get_txl_supporting_octree (coinstk::othertxs) prevc
@@ -364,41 +379,36 @@ let stakingthread () =
 		    blockdelta_stxl = !otherstxs
 		  }
 		in
-		if blkh = 1L then
-		  if valid_blockheaderchain blkh (bhnew,[]) then (*** first block, special conditions ***)
-		    (Printf.fprintf !log "Valid first block.\n"; flush stdout)
+		begin
+		  if valid_blockheader blkh (csm0,fsm0,tar0) bhnew then
+		    (Printf.fprintf !log "New block header is valid\n"; flush !log)
 		  else
-		    (Printf.fprintf !log "Not a valid first block.\n"; flush stdout; exit 0; raise Not_found)
-		else
-		  begin
-		    if valid_blockheader blkh (csm0,fsm0,tar0) bhnew then
-		      (Printf.fprintf !log "New block header is valid\n"; flush stdout)
-		    else
-		      (Printf.fprintf !log "New block header is not valid\n"; flush stdout; exit 0; raise Not_found);
-		    if valid_block None None blkh (csm0,fsm0,tar0) (bhnew,bdnew) then
-		      (Printf.fprintf !log "New block is valid\n"; flush stdout)
-		    else
-		      (Printf.fprintf !log "New block is not valid\n"; flush stdout; exit 0; raise Not_found);
-		    match pbhh with
-		    | None -> Printf.fprintf !log "No previous block but block height not 1\n"; flush stdout; exit 0; raise Not_found
-		    | Some(pbhh) ->
-			let (pbhd,_) = get_blockheader pbhh in
-			let tmpsucctest bhd1 bhd2 =
-			  bhd2.timestamp = Int64.add bhd1.timestamp (Int64.of_int32 bhd2.deltatime)
-			    &&
-			  let (csm1,fsm1,tar1) = bhd1.tinfo in
-			  let (csm2,fsm2,tar2) = bhd2.tinfo in
-			  stakemod_pushbit (stakemod_lastbit fsm1) csm1 = csm2 (*** new stake modifier is old one shifted with one new bit from the future stake modifier ***)
-			    &&
-			  stakemod_pushbit (stakemod_firstbit fsm2) fsm1 = fsm2 (*** the new bit of the new future stake modifier fsm2 is freely chosen by the staker ***)
-			    &&
-			  eq_big_int tar2 (retarget tar1 bhd2.deltatime)
-			in
-			if tmpsucctest pbhd bhdnew then
-			  (Printf.fprintf !log "Valid successor block\n"; flush stdout)
-			else
-			  (Printf.fprintf !log "Not a valid successor block\n"; flush stdout; exit 0; raise Not_found)
-		  end;
+		    (Printf.fprintf !log "New block header is not valid\n"; flush !log; exit 0; raise Not_found);
+		  if valid_block None None blkh (csm0,fsm0,tar0) (bhnew,bdnew) then
+		    (Printf.fprintf !log "New block is valid\n"; flush stdout)
+		  else
+		    (Printf.fprintf !log "New block is not valid\n"; flush !log; exit 0; raise Not_found);
+		  match pbhh with
+		  | None -> if blkh > 1L then (Printf.fprintf !log "No previous block but block height not 1\n"; flush !log; exit 0; raise Not_found)
+		  | Some(pbhh) ->
+		      if blkh = 1L then (Printf.fprintf !log "Previous block indicated but block height is 1\n"; flush !log; exit 0; raise Not_found);
+		      let (pbhd,_) = get_blockheader pbhh in
+		      let tmpsucctest bhd1 bhd2 =
+			bhd2.timestamp = Int64.add bhd1.timestamp (Int64.of_int32 bhd2.deltatime)
+			  &&
+			let (csm1,fsm1,tar1) = bhd1.tinfo in
+			let (csm2,fsm2,tar2) = bhd2.tinfo in
+			stakemod_pushbit (stakemod_lastbit fsm1) csm1 = csm2 (*** new stake modifier is old one shifted with one new bit from the future stake modifier ***)
+			  &&
+			stakemod_pushbit (stakemod_firstbit fsm2) fsm1 = fsm2 (*** the new bit of the new future stake modifier fsm2 is freely chosen by the staker ***)
+			  &&
+			eq_big_int tar2 (retarget tar1 bhd2.deltatime)
+		      in
+		      if tmpsucctest pbhd bhdnew then
+			(Printf.fprintf !log "Valid successor block\n"; flush !log)
+		      else
+			(Printf.fprintf !log "Not a valid successor block\n"; flush !log; exit 0; raise Not_found)
+		end;
 		let csnew = cumul_stake cs tar bhdnew.deltatime in
 		let nw = Unix.time() in
 		let tmtopub = Int64.sub tm (Int64.of_float nw) in
@@ -409,7 +419,7 @@ let stakingthread () =
 		  let newnode =
 		    BlocktreeNode(Some(best),ref [],Some(bhdnewh),ottree_hashroot !dyntht,ostree_hashroot !dynsigt,ctree_hashroot !dync,bhdnew.tinfo,tm,csnew,Int64.add 1L blkh,ref Valid,ref false,ref [])
 		  in
-		  Printf.fprintf !log "block %s: deltm = %ld, timestamp %Ld, cumul stake %s\n" (hashval_hexstring bhdnewh) bhdnew.deltatime tm (string_of_big_int cs); 
+		  Printf.fprintf !log "block at height %Ld: %s, deltm = %ld, timestamp %Ld, cumul stake %s\n" blkh (hashval_hexstring bhdnewh) bhdnew.deltatime tm (string_of_big_int cs); 
 		  record_recent_staker alpha newnode 6;
 		  bestnode := newnode;
 		  let children_ref = node_children_ref best in
@@ -516,6 +526,7 @@ let do_command l =
       flush stdout;
   | "printassets" when al = [] -> Commands.printassets()
   | "printassets" -> List.iter (fun h -> Commands.printassets_in_ledger (hexstring_hashval h)) al
+  | "printtx" -> List.iter (fun h -> Commands.printtx (hexstring_hashval h)) al
   | "importprivkey" -> List.iter Commands.importprivkey al
   | "importbtcprivkey" -> List.iter Commands.importbtcprivkey al
   | "importwatchaddr" -> List.iter Commands.importwatchaddr al
