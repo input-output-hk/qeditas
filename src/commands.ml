@@ -11,6 +11,7 @@ open Cryptocurr
 open Signat
 open Script
 open Assets
+open Tx
 open Ctre
 open Blocktree
 
@@ -40,6 +41,22 @@ let load_recenttxs () =
 	close_in ch;;
 
 let txpool : (hashval,Tx.stx) Hashtbl.t = Hashtbl.create 100
+let unconfirmed_spent_assets : (hashval,hashval) Hashtbl.t = Hashtbl.create 100
+
+let add_to_txpool txid stau =
+  Printf.printf "adding tx to pool %s\n" (hashval_hexstring txid); flush stdout; (* delete me *)
+  Hashtbl.add txpool txid stau;
+  let ((txin,_),_) = stau in
+  List.iter (fun (_,h) -> Hashtbl.add unconfirmed_spent_assets h txid) txin
+
+let remove_from_txpool txid =
+  try
+    Printf.printf "removing tx from pool %s\n" (hashval_hexstring txid); flush stdout; (* delete me *)
+    let stau = Hashtbl.find txpool txid in
+    Hashtbl.remove txpool txid;
+    let ((txin,_),_) = stau in
+    List.iter (fun (_,h) -> Hashtbl.remove unconfirmed_spent_assets h) txin
+  with Not_found -> ()
 
 let load_txpool () =
   let fn = Filename.concat (datadir()) "txpool" in
@@ -48,7 +65,7 @@ let load_txpool () =
     try
       while true do
 	let ((txid,stau),_) = sei_prod sei_hashval Tx.sei_stx seic (ch,None) in
-	Hashtbl.add txpool txid stau
+	add_to_txpool txid stau
       done
     with
     | End_of_file -> close_in ch
@@ -464,33 +481,8 @@ let printassets () =
 
 let printasset h =
   try
-    match DbAsset.dbget h with
-    | (aid,bday,obl,Currency(v)) ->
-	Printf.printf "%s [%Ld] Currency %Ld\n" (hashval_hexstring aid) bday v
-    | (aid,bday,obl,Bounty(v)) ->
-	Printf.printf "%s [%Ld] Bounty %Ld\n" (hashval_hexstring aid) bday v;
-    | (aid,bday,obl,OwnsObj(gamma,Some(r))) ->
-	Printf.printf "%s [%Ld] OwnsObj %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma)) r;
-    | (aid,bday,obl,OwnsObj(gamma,None)) ->
-	Printf.printf "%s [%Ld] OwnsObj %s None\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma));
-    | (aid,bday,obl,OwnsProp(gamma,Some(r))) ->
-	Printf.printf "%s [%Ld] OwnsProp %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma)) r;
-    | (aid,bday,obl,OwnsProp(gamma,None)) ->
-	Printf.printf "%s [%Ld] OwnsProp %s None\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma));
-    | (aid,bday,obl,OwnsNegProp) ->
-	Printf.printf "%s [%Ld] OwnsNegProp\n" (hashval_hexstring aid) bday;
-    | (aid,bday,obl,RightsObj(gamma,r)) ->
-	Printf.printf "%s [%Ld] RightsObj %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (termaddr_addr gamma)) r;
-    | (aid,bday,obl,RightsProp(gamma,r)) ->
-	Printf.printf "%s [%Ld] RightsProp %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (termaddr_addr gamma)) r;
-    | (aid,bday,obl,Marker) ->
-	Printf.printf "%s [%Ld] Marker (Intention to Publish)\n" (hashval_hexstring aid) bday;
-    | (aid,bday,obl,TheoryPublication(_,_,_)) ->
-	Printf.printf "%s [%Ld] Theory\n" (hashval_hexstring aid) bday;
-    | (aid,bday,obl,SignaPublication(_,_,_,_)) ->
-	Printf.printf "%s [%Ld] Signature\n" (hashval_hexstring aid) bday;
-    | (aid,bday,obl,DocPublication(_,_,_,_)) ->
-	Printf.printf "%s [%Ld] Document\n" (hashval_hexstring aid) bday;
+    let (aid,bday,obl,u) = DbAsset.dbget h in
+    Printf.printf "%s [%Ld] %s %s\n" (hashval_hexstring aid) bday (preasset_string u) (obligation_string obl)
   with Not_found ->
     Printf.printf "No asset %s found\n" (hashval_hexstring h)
 
@@ -588,3 +580,32 @@ let printctreeinfo h =
   with Not_found ->
     Printf.printf "No ctree %s found\n" (hashval_hexstring h)
   
+let printtx_a (tauin,tauout) =
+  let i = ref 0 in
+  Printf.printf "Inputs (%d):\n" (List.length tauin);
+  List.iter
+    (fun (alpha,aid) ->
+      Printf.printf "Input %d:%s %s\n" !i (addr_qedaddrstr alpha) (hashval_hexstring aid);
+      incr i)
+    tauin;      
+  i := 0;
+  Printf.printf "Outputs (%d):\n" (List.length tauout);
+  List.iter
+    (fun (alpha,(obl,u)) ->
+      Printf.printf "Output %d:%s %s %s\n" !i (addr_qedaddrstr alpha) (preasset_string u) (obligation_string obl);
+      incr i)
+    tauout
+
+let printtx txid =
+  try
+    let (tau,_) = Hashtbl.find txpool txid in
+    Printf.printf "Tx %s in pool.\n" (hashval_hexstring txid);
+    printtx_a tau
+  with Not_found ->
+    try
+      let tau = DbTx.dbget txid in
+      Printf.printf "Tx %s in local database.\n" (hashval_hexstring txid);
+      printtx_a tau
+    with Not_found ->
+      Printf.printf "Unknown tx %s.\n" (hashval_hexstring txid)
+
