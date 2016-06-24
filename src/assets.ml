@@ -6,6 +6,7 @@ open Ser
 open Hash
 open Net
 open Db
+open Cryptocurr
 open Mathdata
 
 (*** If the obligation is Some(alpha,n,r), then the way to spend the asset is for alpha to sign after block n.
@@ -25,6 +26,29 @@ type preasset =
   | TheoryPublication of payaddr * hashval * theoryspec
   | SignaPublication of payaddr * hashval * hashval option * signaspec
   | DocPublication of payaddr * hashval * hashval option * doc
+
+let obligation_string o =
+  match o with
+  | None -> "default obligation"
+  | Some(beta,lkh,r) ->
+      "obligation: controlled by " ^ (addr_qedaddrstr (payaddr_addr beta)) ^ ";locked until height " ^ (Int64.to_string lkh) ^ ";" ^ (if r then "reward" else "not a reward")
+
+let preasset_string u =
+  match u with
+  | Currency(v) -> fraenks_of_cants v ^ " fraenks"
+  | Bounty(v) -> "bounty of " ^ fraenks_of_cants v ^ " fraenks"
+  | OwnsObj(beta,None) -> "ownership as an object with payaddr " ^ (addr_qedaddrstr (payaddr_addr beta)) ^ " with no rights available"
+  | OwnsObj(beta,Some(r)) -> "ownership as an object with payaddr " ^ (addr_qedaddrstr (payaddr_addr beta)) ^ "; each right to use costs " ^ fraenks_of_cants r ^ " fraenks"
+  | OwnsProp(beta,None) -> "ownership as a proposition with payaddr " ^ (addr_qedaddrstr (payaddr_addr beta)) ^ " with no rights available"
+  | OwnsProp(beta,Some(r)) -> "ownership as a proposition with payaddr " ^ (addr_qedaddrstr (payaddr_addr beta)) ^ "; each right to use costs " ^ fraenks_of_cants r ^ " fraenks"
+  | OwnsNegProp -> "neg prop ownership"
+  | RightsObj(beta,l) -> "right to use " ^ (addr_qedaddrstr (termaddr_addr beta)) ^ " as an object " ^ (Int64.to_string l) ^ " times"
+  | RightsProp(beta,l) -> "right to use " ^ (addr_qedaddrstr (termaddr_addr beta)) ^ " as a proposition " ^ (Int64.to_string l) ^ " times"
+  | Marker -> "marker"
+  | TheoryPublication(beta,_,_) -> "theory published by " ^ addr_qedaddrstr (payaddr_addr beta)
+  | SignaPublication(beta,_,_,_) -> "signature published by " ^ addr_qedaddrstr (payaddr_addr beta)
+  | DocPublication(beta,_,_,_) -> "document published by " ^ addr_qedaddrstr (payaddr_addr beta)
+
 
 (*** asset is (assetid,birthday,obligation,preasset) ***)
 type asset = hashval * int64 * obligation * preasset

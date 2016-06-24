@@ -21,6 +21,9 @@ type preasset =
   | SignaPublication of payaddr * hashval * hashval option * signaspec
   | DocPublication of payaddr * hashval * hashval option * doc
 
+val obligation_string : obligation -> string
+val preasset_string : preasset -> string
+
 (*** asset is (assetid,birthday,obligation,preasset) ***)
 type asset = hashval * int64 * obligation * preasset
 
@@ -92,3 +95,4 @@ module DbAsset :
     end
 
 val get_asset : hashval -> asset
+
