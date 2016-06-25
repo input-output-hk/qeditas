@@ -22,6 +22,8 @@ val tx_valid : tx -> bool
 
 type stx = tx * (gensignat list * gensignat list)
 
+val check_spend_obligation : addr -> int64 -> big_int -> gensignat -> obligation -> bool
+val check_move_obligation : addr -> big_int -> gensignat -> obligation -> preasset -> addr_preasset list -> bool
 val tx_signatures_valid : int64 -> asset list -> stx -> bool
 
 val txout_update_ottree : addr_preasset list -> ttree option -> ttree option
