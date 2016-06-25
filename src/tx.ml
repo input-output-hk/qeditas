@@ -143,7 +143,8 @@ let rec check_tx_out_signatures blkh txhe outpl sl =
 
 let tx_signatures_valid blkh al stau =
   let (tau,(sli,slo)) = stau in
-  let txhe = hashval_big_int (hashtx tau) in
+  let txh = if !Config.testnet then hashtag (hashtx tau) 288l else hashtx tau in (*** sign a modified hash for testnet ***)
+  let txhe = hashval_big_int txh in
   check_tx_in_signatures blkh txhe (tx_outputs tau) (tx_inputs tau) al sli
     &&
   check_tx_out_signatures blkh txhe (tx_outputs tau) slo
