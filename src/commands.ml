@@ -4,6 +4,7 @@
 
 open Big_int
 open Config
+open Hashaux
 open Ser
 open Hash
 open Net
@@ -44,14 +45,12 @@ let txpool : (hashval,Tx.stx) Hashtbl.t = Hashtbl.create 100
 let unconfirmed_spent_assets : (hashval,hashval) Hashtbl.t = Hashtbl.create 100
 
 let add_to_txpool txid stau =
-  Printf.printf "adding tx to pool %s\n" (hashval_hexstring txid); flush stdout; (* delete me *)
   Hashtbl.add txpool txid stau;
   let ((txin,_),_) = stau in
   List.iter (fun (_,h) -> Hashtbl.add unconfirmed_spent_assets h txid) txin
 
 let remove_from_txpool txid =
   try
-    Printf.printf "removing tx from pool %s\n" (hashval_hexstring txid); flush stdout; (* delete me *)
     let stau = Hashtbl.find txpool txid in
     Hashtbl.remove txpool txid;
     let ((txin,_),_) = stau in
@@ -148,7 +147,7 @@ let save_wallet () =
 
 let append_wallet f =
   let wallfn = Filename.concat (datadir()) "wallet" in
-  let s = open_out_gen [Open_append;Open_wronly;Open_binary] 0x660 wallfn in
+  let s = open_out_gen [Open_creat;Open_append;Open_wronly;Open_binary] 0o660 wallfn in
   f s;
   close_out s
 
@@ -609,3 +608,176 @@ let printtx txid =
     with Not_found ->
       Printf.printf "Unknown tx %s.\n" (hashval_hexstring txid)
 
+let createsplitlocktx ledgerroot alpha beta gamma aid i lkh fee =
+  if i <= 0 then raise (Failure ("Cannot split into " ^ (string_of_int i) ^ " assets"));
+  let alpha2 = payaddr_addr alpha in
+  let ctr = Ctre.CHash(ledgerroot) in
+  match ctree_lookup_asset true false aid ctr (addr_bitseq alpha2) with
+  | None -> Printf.printf "Could not find asset %s at %s\n" (hashval_hexstring aid) (addr_qedaddrstr alpha2); flush stdout
+  | Some(_,bday,obl,Currency(v)) ->
+      if v > fee then
+	begin
+	  let rem = ref (Int64.sub v fee) in
+	  let u = Int64.div !rem (Int64.of_int i) in
+	  if u > 0L then
+	    begin
+	      let outl = ref [] in
+	      for j = 0 to i-2 do
+		outl := (gamma,(Some(beta,lkh,false),Currency(u)))::!outl;
+		rem := Int64.sub !rem u
+	      done;
+	      outl := (gamma,(Some(beta,lkh,false),Currency(!rem)))::!outl;
+	      let tau : tx = ([(alpha2,aid)],!outl) in
+	      printtx_a tau;
+	      let s = Buffer.create 100 in
+	      seosbf (seo_stx seosb (tau,([],[])) (s,None));
+	      let hs = string_hexstring (Buffer.contents s) in
+	      Printf.printf "%s\n" hs
+	    end
+	  else
+	    begin
+	      Printf.printf "Asset %s is %s fraenks, which is smaller than %d cants after subtracting the fee of %s\n" (hashval_hexstring aid) (fraenks_of_cants v) i (fraenks_of_cants v); flush stdout
+	    end	  
+	end
+      else
+	begin
+	  Printf.printf "Asset %s is %s fraenks, which is not greater the fee of %s\n" (hashval_hexstring aid) (fraenks_of_cants v) (fraenks_of_cants v); flush stdout
+	end
+  | _ -> Printf.printf "Asset %s is not currency.\n" (hashval_hexstring aid); flush stdout
+
+let rand_256() =
+  let dr = open_in_bin "/dev/random" in
+  let (n,_) = Sha256.sei_md256 seic (dr,None) in
+  close_in dr;
+  Sha256.md256_big_int n
+
+(*** first see if private key for beta is in the wallet; if not check if an endorsement is in the wallet; if not fail ***)
+let signtx_p2pkh beta taue =
+  try
+    let (k,b,(x,y),w,h,z) = List.find (fun (_,_,_,_,h,_) -> h = beta) !walletkeys in
+    let r = rand_256() in
+    P2pkhSignat(Some(x,y),b,signat_big_int taue k r)
+  with Not_found ->
+    let (alpha,gamma,(x,y),recid,fcomp,esg) =
+      List.find 
+	(fun (alpha,gam,_,_,_,_) ->
+	  Printf.printf "%s %s %s\n" (addr_qedaddrstr (p2pkhaddr_addr beta)) (addr_qedaddrstr (payaddr_addr alpha)) (addr_qedaddrstr (payaddr_addr gam)); flush stdout; (* delete me *)
+	  let (p,a4,a3,a2,a1,a0) = alpha in
+	  not p && (a4,a3,a2,a1,a0) = beta)
+	!walletendorsements
+    in
+    let (p,c4,c3,c2,c1,c0) = gamma in
+    if p then
+      raise (Failure "p2psh signing not yet supported")
+    else
+      let (k,b2,(x2,y2),w,h,z) = List.find (fun (_,_,_,_,h,_) -> h = (c4,c3,c2,c1,c0)) !walletkeys in
+      let r = rand_256() in
+      let s1 = signat_big_int taue k r in
+      let s = EndP2pkhToP2pkhSignat(Some(x,y),fcomp,Some(x2,y2),b2,esg,s1) in
+      Printf.printf "Signed %s\n" (string_of_big_int taue); (* delete me *)
+      if not (verify_signed_big_int taue (Some(x2,y2)) s1) then (Printf.printf "bad signat\n"; flush stdout; exit 2); (* delete me *)
+      if not (verify_gensignat taue s (p2pkhaddr_addr beta)) then (Printf.printf "bad gensignat\n"; flush stdout; exit 2); (* delete me *)
+      s
+
+let rec signtx_ins taue inpl al outpl sl ci =
+  Printf.printf "signtx_ins sl length %d\n" (List.length sl); (* delete me *)
+  match inpl,al with
+  | (alpha,k)::inpr,(a::ar) ->
+      begin
+	if not (assetid a = k) then raise (Failure "Asset mismatch when trying to sign inputs");
+	match assetpre a with
+	| Marker -> signtx_ins taue inpr ar outpl sl ci
+	| Bounty(_) -> signtx_ins taue inpr ar outpl sl ci
+	| _ ->
+	    let obl = assetobl a in
+	    let blkh = match obl with Some(_,lkh,_) -> lkh | None -> 1L in (*** artificial block height just for checking signatures ***)
+	    try (*** check if an appropriate signature for this input is already in sl ***)
+	      ignore (List.find
+			(fun s ->
+			  check_spend_obligation alpha blkh taue s (assetobl a) || check_move_obligation alpha taue s (assetobl a) (assetpre a) outpl)
+			sl);
+	      signtx_ins taue inpr ar outpl sl ci
+	    with Not_found ->
+	      (*** otherwise, try to sign for this input ***)
+	      match obl with
+	      | Some(beta,lkh,r) ->
+		  let (p,b4,b3,b2,b1,b0) = beta in
+		  if p then
+		    raise (Failure "p2sh signing is not yet supported")		  
+		  else
+		    begin
+		      try
+			let s = signtx_p2pkh (b4,b3,b2,b1,b0) taue in
+			signtx_ins taue inpr ar outpl (s::sl) ci
+		      with _ ->
+			signtx_ins taue inpr ar outpl sl false
+		    end
+	      | None ->
+		  if p2pkhaddr_p alpha then
+		    begin
+		      try
+			let (_,a4,a3,a2,a1,a0) = alpha in
+			let s = signtx_p2pkh (a4,a3,a2,a1,a0) taue in
+			signtx_ins taue inpr ar outpl (s::sl) ci
+		      with _ ->
+			signtx_ins taue inpr ar outpl sl false
+		    end
+		  else if p2shaddr_p alpha then
+		    raise (Failure "p2sh signing is not yet supported")
+		  else
+		    raise (Failure "tx attempts to spend a non-Marker and non-Bounty without an explicit obligation from an address other than a pay address")
+      end
+  | [],[] -> (sl,ci)
+  | _,_ -> raise (Failure "problem signing inputs")
+
+let rec signtx_outs taue outpl sl co =
+  match outpl with
+  | (_,(_,TheoryPublication(alpha,n,thy)))::outpr ->
+      raise (Failure "to do: write signtx_outs")
+  | (_,(_,SignaPublication(alpha,n,th,si)))::outpr ->
+      raise (Failure "to do: write signtx_outs")
+  | (_,(_,DocPublication(alpha,n,th,si)))::outpr ->
+      raise (Failure "to do: write signtx_outs")
+  | _::outpr -> signtx_outs taue outpr sl co
+  | [] -> (sl,co)
+
+let signtx lr taustr =
+  let s = hexstring_string taustr in
+  let (((tauin,tauout) as tau,tausg),_) = sei_stx seis (s,String.length s,None,0,0) in (*** may be partially signed ***)
+  let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true false tauin (CHash(lr))) in
+  let tauh = hashtx tau in
+  let tauh2 = if !Config.testnet then hashtag tauh 288l else tauh in
+  let taue = hashval_big_int tauh2 in
+  let (tausgin,tausgout) = tausg in
+  let (tausgin1,ci) = signtx_ins taue tauin al tauout tausgin true in
+  let (tausgout1,co) = signtx_outs taue tauout tausgout true in
+  let stau = (tau,(tausgin1,tausgout1)) in
+  let s = Buffer.create 100 in
+  seosbf (seo_stx seosb (tau,(tausgin1,tausgout1)) (s,None));
+  let hs = string_hexstring (Buffer.contents s) in
+  Printf.printf "%s\n" hs;
+  if ci && co then
+    Printf.printf "Completely signed.\n"
+  else
+    Printf.printf "Partially signed.\n"
+
+let savetxtopool blkh lr staustr =
+  let s = hexstring_string staustr in
+  let (((tauin,tauout) as tau,tausg),_) = sei_stx seis (s,String.length s,None,0,0) in
+  if tx_valid tau then
+    let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true false tauin (CHash(lr))) in
+    if tx_signatures_valid blkh al (tau,tausg) then
+      let txh = hashtx tau in
+      let ch = open_out_gen [Open_creat;Open_append;Open_wronly;Open_binary] 0o660 (Filename.concat (datadir()) "txpool") in
+      seocf (seo_prod seo_hashval seo_stx seoc (txh,(tau,tausg)) (ch,None));
+      close_out ch
+    else
+      Printf.printf "Invalid or incomplete signatures\n"
+  else
+    Printf.printf "Invalid tx\n"
+
+(* todo *)
+let sendtx staustr =
+  let s = hexstring_string staustr in
+  let stau = sei_tx seis (s,String.length s,None,0,0) in
+  ()

@@ -45,3 +45,9 @@ val importbtcprivkey : string -> unit
 val importendorsement : string -> string -> string -> unit
 val importwatchaddr : string -> unit
 val importwatchbtcaddr : string -> unit
+
+val createsplitlocktx : hashval -> payaddr -> payaddr -> addr -> hashval -> int -> int64 -> int64 -> unit
+
+val signtx : hashval -> string -> unit
+val savetxtopool : int64 -> hashval -> string -> unit
+val sendtx : string -> unit

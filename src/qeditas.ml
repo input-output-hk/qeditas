@@ -10,6 +10,7 @@ open Net;;
 open Db;;
 open Secp256k1;;
 open Signat;;
+open Cryptocurr;;
 open Mathdata;;
 open Assets;;
 open Tx;;
@@ -219,6 +220,18 @@ let rand_int64 () =
     (Int64.of_int32 random_int32_array.(0))
     (Int64.shift_right_logical (Int64.of_int32 random_int32_array.(1)) 32);;
 
+let log_block_stats h (bh,bd) =
+  Printf.fprintf !log "Stats for block %s:\n" (hashval_hexstring h);
+  let s = Buffer.create 10000 in
+  seosbf (seo_blockheader seosb bh (s,None));
+  let bhs = String.length (Buffer.contents s) in
+  Printf.fprintf !log "Block header size %d bytes.\n" bhs;
+  let s = Buffer.create 10000 in
+  seosbf (seo_blockdelta seosb bd (s,None));
+  let bds = String.length (Buffer.contents s) in
+  Printf.fprintf !log "Block delta size %d bytes.\n" bds;
+  Printf.fprintf !log "Block size %d bytes.\n" (bhs + bds)
+
 let stakingthread () =
   let sleepuntil = ref (Unix.time()) in
   while true do
@@ -277,17 +290,14 @@ let stakingthread () =
 		Hashtbl.iter
 		  (fun h ((tauin,tauout),sg) ->
 		    Printf.fprintf !log "Trying to include tx %s\n" (hashval_hexstring h); flush stdout;
-		    Printf.printf "trying to include tx %s\n" (hashval_hexstring h); flush stdout; (* delete me *) 
 		    try
 		      ignore (List.find (fun (_,h) -> h = aid) tauin);
-		      Printf.printf "tx spends the staked asset; removing tx from pool\n"; flush stdout; (* delete me *)
+		      Printf.fprintf !log "tx spends the staked asset; removing tx from pool\n"; flush !log;
 		      Commands.remove_from_txpool h
 		    with Not_found ->
 		      if tx_valid (tauin,tauout) then
 			try
-			  Printf.printf "txvalid %s\n" (hashval_hexstring h); flush stdout; (* delete me *) 
 			  let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true false tauin !dync) in
-			  Printf.printf "looked up assets\n"; flush stdout; (* delete me *) 
 			  if tx_signatures_valid blkh al ((tauin,tauout),sg) then
 			    begin
 			      let nfee = ctree_supports_tx true false !dyntht !dynsigt blkh (tauin,tauout) !dync in
@@ -299,7 +309,6 @@ let stakingthread () =
 				end
 			      else
 				begin
-				  Printf.printf "ctree supports tx\n"; flush stdout; (* delete me *) 
 				  let c = octree_ctree (tx_octree_trans blkh (tauin,tauout) (Some(!dync))) in
 				  otherstxs := (h,((tauin,tauout),sg))::!otherstxs;
 				  fees := Int64.sub !fees nfee;
@@ -416,6 +425,7 @@ let stakingthread () =
 		    (Printf.fprintf !log "New block is valid\n"; flush stdout)
 		  else
 		    (Printf.fprintf !log "New block is not valid\n"; flush !log; !exitfn 1; raise Not_found);
+		  log_block_stats bhdnewh (bhnew,bdnew); (* should make this optional, so at lower log levels it isn't done *)
 		  match pbhh with
 		  | None -> if blkh > 1L then (Printf.fprintf !log "No previous block but block height not 1\n"; flush !log; !exitfn 1; raise Not_found)
 		  | Some(pbhh) ->
@@ -594,6 +604,91 @@ let do_command l =
 	| [h] -> Commands.printctreeinfo (hexstring_hashval h)
 	| _ -> raise (Failure "printctreeinfo [ledgerroot]")
       end
+  | "createsplitlocktx" ->
+      begin
+	match al with
+	| (alp::aid::n::lkh::fee::r) ->
+	    begin
+	      let alpha2 = qedaddrstr_addr alp in
+	      if not (payaddr_p alpha2) then raise (Failure (alp ^ " is not a pay address"));
+	      let (p,a4,a3,a2,a1,a0) = alpha2 in
+	      let alpha = (p=1,a4,a3,a2,a1,a0) in
+	      let aid = hexstring_hashval aid in
+	      let n = int_of_string n in
+	      if n <= 0 then raise (Failure ("Cannot split into " ^ (string_of_int n) ^ " assets"));
+	      let lkh = Int64.of_string lkh in
+	      let fee = cants_of_fraenks fee in
+	      if fee < 0L then raise (Failure ("Cannot have a negative free"));
+	      match r with
+	      | [] ->
+		  let gamma = alpha2 in
+		  let beta = alpha in
+		  let lr = node_ledgerroot !bestnode in
+		  Commands.createsplitlocktx lr alpha beta gamma aid n lkh fee
+	      | (gam::r) ->
+		  let gamma = qedaddrstr_addr gam in
+		  if not (payaddr_p gamma) then raise (Failure (gam ^ " is not a pay address"));
+		  match r with
+		  | [] ->
+		      let beta = alpha in
+		      let lr = node_ledgerroot !bestnode in
+		      Commands.createsplitlocktx lr alpha beta gamma aid n lkh fee
+		  | (bet::r) ->
+		      let beta2 = qedaddrstr_addr bet in
+		      if not (payaddr_p beta2) then raise (Failure (bet ^ " is not a pay address"));
+		      let (p,b4,b3,b2,b1,b0) = beta2 in
+		      let beta = (p=1,b4,b3,b2,b1,b0) in
+		      match r with
+		      | [] ->
+			  let lr = node_ledgerroot !bestnode in
+			  Commands.createsplitlocktx lr alpha beta gamma aid n lkh fee
+		      | [lr] ->
+			  let lr = hexstring_hashval lr in
+			  Commands.createsplitlocktx lr alpha beta gamma aid n lkh fee
+		      | _ ->
+			  Printf.printf "createsplitlocktx <current address> <assetid> <number of outputs> <lockheight> <fee> [<new holding address> [<new obligation address> [<ledger root>]]]\n";
+			  flush stdout
+	    end
+	| _ ->
+	    Printf.printf "createsplitlocktx <current address> <assetid> <number of outputs> <lockheight> <fee> [<new holding address> [<new obligation address> [<ledger root>]]]\n";
+	    flush stdout
+      end
+  | "signtx" ->
+      begin
+	match al with
+	| [s] -> Commands.signtx (node_ledgerroot !bestnode) s
+	| _ ->
+	    Printf.printf "signtx <tx in hex>\n";
+	    flush stdout
+      end
+  | "savetxtopool" ->
+      begin
+	match al with
+	| [s] -> Commands.savetxtopool (node_blockheight !bestnode) (node_ledgerroot !bestnode) s
+	| _ ->
+	    Printf.printf "savetxtopool <tx in hex>\n";
+	    flush stdout
+      end
+  | "bestblock" ->
+      let node = !bestnode in
+      let h = node_prevblockhash node in
+      let blkh = node_blockheight node in
+      let lr = node_ledgerroot node in
+      begin
+	match h with
+	| Some(h) ->
+	    Printf.printf "Height: %Ld\nBlock hash: %s\nLedger root: %s\n" (Int64.sub blkh 1L) (hashval_hexstring h) (hashval_hexstring lr);
+	    flush stdout
+	| None ->
+	    Printf.printf "Height: %Ld\nNo blocks yet.\nLedger root: %s\n" (Int64.sub blkh 1L) (hashval_hexstring lr);
+	    flush stdout
+      end
+  | "difficulty" ->
+      let node = !bestnode in
+      let (_,_,tar) = node_targetinfo node in
+      let blkh = node_blockheight node in
+      Printf.printf "Current target (for block at height %Ld): %s\n" blkh (string_of_big_int tar);
+      flush stdout
   | _ ->
       (Printf.fprintf stdout "Ignoring unknown command: %s\n" c; List.iter (fun a -> Printf.printf "%s\n" a) al; flush stdout);;
 
@@ -606,7 +701,7 @@ let initialize () =
     let datadir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
     if Sys.file_exists (Filename.concat datadir ".lock") then
       begin
-	Printf.printf "Cannot start Qeditas. Do you already have Qeditas running? If not, remove the file %s.\n" (Filename.concat datadir ".lock");
+	Printf.printf "Cannot start Qeditas. Do you already have Qeditas running? If not, remove: %s\n" (Filename.concat datadir ".lock");
 	flush stdout;
 	exit 1;
       end;
@@ -630,7 +725,7 @@ let initialize () =
     if !Config.testnet then
       begin
 	max_target := shift_left_big_int unit_big_int 230; (*** make the max_target higher (so difficulty can be easier for testing) ***)
-	genesistarget := shift_left_big_int unit_big_int 208; (*** make the genesistarget higher (so difficulty can be easier for testing) ***)
+	genesistarget := shift_left_big_int unit_big_int 202; (*** make the genesistarget higher (so difficulty can be easier for testing) ***)
       end;
     initblocktree();
     Printf.printf "Loading wallet\n"; flush stdout;
