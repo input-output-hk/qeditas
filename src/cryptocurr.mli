@@ -20,3 +20,4 @@ val addr_qedaddrstr : addr -> string
 val qedaddrstr_addr : string -> addr
 val btcaddrstr_addr : string -> addr
 val fraenks_of_cants : int64 -> string
+val cants_of_fraenks : string -> int64

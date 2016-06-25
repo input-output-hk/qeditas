@@ -283,3 +283,31 @@ let fraenks_of_cants v =
   done;
   Buffer.contents b
 
+let cants_of_fraenks s =
+  let f = ref 0L in
+  let w = ref true in
+  let c = ref 0L in
+  let d = ref 100000000000L in
+  let n = String.length s in
+  let i = ref 0 in
+  while !i < n do
+    let cc = Char.code s.[!i] in
+    incr i;
+    if !w then
+      if cc = 46 then
+	w := false
+      else if cc >= 48 && cc < 58 then
+	f := Int64.add (Int64.mul !f 10L) (Int64.of_int (cc-48))
+      else
+	raise (Failure ("cannot interpret " ^ s ^ " as a number of fraenks"))
+    else
+      if cc >= 48 && cc < 58 then
+	begin
+	  c := Int64.add !c (Int64.mul !d (Int64.of_int (cc-48)));
+	  d := Int64.div !d 10L
+	end
+      else
+	raise (Failure ("cannot interpret " ^ s ^ " as a number of fraenks"))
+  done;
+  Int64.add (Int64.mul !f 1000000000000L) !c
+
