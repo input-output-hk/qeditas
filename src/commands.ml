@@ -317,7 +317,19 @@ let importendorsement a b s =
       let alphap = (false,x4,x3,x2,x1,x0) in
       if privkey_in_wallet_p alpha then raise (Failure "Not adding endorsement since the wallet already has the private key for this address.");
       match verifybitcoinmessage_recover (x4,x3,x2,x1,x0) recid fcomp esg ("endorse " ^ b) with
-      | None -> raise (Failure "endorsement signature verification failed; not adding endorsement to wallet")
+      | None ->
+	  if !Config.testnet then
+	    begin
+	      match verifybitcoinmessage_recover (-629004799l, -157083340l, -103691444l, 1197709645l, 224718539l) recid fcomp esg ("fakeendorsement " ^ b ^ " (" ^ (addr_qedaddrstr alpha) ^ ")") with
+	      | None ->
+		  raise (Failure "endorsement signature verification failed; not adding endorsement to wallet")
+	      | Some(x,y) ->
+		  Printf.printf "Fake endorsement acceptable for testnet; adding to wallet.\n";
+		  walletendorsements := (alphap,betap,(x,y),recid,fcomp,esg)::!walletendorsements;
+		  save_wallet() (*** overkill, should append if possible ***)
+	    end
+	  else
+	    raise (Failure "endorsement signature verification failed; not adding endorsement to wallet")
       | Some(x,y) ->
 (*	  Printf.printf "just verified endorsement signature:\naddrhex = %s\nrecid = %d\nfcomp = %s\nesgr = %s\nesgs = %s\nendorse %s\n" (hashval_hexstring (x4,x3,x2,x1,x0)) recid (if fcomp then "true" else "false") (let (r,s) = esg in string_of_big_int r) (let (r,s) = esg in string_of_big_int s) b; flush stdout; *)
 	  Printf.printf "Verified endorsement; adding to wallet.\n";

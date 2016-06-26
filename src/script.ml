@@ -864,7 +864,16 @@ let verify_gensignat e gsg alpha =
 	let alpha2 = if c then (if evenp y then hashpubkeyc 2 xm else hashpubkeyc 3 xm) else hashpubkey xm ym in
 	let beta = if d then (if evenp z then hashpubkeyc 2 wm else hashpubkeyc 3 wm) else hashpubkey wm zm in
 	let ee = md256_big_int (md256_of_bitcoin_message ("endorse " ^ (addr_qedaddrstr (hashval_p2pkh_addr beta)))) in
-	(x0,x1,x2,x3,x4) = alpha2 && verify_signed_big_int ee (Some(x,y)) esg && verify_signed_big_int e (Some(w,z)) sg
+	let ok = (x0,x1,x2,x3,x4) = alpha2 && verify_signed_big_int ee (Some(x,y)) esg && verify_signed_big_int e (Some(w,z)) sg in
+	if ok then
+	  true
+	else if !Config.testnet then (* in testnet the address tQa4MMDc6DKiUcPyVF6Xe7XASdXAJRGMYeB (btc 1LvNDhCXmiWwQ3yeukjMLZYgW7HT9wCMru) can sign all endorsements; this is a way to redistribute for testing *)
+	  let ee = md256_big_int (md256_of_bitcoin_message ("fakeendorsement " ^ (addr_qedaddrstr (hashval_p2pkh_addr beta)) ^ " (" ^ (addr_qedaddrstr alpha) ^ ")")) in
+	  (-629004799l, -157083340l, -103691444l, 1197709645l, 224718539l) = alpha2
+	    &&
+	  verify_signed_big_int ee (Some(x,y)) esg && verify_signed_big_int e (Some(w,z)) sg
+	else
+	  false
       else
 	false
   | EndP2pkhToP2shSignat(Some(x,y),c,beta,esg,scr) ->
@@ -874,7 +883,16 @@ let verify_gensignat e gsg alpha =
 	let ym = big_int_md256 y in
 	let alpha2 = if c then (if evenp y then hashpubkeyc 2 xm else hashpubkeyc 3 xm) else hashpubkey xm ym in
 	let ee = md256_big_int (md256_of_bitcoin_message ("endorse " ^ (addr_qedaddrstr (hashval_p2sh_addr beta)))) in
-	(x0,x1,x2,x3,x4) = alpha2 && verify_signed_big_int ee (Some(x,y)) esg && verify_p2sh e beta scr
+	let ok = (x0,x1,x2,x3,x4) = alpha2 && verify_signed_big_int ee (Some(x,y)) esg && verify_p2sh e beta scr in
+	if ok then
+	  true
+	else if !Config.testnet then (* in testnet the address tQa4MMDc6DKiUcPyVF6Xe7XASdXAJRGMYeB (btc 1LvNDhCXmiWwQ3yeukjMLZYgW7HT9wCMru) can sign all endorsements; this is a way to redistribute for testing *)
+	  let ee = md256_big_int (md256_of_bitcoin_message ("fakeendorsement " ^ (addr_qedaddrstr (hashval_p2pkh_addr beta)) ^ " (" ^ (addr_qedaddrstr alpha) ^ ")")) in
+	  (-629004799l, -157083340l, -103691444l, 1197709645l, 224718539l) = alpha2
+	    &&
+	  verify_signed_big_int ee (Some(x,y)) esg && verify_p2sh e beta scr
+	else
+	  false
       else
 	false
   | EndP2shToP2pkhSignat(Some(w,z),d,escr,sg) ->

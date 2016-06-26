@@ -564,9 +564,16 @@ let valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v) =
     match bhs.blocksignatendorsement with
     | None -> verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) bhd.stakeaddr bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
     | Some(beta,recid,fcomp,esg) -> (*** signature via endorsement ***)
-	verifybitcoinmessage bhd.stakeaddr recid fcomp esg ("endorse " ^ (addr_qedaddrstr (hashval_p2pkh_addr beta)))
-	  &&
-	verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) beta bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
+	begin
+	  (verifybitcoinmessage bhd.stakeaddr recid fcomp esg ("endorse " ^ (addr_qedaddrstr (hashval_p2pkh_addr beta)))
+	     &&
+	   verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) beta bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp)
+	|| (!Config.testnet (*** allow fake endorsements in testnet ***)
+	      &&
+	    verifybitcoinmessage (-629004799l, -157083340l, -103691444l, 1197709645l, 224718539l) recid fcomp esg ("fakeendorsement " ^ (addr_qedaddrstr (hashval_p2pkh_addr beta)) ^ " (" ^ (addr_qedaddrstr (hashval_p2pkh_addr bhd.stakeaddr)) ^ ")")
+	     &&
+	   verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) beta bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp)
+	end
   end
     &&
   bhd.stakeassetid = aid
