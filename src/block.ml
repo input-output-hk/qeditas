@@ -79,12 +79,24 @@ let genesisledgerroot : hashval ref = ref (hexstring_hashval "66c029f4c29b351785
 (*** base reward of 50 fraenks (5 trillion cants) like bitcoin, but assume the first 350000 blocks have passed. ***)
 let basereward = 5000000000000L
 
-let rewfn blkh =
-  if blkh < 11410000L then
+(***
+ era ranges from 1 and 43 (roughly 1 + 41*4 = 165 years until final era when reward drops to 0
+ era 1 is for the first 70000 blocks (1 to 70000)
+ era 2 is for the next 210000 blocks (70001 to 280000)
+ and so on until 8680001 when the final (unlimited) era of 43 begins.
+ ***)
+let era blkh =
+  if blkh < 8680001L then
     let blki = Int64.to_int blkh in
-    Int64.shift_right basereward ((blki + 349999) / 210000) (*** start counting here at blkh = 1L, corresponding to Bitcoin block at height 350000 ***)
+    ((blki + 349999) / 210000) (*** start counting here at blkh = 1L, corresponding to Bitcoin block at height 350000 ***)
   else
-    0L
+    43
+
+(*** the block reward begins at 25 fraenks and halves with each era until era 43 when it is 0 ***)
+let rewfn blkh = Int64.shift_right basereward (era blkh)
+
+(*** the max block size is 500K during era 1 and doubles with each era, with a final max block size of 512M. ***)
+let maxblockdeltasize blkh = 250000 lsl (era blkh)
 
 let hashstakemod sm =
   let (m3,m2,m1,m0) = sm in
@@ -603,9 +615,13 @@ let valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v) =
   end
 
 let valid_blockheader blkh tinfo (bhd,bhs) =
-  match ctree_lookup_asset false false bhd.stakeassetid bhd.prevledger (addr_bitseq (p2pkhaddr_addr bhd.stakeaddr)) with
+  let bl = addr_bitseq (p2pkhaddr_addr bhd.stakeaddr) in
+  match ctree_lookup_asset false false bhd.stakeassetid bhd.prevledger bl with
   | Some(aid,bday,obl,Currency(v)) -> (*** stake belongs to staker ***)
-      valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v)
+      if minimal_asset_supporting_ctree bhd.prevledger bl aid 50 then (*** ensure that the ctree contains no extra information; this is a condition to prevent headers from being large by including unnecessary information; also only allow the first 50 assets held at an address to be used for staking ***)
+	valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v)
+      else
+	false
   | _ -> false
 
 let ctree_of_block (b:block) =

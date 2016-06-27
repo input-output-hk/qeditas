@@ -2210,3 +2210,57 @@ let rec bitseq_prefix bl cl =
 	  else
 	    false
 
+(***
+ ensure that the hlist/nehlist/ctree contains no extra information; this is a condition to prevent headers from being
+ large by including unnecessary information
+ ***)
+let rec minimal_asset_supporting_hlist hl aid n =
+  if n > 0 then
+    match hl with
+    | HCons(a,HNil) -> assetid a = aid
+    | HCons(a,HHash(_)) -> assetid a = aid
+    | HConsH(_,hr) -> minimal_asset_supporting_hlist hr aid (n-1)
+    | _ -> false
+  else
+    false
+
+let rec minimal_asset_supporting_nehlist hl aid n =
+  if n > 0 then
+    match hl with
+    | NehCons(a,HNil) -> assetid a = aid
+    | NehCons(a,HHash(_)) -> assetid a = aid
+    | NehConsH(_,hr) -> minimal_asset_supporting_hlist hr aid (n-1)
+    | _ -> false
+  else
+    false
+
+let rec minimal_asset_supporting_ctree tr bl aid n =
+  match tr with
+  | CLeaf(br,hl) when br = bl -> minimal_asset_supporting_nehlist hl aid n
+  | CLeaf(_,_) -> false
+  | CHash(_) -> false
+  | CLeft(trl) ->
+      begin
+	match bl with
+	| (false::br) -> minimal_asset_supporting_ctree trl br aid n
+	| _ -> false
+      end
+  | CRight(trr) ->
+      begin
+	match bl with
+	| (true::br) -> minimal_asset_supporting_ctree trr br aid n
+	| _ -> false
+      end
+  | CBin(trl,CHash(_)) ->
+      begin
+	match bl with
+	| (false::br) -> minimal_asset_supporting_ctree trl br aid n
+	| _ -> false
+      end
+  | CBin(CHash(_),trr) ->
+      begin
+	match bl with
+	| (true::br) -> minimal_asset_supporting_ctree trr br aid n
+	| _ -> false
+      end
+  | _ -> false

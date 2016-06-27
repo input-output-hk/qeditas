@@ -103,3 +103,4 @@ val print_hlist_to_buffer : Buffer.t -> int64 -> hlist -> unit
 val print_ctree : ctree -> unit
 val print_ctree_all : ctree -> unit
 
+val minimal_asset_supporting_ctree : ctree -> bool list -> hashval -> int -> bool

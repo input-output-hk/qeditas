@@ -62,32 +62,35 @@ let compute_recid (r,s) k =
   | None -> raise (Failure "bad0");;
 
 
-let rec hlist_stakingassets blkh alpha hl =
-  match hl with
-  | HCons((aid,bday,obl,Currency(v)),hr) ->
+let rec hlist_stakingassets blkh alpha hl n =
+  if n > 0 then
+    match hl with
+    | HCons((aid,bday,obl,Currency(v)),hr) ->
 (*** lock stakingassets ***)
-      let ca = coinage blkh bday obl v in
-      if gt_big_int ca zero_big_int && not (Hashtbl.mem Commands.unconfirmed_spent_assets aid) then
-	Commands.stakingassets := (alpha,aid,bday,obl,v)::!Commands.stakingassets;
+	let ca = coinage blkh bday obl v in
+	if gt_big_int ca zero_big_int && not (Hashtbl.mem Commands.unconfirmed_spent_assets aid) then
+	  Commands.stakingassets := (alpha,aid,bday,obl,v)::!Commands.stakingassets;
 (*** unlock stakingassets ***)
-      hlist_stakingassets blkh alpha hr
-  | HCons(_,hr) -> hlist_stakingassets blkh alpha hr
-  | HConsH(h,hr) ->
-      begin
-	try
-	  hlist_stakingassets blkh alpha (HCons(DbAsset.dbget h,hr))
-	with Not_found -> ()
-      end
-  | HHash(h) ->
-      begin
-	try
-	  let (h1,h2) = DbHConsElt.dbget h in
-	  match h2 with
-	  | Some(h2) -> hlist_stakingassets blkh alpha (HConsH(h1,HHash(h2)))
-	  | None -> hlist_stakingassets blkh alpha (HConsH(h1,HNil))
-	with Not_found -> ()
-      end
-  | _ -> ();;
+	hlist_stakingassets blkh alpha hr (n-1)
+    | HCons(_,hr) -> hlist_stakingassets blkh alpha hr (n-1)
+    | HConsH(h,hr) ->
+	begin
+	  try
+	    hlist_stakingassets blkh alpha (HCons(DbAsset.dbget h,hr)) n
+	  with Not_found -> ()
+	end
+    | HHash(h) ->
+	begin
+	  try
+	    let (h1,h2) = DbHConsElt.dbget h in
+	    match h2 with
+	    | Some(h2) -> hlist_stakingassets blkh alpha (HConsH(h1,HHash(h2))) n
+	    | None -> hlist_stakingassets blkh alpha (HConsH(h1,HNil)) n
+	  with Not_found -> ()
+	end
+    | _ -> ()
+  else
+    ();;
 
 let compute_staking_chances n fromtm totm =
    let i = ref fromtm in
@@ -100,7 +103,7 @@ let compute_staking_chances n fromtm totm =
      (fun (k,b,(x,y),w,h,alpha) ->
        match ctree_addr true true (hashval_p2pkh_addr h) c None with
        | (Some(hl),_) ->
-           hlist_stakingassets blkhght h (nehlist_hlist hl)
+           hlist_stakingassets blkhght h (nehlist_hlist hl) 50
        | _ ->
 	   ())
      !Commands.walletkeys;
@@ -111,7 +114,7 @@ let compute_staking_chances n fromtm totm =
       if not p && not q then (*** only p2pkh can stake ***)
 	match ctree_addr true true (payaddr_addr alpha) c None with
 	| (Some(hl),_) ->
-	    hlist_stakingassets blkhght (x4,x3,x2,x1,x0) (nehlist_hlist hl)
+	    hlist_stakingassets blkhght (x4,x3,x2,x1,x0) (nehlist_hlist hl) 50
 	| _ -> ())
      !Commands.walletendorsements;
   try
@@ -220,18 +223,6 @@ let rand_int64 () =
     (Int64.of_int32 random_int32_array.(0))
     (Int64.shift_right_logical (Int64.of_int32 random_int32_array.(1)) 32);;
 
-let log_block_stats h (bh,bd) =
-  Printf.fprintf !log "Stats for block %s:\n" (hashval_hexstring h);
-  let s = Buffer.create 10000 in
-  seosbf (seo_blockheader seosb bh (s,None));
-  let bhs = String.length (Buffer.contents s) in
-  Printf.fprintf !log "Block header size %d bytes.\n" bhs;
-  let s = Buffer.create 10000 in
-  seosbf (seo_blockdelta seosb bd (s,None));
-  let bds = String.length (Buffer.contents s) in
-  Printf.fprintf !log "Block delta size %d bytes.\n" bds;
-  Printf.fprintf !log "Block size %d bytes.\n" (bhs + bds)
-
 let stakingthread () =
   let sleepuntil = ref (Unix.time()) in
   while true do
@@ -287,6 +278,7 @@ let stakingthread () =
 		let dynsigt = ref (lookup_sigtree (node_signaroot best)) in
 		let fees = ref 0L in
 		let otherstxs = ref [] in
+		let rembytesestimate = ref (maxblockdeltasize blkh - (2048 * 2)) in (*** estimate the remaining room in the block delta if the tx is added ***)
 		Hashtbl.iter
 		  (fun h ((tauin,tauout),sg) ->
 		    Printf.fprintf !log "Trying to include tx %s\n" (hashval_hexstring h); flush stdout;
@@ -308,14 +300,22 @@ let stakingthread () =
 				  Commands.remove_from_txpool h;
 				end
 			      else
-				begin
-				  let c = octree_ctree (tx_octree_trans blkh (tauin,tauout) (Some(!dync))) in
-				  otherstxs := (h,((tauin,tauout),sg))::!otherstxs;
-				  fees := Int64.sub !fees nfee;
-				  dync := c;
-				  dyntht := txout_update_ottree tauout !dyntht;
-				  dynsigt := txout_update_ostree tauout !dynsigt;
-				end
+				let bytesestimate = 2048 * List.length tauin + 2048 * List.length tauout in (*** simple 2K per input and output (since must include relevant parts of ctree) ***)
+				if bytesestimate < !rembytesestimate then
+				  begin
+				    let c = octree_ctree (tx_octree_trans blkh (tauin,tauout) (Some(!dync))) in
+				    otherstxs := (h,((tauin,tauout),sg))::!otherstxs;
+				    fees := Int64.sub !fees nfee;
+				    dync := c;
+				    dyntht := txout_update_ottree tauout !dyntht;
+				    dynsigt := txout_update_ostree tauout !dynsigt;
+				    rembytesestimate := !rembytesestimate - bytesestimate
+				  end
+				else
+				  begin
+				    Printf.fprintf !log "tx %s not being included because estimated block size would be too big (rembytesestimate %d, bytesestimate %d)\n" (hashval_hexstring h) !rembytesestimate bytesestimate;
+				    flush !log
+				  end
 			    end
 			  else
 			    begin
@@ -425,7 +425,11 @@ let stakingthread () =
 		    (Printf.fprintf !log "New block is valid\n"; flush stdout)
 		  else
 		    (Printf.fprintf !log "New block is not valid\n"; flush !log; !exitfn 1; raise Not_found);
-		  log_block_stats bhdnewh (bhnew,bdnew); (* should make this optional, so at lower log levels it isn't done *)
+		  let s = Buffer.create 10000 in
+		  seosbf (seo_blockdelta seosb bdnew (s,None));
+		  let bds = Buffer.length s in
+		  if bds > maxblockdeltasize blkh then
+		    (Printf.fprintf !log "New block is too big (%d bytes)\n" bds; flush !log; raise Not_found); (** in this case, probably the best option would be to switch back to an empty block **)
 		  match pbhh with
 		  | None -> if blkh > 1L then (Printf.fprintf !log "No previous block but block height not 1\n"; flush !log; !exitfn 1; raise Not_found)
 		  | Some(pbhh) ->
