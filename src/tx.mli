@@ -22,6 +22,9 @@ val tx_valid : tx -> bool
 
 type stx = tx * (gensignat list * gensignat list)
 
+exception BadOrMissingSignature
+
+val check_spend_obligation_upto_blkh : addr -> big_int -> gensignat -> obligation -> int64 option
 val check_spend_obligation : addr -> int64 -> big_int -> gensignat -> obligation -> bool
 val check_move_obligation : addr -> big_int -> gensignat -> obligation -> preasset -> addr_preasset list -> bool
 val tx_signatures_valid : int64 -> asset list -> stx -> bool

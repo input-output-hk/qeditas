@@ -86,12 +86,33 @@ let tx_valid tau = tx_inputs_valid (tx_inputs tau) && tx_outputs_valid (tx_outpu
 
 type stx = tx * (gensignat list * gensignat list)
 
-let check_spend_obligation alpha blkh (txhe:big_int) s obl =
+exception BadOrMissingSignature
+
+let opmax b1 b2 =
+  match (b1,b2) with
+  | (Some(b1),Some(b2)) -> if b1 > b2 then Some(b1) else Some(b2)
+  | (_,None) -> b1
+  | _ -> b2
+
+let check_spend_obligation_upto_blkh alpha (txhe:big_int) s obl =
   match obl with
   | None -> (*** defaults to alpha with no block height restriction ***)
-      verify_gensignat txhe s alpha
+      if verify_gensignat txhe s alpha then
+	None
+      else
+	raise BadOrMissingSignature
   | Some(gamma,b,_) ->
-      b <= blkh && verify_gensignat txhe s (Hash.payaddr_addr gamma)
+      if verify_gensignat txhe s (Hash.payaddr_addr gamma) then
+	Some(b)
+      else
+	raise BadOrMissingSignature
+
+let check_spend_obligation alpha blkh (txhe:big_int) s obl =
+  try
+    match check_spend_obligation_upto_blkh alpha txhe s obl with
+    | None -> true
+    | Some(b) -> b <= blkh
+  with BadOrMissingSignature -> false
 
 let check_move_obligation alpha txhe s obl2 u2 outpl =
   try
@@ -100,54 +121,73 @@ let check_move_obligation alpha txhe s obl2 u2 outpl =
     verify_gensignat txhe s alpha
   with Not_found -> false
 
-let rec check_tx_in_signatures blkh txhe outpl inpl al sl =
+let rec check_tx_in_signatures txhe outpl inpl al sl =
   match inpl,al with
-  | [],[] -> true
+  | [],[] -> None
   | (alpha,k)::inpr,(a::ar) ->
-      check_tx_in_signatures blkh txhe outpl inpr ar sl
-	&&
-      assetid a = k
-	&&
-      begin
-	match assetpre a with
-	| Marker -> true
-	| Bounty(_) -> true
-	| _ -> (*** don't require signatures to spend markers and bounties; but there are conditions for the tx to be supported by a ctree ***)
-	    try
-	      ignore (List.find
-			(fun s ->
-			  check_spend_obligation alpha blkh txhe s (assetobl a) || check_move_obligation alpha txhe s (assetobl a) (assetpre a) outpl)
-			sl);
-	      true
-	    with Not_found -> false
-      end
-  | _,_ -> false
+      let b = ref (check_tx_in_signatures txhe outpl inpr ar sl) in
+      if assetid a = k then
+	begin
+	  match assetpre a with
+	  | Marker -> !b
+	  | Bounty(_) -> !b
+	  | _ -> (*** don't require signatures to spend markers and bounties; but there are conditions for the tx to be supported by a ctree ***)
+	      try
+		ignore (List.find
+			  (fun s ->
+			    try
+			      let b2 = check_spend_obligation_upto_blkh alpha txhe s (assetobl a) in
+			      b := opmax !b b2;
+			      true
+			    with BadOrMissingSignature ->
+			      if check_move_obligation alpha txhe s (assetobl a) (assetpre a) outpl then
+				true
+			      else
+				false)
+			  sl);
+		!b
+	      with Not_found ->
+		raise BadOrMissingSignature
+	end
+      else
+	raise BadOrMissingSignature
+  | _,_ ->
+      raise BadOrMissingSignature
 
-let rec check_tx_out_signatures blkh txhe outpl sl =
+let rec check_tx_out_signatures txhe outpl sl =
   match outpl,sl with
   | [],[] -> true
   | (_,(_,TheoryPublication(alpha,n,thy)))::outpr,sg::sr ->
-      check_tx_out_signatures blkh txhe outpr sr
+      check_tx_out_signatures txhe outpr sr
 	&&
       verify_gensignat txhe sg (payaddr_addr alpha)
   | (_,(_,SignaPublication(alpha,n,th,si)))::outpr,sg::sr ->
-      check_tx_out_signatures blkh txhe outpr sr
+      check_tx_out_signatures txhe outpr sr
 	&&
       verify_gensignat txhe sg (payaddr_addr alpha)
   | (_,(_,DocPublication(alpha,n,th,d)))::outpr,sg::sr ->
-      check_tx_out_signatures blkh txhe outpr sr
+      check_tx_out_signatures txhe outpr sr
 	&&
       verify_gensignat txhe sg (payaddr_addr alpha)
-  | _::outpr,_ -> check_tx_out_signatures blkh txhe outpr sl
+  | _::outpr,_ -> check_tx_out_signatures txhe outpr sl
   | _,_ -> false
 
-let tx_signatures_valid blkh al stau =
+let tx_signatures_valid_asof_blkh al stau =
   let (tau,(sli,slo)) = stau in
   let txh = if !Config.testnet then hashtag (hashtx tau) 288l else hashtx tau in (*** sign a modified hash for testnet ***)
   let txhe = hashval_big_int txh in
-  check_tx_in_signatures blkh txhe (tx_outputs tau) (tx_inputs tau) al sli
-    &&
-  check_tx_out_signatures blkh txhe (tx_outputs tau) slo
+  let b = check_tx_in_signatures txhe (tx_outputs tau) (tx_inputs tau) al sli in
+  if check_tx_out_signatures txhe (tx_outputs tau) slo then
+    b
+  else
+    raise BadOrMissingSignature
+
+let tx_signatures_valid blkh al stau =
+  try
+    match tx_signatures_valid_asof_blkh al stau with
+    | Some(b) -> b <= blkh
+    | None -> true
+  with BadOrMissingSignature -> false
 
 let rec txout_update_ottree outpl tht =
   match outpl with
@@ -184,4 +224,74 @@ let sei_stx i c = sei_prod sei_tx sei_txsigs i c
 
 module DbTx = Dbbasic (struct type t = tx let basedir = "tx" let seival = sei_tx seic let seoval = seo_tx seoc end)
 
-module DbTxSignatures = Dbbasic (struct type t = gensignat list * gensignat list let basedir = "txsigs" let seival = sei_txsigs seic let seoval = seo_txsigs seoc end)
+module DbTxSignatures = Dbbasic (struct type t = gensignat list * gensignat list let basedir = "txsigs" let seival = sei_txsigs seic let seoval = seo_txsigs seoc end);;
+
+Hashtbl.add msgtype_handler GetTx
+    (fun (sin,sout,cs,ms) ->
+      let (h,_) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetTx in
+      if not (List.mem (i,h) cs.sentinv) then (*** don't resend ***)
+	try
+	  let tau = DbTx.dbget h in
+	  let tausb = Buffer.create 100 in
+	  seosbf (seo_tx seosb tau (tausb,None));
+	  let tauser = Buffer.contents tausb in
+	  ignore (send_msg sout Tx tauser);
+	  cs.sentinv <- (i,h)::cs.sentinv
+	with Not_found -> ());;
+
+Hashtbl.add msgtype_handler Tx
+    (fun (sin,sout,cs,ms) ->
+      let (h,r) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetTx in
+      if not (DbTx.dbexists h) then (*** if we already have it, abort ***)
+	if List.mem (i,h) cs.invreq then (*** only continue if it was requested ***)
+          let (tau,_) = sei_tx seis r in
+	  if hashtx tau = h then
+	    begin
+  	      DbTx.dbput h tau;
+	      cs.invreq <- List.filter (fun (j,k) -> not (i = j && h = k)) cs.invreq
+	    end
+          else (*** otherwise, it seems to be a misbehaving peer --  ignore for now ***)
+	    (Printf.fprintf !Utils.log "misbehaving peer? [malformed Tx]\n"; flush !Utils.log)
+	else (*** if something unrequested was sent, then seems to be a misbehaving peer ***)
+	  (Printf.fprintf !Utils.log "misbehaving peer? [unrequested Tx]\n"; flush !Utils.log));;
+
+Hashtbl.add msgtype_handler GetTxSignatures
+    (fun (sin,sout,cs,ms) ->
+      let (h,_) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetTxSignatures in
+      if not (List.mem (i,h) cs.sentinv) then (*** don't resend ***)
+	try
+	  let s = DbTxSignatures.dbget h in
+	  let ssb = Buffer.create 100 in
+	  seosbf (seo_txsigs seosb s (ssb,None));
+	  let sser = Buffer.contents ssb in
+	  ignore (send_msg sout TxSignatures sser);
+	  cs.sentinv <- (i,h)::cs.sentinv
+	with Not_found -> ());;
+
+Hashtbl.add msgtype_handler TxSignatures
+    (fun (sin,sout,cs,ms) ->
+      let (h,r) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetTxSignatures in
+      if not (DbTxSignatures.dbexists h) then (*** if we already have it, abort ***)
+	try
+	  let ((tauin,_) as tau) = DbTx.dbget h in
+	  if List.mem (i,h) cs.invreq then (*** only continue if it was requested ***)
+            let (s,_) = sei_txsigs seis r in
+	    try
+	      let al = List.map (fun (_,aid) -> DbAsset.dbget aid) tauin in
+	      ignore (tx_signatures_valid_asof_blkh al (tau,s)); (*** signatures valid at some block height ***)
+  	      DbTxSignatures.dbput h s;
+	      cs.invreq <- List.filter (fun (j,k) -> not (i = j && h = k)) cs.invreq
+	    with
+	    | BadOrMissingSignature -> (*** otherwise, it seems to be a misbehaving peer --  ignore for now ***)
+		(Printf.fprintf !Utils.log "misbehaving peer? [malformed TxSignatures]\n"; flush !Utils.log)
+	    | Not_found -> (*** in this case, we don't have all the spent assets in the database, which means we shouldn't have requested the signatures, ignore ***)
+		()
+	  else (*** if something unrequested was sent, then seems to be a misbehaving peer ***)
+	    (Printf.fprintf !Utils.log "misbehaving peer? [unrequested TxSignatures]\n"; flush !Utils.log)
+	with Not_found -> (*** do not know the tx, so drop the sig ***)
+	  ());;
+
