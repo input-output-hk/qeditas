@@ -392,10 +392,36 @@ let get_asset h =
   try
     DbAsset.dbget h
   with Not_found -> (*** request it and fail ***)
-(***
-      let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qasset " ^ hh) (Unix.environment()) in
-    ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
-(*    raise (Failure ("could not resolve a needed asset " ^ hh ^ "; requesting from peers")) *)
-***)
-    raise GettingRemoteData
+    broadcast_requestdata GetAsset h;
+    raise GettingRemoteData;;
 
+Hashtbl.add msgtype_handler GetAsset
+    (fun (sin,sout,cs,ms) ->
+      let (h,_) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetAsset in
+      if not (List.mem (i,h) cs.sentinv) then (*** don't resend ***)
+	try
+	  let a = DbAsset.dbget h in
+	  let asb = Buffer.create 100 in
+	  seosbf (seo_asset seosb a (asb,None));
+	  let aser = Buffer.contents asb in
+	  ignore (send_msg sout Asset aser);
+	  cs.sentinv <- (i,h)::cs.sentinv
+	with Not_found -> ());;
+
+Hashtbl.add msgtype_handler Asset
+    (fun (sin,sout,cs,ms) ->
+      let (h,r) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetAsset in
+      if not (DbAsset.dbexists h) then (*** if we already have it, abort ***)
+	if List.mem (i,h) cs.invreq then (*** only continue if it was requested ***)
+          let (a,_) = sei_asset seis r in
+	  if assetid a = h then
+	    begin
+  	      DbAsset.dbput h a;
+	      cs.invreq <- List.filter (fun (j,k) -> not (i = j && h = k)) cs.invreq
+	    end
+          else (*** otherwise, it seems to be a misbehaving peer --  ignore for now ***)
+	    (Printf.fprintf !Utils.log "misbehaving peer? [malformed Asset]\n"; flush !Utils.log)
+	else (*** if something unrequested was sent, then seems to be a misbehaving peer ***)
+	  (Printf.fprintf !Utils.log "misbehaving peer? [unrequested Asset]\n"; flush !Utils.log));;
