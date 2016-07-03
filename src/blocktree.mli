@@ -32,6 +32,7 @@ val eq_node : blocktree -> blocktree -> bool
 val find_best_validated_block_from : blocktree -> big_int -> big_int
 val is_recent_staker : hashval -> blocktree -> int -> bool
 val record_recent_staker : hashval -> blocktree -> int -> unit
+val add_to_validheaders_file : string -> unit
 
 val print_best_node : unit -> unit
 

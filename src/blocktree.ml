@@ -573,5 +573,34 @@ let qednetmain initfn preloopfn =
 	let hh = String.sub l 32 40 in
 	process_new_header (hexstring_hashval hh) hh false false
 ***)
-  done
+  done;;
+
+Hashtbl.add msgtype_handler NewHeader
+  (fun (sin,sout,cs,ms) ->
+    let (h,c) = sei_hashval seis (ms,String.length ms,None,0,0) in
+    let ((bhd,bhs),_) = sei_blockheader seis c in
+    let bhdh = hash_blockheaderdata bhd in
+    if bhdh = h then
+      begin
+	try
+	  let n = Hashtbl.find blkheadernode bhd.prevblockhash in
+	  if valid_blockheader (node_blockheight n) (node_targetinfo n) (bhd,bhs) then
+	    begin
+	      DbBlockHeader.dbput h (bhd,bhs);
+	      process_new_header h (hashval_hexstring h) false false
+	    end
+	  else (*** invalid block header, ignore but log ***)
+	    begin
+	      Printf.fprintf !log "Invalid block header %s. Dropping.\n" (hashval_hexstring h);
+	      flush !log;
+	    end
+	with Not_found -> (*** orphan, to do ***)
+	  Printf.fprintf !log "Orphan block header %s. Dropping because relevant code has not been written.\n" (hashval_hexstring h);
+	  flush !log;
+      end
+    else (*** if hashval mismatch, ignore but log ***)
+      begin
+	Printf.fprintf !log "Got new header with hash %s but claimed hash %s. Ignoring.\n" (hashval_hexstring bhdh) (hashval_hexstring h);
+	flush !log;
+      end);;
 

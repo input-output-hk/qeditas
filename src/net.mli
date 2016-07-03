@@ -46,6 +46,7 @@ type msgtype =
   | Asset
   | Checkpoint
   | AntiCheckpoint
+  | NewHeader
 
 val int_of_msgtype : msgtype -> int
 
@@ -89,3 +90,5 @@ val network_time : unit -> int64 * int
 val rec_msg : int64 -> in_channel -> hashval option * hashval * msgtype * string
 val send_msg : out_channel -> msgtype -> string -> hashval
 val broadcast_requestdata : msgtype -> hashval -> unit
+val broadcast_new_header : string -> unit
+

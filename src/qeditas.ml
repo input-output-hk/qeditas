@@ -356,10 +356,12 @@ let stakingthread () =
 		let (prevcforheader,cgr) = factor_inputs_ctree_cgraft [(alpha2,aid)] prevcforblock in
 		let newcr = save_ctree_elements !dync in
 (*		    Hashtbl.add recentledgerroots newcr (blkh,newcr); *)
+		let newthtroot = ottree_hashroot !dyntht in
+		let newsigtroot = ostree_hashroot !dynsigt in
 		let bhdnew : blockheaderdata
 		    = { prevblockhash = pbhh;
-			newtheoryroot = None; (*** leave this as None for now ***)
-			newsignaroot = None; (*** leave this as None for now ***)
+			newtheoryroot = newthtroot;
+			newsignaroot = newsigtroot;
 			newledgerroot = newcr;
 			stakeaddr = alpha;
 			stakeassetid = aid;
@@ -458,8 +460,13 @@ let stakingthread () =
 		let publish_new_block () =
 		  DbBlockHeader.dbput bhdnewh (bhdnew,bhsnew);
 		  DbBlockDelta.dbput bhdnewh bdnew;
+		  add_to_validheaders_file (hashval_hexstring bhdnewh);
+		  let s = Buffer.create 10000 in
+		  seosbf (seo_blockheader seosb (bhdnew,bhsnew) (seo_hashval seosb bhdnewh (s,None)));
+		  let bhser = Buffer.contents s in
+		  broadcast_new_header bhser;
 		  let newnode =
-		    BlocktreeNode(Some(best),ref [],Some(bhdnewh),ottree_hashroot !dyntht,ostree_hashroot !dynsigt,ctree_hashroot !dync,bhdnew.tinfo,tm,csnew,Int64.add 1L blkh,ref Valid,ref false,ref [])
+		    BlocktreeNode(Some(best),ref [],Some(bhdnewh),newthtroot,newsigtroot,ctree_hashroot !dync,bhdnew.tinfo,tm,csnew,Int64.add 1L blkh,ref Valid,ref false,ref [])
 		  in
 		  Printf.fprintf !log "block at height %Ld: %s, deltm = %ld, timestamp %Ld, cumul stake %s\n" blkh (hashval_hexstring bhdnewh) bhdnew.deltatime tm (string_of_big_int cs); 
 		  record_recent_staker alpha newnode 6;

@@ -45,6 +45,7 @@ type msgtype =
   | Asset
   | Checkpoint
   | AntiCheckpoint
+  | NewHeader
 
 let msgtype_of_int i =
   try
@@ -53,7 +54,7 @@ let msgtype_of_int i =
        GetBlock;GetBlockdelta;GetBlockdeltah;GetHeaders;STx;Tx;TxSignatures;Block;
        Headers;Blockdelta;Blockdeltah;GetAddr;Mempool;Alert;Ping;Pong;Reject;
        GetCTreeElement;GetHConsElement;GetAsset;CTreeElement;HConsElement;Asset;
-       Checkpoint;AntiCheckpoint]
+       Checkpoint;AntiCheckpoint;NewHeader]
       i
   with Failure("nth") -> raise Not_found
 
@@ -93,6 +94,7 @@ let int_of_msgtype mt =
   | Asset -> 31
   | Checkpoint -> 32
   | AntiCheckpoint -> 33
+  | NewHeader -> 34
 
 let string_of_msgtype mt =
   match mt with
@@ -130,6 +132,7 @@ let string_of_msgtype mt =
   | Asset -> "Asset"
   | Checkpoint -> "Checkpoint"
   | AntiCheckpoint -> "AntiCheckpoint"
+  | NewHeader -> "NewHeader"
 
 let myaddr () =
   match !Config.ip with
@@ -708,5 +711,13 @@ let broadcast_requestdata mt h =
              send_msg sout mt ms;
              cs.invreq <- (i,h)::cs.invreq
            end
+       | None -> ())
+    !netconns
+
+let broadcast_new_header bhser =
+  List.iter
+    (fun (th,(fd,sin,sout,gcs)) ->
+       match !gcs with
+       | Some(cs) -> ignore (send_msg sout NewHeader bhser)
        | None -> ())
     !netconns
