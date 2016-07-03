@@ -15,6 +15,7 @@ open Tx
 open Ctre
 open Block
 
+(*** It's not clear how much of this recent* data is used and what is outdated. Investigate and delete unused. ***)
 (*** recentblockheaders: associate block header hash with block height and block header ***)
 (*** recentblockdeltahs: associate block header hash with a blockdeltah (summarizing stxs by hashvals) ***)
 (*** recentblockdeltas: associate block header hash with a blockdelta (with all stxs explicit) ***)
@@ -71,12 +72,11 @@ let send_initial_inv sout cs =
     incr cnt;
     if !cnt < 50000 then
       begin
-	tosend := (1,blkh,bhh)::!tosend;
-	if Hashtbl.mem recentblockdeltahs bhh then (incr cnt; if !cnt < 50000 then tosend := (2,blkh,bhh)::!tosend);
-	if Hashtbl.mem recentblockdeltas bhh then (incr cnt; if !cnt < 50000 then tosend := (3,blkh,bhh)::!tosend);
+	tosend := (int_of_msgtype Headers,blkh,bhh)::!tosend;
+	if Hashtbl.mem recentblockdeltahs bhh then (incr cnt; if !cnt < 50000 then tosend := (int_of_msgtype Blockdelta,blkh,bhh)::!tosend);
       end)
     !recentblockheaders;
-  Hashtbl.iter (fun txh _ -> incr cnt; if !cnt < 50000 then tosend := (4,0L,txh)::!tosend) recentstxs;
+  Hashtbl.iter (fun txh _ -> incr cnt; if !cnt < 50000 then tosend := (int_of_msgtype STx,0L,txh)::!tosend) recentstxs;
 (*
   if not (!tosend = []) then ignore (send_msg sout (Inv(!tosend)));
 *)
@@ -85,10 +85,11 @@ let send_initial_inv sout cs =
 let extra_inv_h invl mblkh =
   let invr = ref invl in
   let cnt = ref 0 in
+  let i = int_of_msgtype Headers in
   List.iter (fun (bhh,(cumulstk,blkh,bh)) ->
     incr cnt;
-    if !cnt < 50000 && blkh >= mblkh && not (List.mem (1,blkh,bhh) !invr) then
-      invr := (1,blkh,bhh)::!invr)
+    if !cnt < 50000 && blkh >= mblkh && not (List.mem (i,blkh,bhh) !invr) then
+      invr := (i,blkh,bhh)::!invr)
     !recentblockheaders;
   !invr
 
@@ -202,6 +203,7 @@ let initblocktree () =
   genesisblocktreenode := BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []);
   lastcheckpointnode := !genesisblocktreenode;
   bestnode := !genesisblocktreenode;
+  netblkh := node_blockheight !bestnode;
   Hashtbl.add blkheadernode None !genesisblocktreenode
 
 let known_thytree_p thyroot =
@@ -282,7 +284,8 @@ let rec processdelayednodes tm btnl =
     if gt_big_int newcumulstk bestcumulstk then
       begin
         Printf.fprintf !log "New best blockheader %s\n" (match pbh with Some(h) -> hashval_hexstring h | None -> "(genesis)"); flush !log;
-        bestnode := n2
+        bestnode := n2;
+	netblkh := node_blockheight !bestnode;
       end;
     processdelayednodes tm btnr
   | _ -> btnl
@@ -399,7 +402,11 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 		      validated := Valid;
 		      if not initialization then add_to_validheaders_file hh;
                       let BlocktreeNode(_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
-		      if gt_big_int newcumulstake bestcumulstk then bestnode := newnode;
+		      if gt_big_int newcumulstake bestcumulstk then
+			begin
+			  bestnode := newnode;
+			  netblkh := node_blockheight !bestnode
+			end;
 		      add_thytree blkhd1.newtheoryroot !latesttht;
 		      add_sigtree blkhd1.newsignaroot !latestsigt;
 (*** (** todo: relay **)
@@ -433,7 +440,8 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
             if gt_big_int newcumulstake bestcumulstk then
 	      begin
                 Printf.fprintf !log "New best blockheader %s\n" hh; flush !log;
-                bestnode := newnode
+                bestnode := newnode;
+		netblkh := node_blockheight !bestnode
 	      end;
             List.iter
               (fun blkh1 -> let (blkhd1,_) = blkh1 in let h = hash_blockheaderdata blkhd1 in process_new_header_a h (hashval_hexstring h) blkh1 blkhd1 initialization knownvalid)
@@ -504,6 +512,7 @@ let rec find_best_validated_block_from fromnode bestcumulstk =
 	(if gt_big_int cumulstk bestcumulstk then
 	  begin
 	    bestnode := fromnode;
+	    netblkh := node_blockheight !bestnode;
 	    cumulstk
 	  end
 	else
