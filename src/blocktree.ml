@@ -199,13 +199,6 @@ let orphanblkheaders : (hashval option,blockheader) Hashtbl.t = Hashtbl.create 1
 let earlyblocktreenodes : (int64 * blocktree) list ref = ref [];;
 let tovalidatelist : (validationstatus ref * (unit -> unit)) list ref = ref [];;
 
-let initblocktree () =
-  genesisblocktreenode := BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []);
-  lastcheckpointnode := !genesisblocktreenode;
-  bestnode := !genesisblocktreenode;
-  netblkh := node_blockheight !bestnode;
-  Hashtbl.add blkheadernode None !genesisblocktreenode
-
 let known_thytree_p thyroot =
   match thyroot with
   | None -> true
@@ -353,7 +346,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
       else if
 	valid_blockheader blkhght currtinfo blkh1
           && 
-	blockheader_succ_a (Int64.to_int32 (Int64.sub blkhd1.timestamp tmstamp)) tmstamp currtinfo blkh1
+	blockheader_succ_a tmstamp currtinfo blkh1
       then
 	begin
           Hashtbl.add blkheaders h ();
@@ -361,13 +354,10 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 	  let qednetch = Unix.open_process_in ((qednetd()) ^ " relaydata qblockheader " ^ h) in
 	  ignore (Unix.close_process_in qednetch);
 ***)
-          let (csm1,fsm1,tar1) = blkhd1.tinfo in
-	  let csm2 = stakemod_pushbit (stakemod_lastbit fsm1) csm1 in
-	  let fsm2 = stakemod_pushbit false fsm1 in (** the new bit doesn't matter here **)
-	  let tar2 = retarget tar1 blkhd1.deltatime in
+          let (csm1,fsm1,tar1) = currtinfo in
           let newcumulstake = cumul_stake prevcumulstk tar1 blkhd1.deltatime in
 	  let validated = ref (if knownvalid then Valid else Waiting(Unix.time())) in
-          let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],Some(h),blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,(csm2,fsm2,tar2),blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
+          let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],Some(h),blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,blkhd1.tinfo,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
 	  (*** add it as a leaf, indicate that we want the block delta to validate it, and check if it's the best ***)
 	  Hashtbl.add blkheadernode (Some(h)) newnode;
           succl := (h,newnode)::!succl;
@@ -449,7 +439,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
         end
       else
         begin (*** if it's wrong, delete it and blacklist it so it won't look new in the future ***)
-	  DbBlacklist.dbput h true;
+          DbBlacklist.dbput h true;
 	  DbBlockHeader.dbdelete h;
         end
     with Not_found -> (*** orphan block header, put it on the relevant hash table and request parent ***)
@@ -493,6 +483,7 @@ let init_headers_a fn knownvalid =
       try
         while true do
           let h = input_line f in
+	  Printf.printf "processing valid header %s\n" h; flush stdout;
           process_new_header (hexstring_hashval h) h true knownvalid
         done
       with End_of_file -> close_in f
@@ -503,6 +494,14 @@ let init_headers_a fn knownvalid =
 let init_headers () =
   init_headers_a (Filename.concat (datadir()) "validheaders") true;
   init_headers_a (Filename.concat (datadir()) "headers") false
+
+let initblocktree () =
+  genesisblocktreenode := BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []);
+  lastcheckpointnode := !genesisblocktreenode;
+  bestnode := !genesisblocktreenode;
+  netblkh := node_blockheight !bestnode;
+  Hashtbl.add blkheadernode None !genesisblocktreenode;
+  init_headers()
 
 let rec find_best_validated_block_from fromnode bestcumulstk =
   let BlocktreeNode(_,_,_,_,_,_,_,_,cumulstk,_,validatedp,blklistp,succl) = fromnode in
