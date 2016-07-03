@@ -71,7 +71,7 @@ bin/block.cmi: src/block.mli bin/hash.cmi bin/mathdata.cmi bin/assets.cmi bin/si
 bin/net.cmi: src/net.mli bin/hash.cmi
 	$(OCAMLC) -I bin -I +threads -o bin/net.cmi -c src/net.mli
 
-bin/blocktree.cmi: src/blocktree.mli bin/hash.cmi bin/signat.cmi bin/tx.cmi bin/ctre.cmi bin/block.cmi
+bin/blocktree.cmi: src/blocktree.mli bin/hash.cmi bin/signat.cmi bin/tx.cmi bin/ctre.cmi bin/block.cmi bin/net.cmi
 	$(OCAMLC) -I bin -o bin/blocktree.cmi -c src/blocktree.mli
 
 bin/setconfig.cmi: src/setconfig.mli
@@ -143,7 +143,7 @@ bin/block.cmx: src/block.ml bin/block.cmi bin/hash.cmx bin/mathdata.cmx bin/asse
 bin/net.cmx: src/net.ml bin/net.cmi bin/ser.cmx bin/hash.cmx bin/version.cmx bin/utils.cmx
 	$(OCAMLOPT) -I bin -I +threads -o bin/net.cmx -c src/net.ml
 
-bin/blocktree.cmx: src/blocktree.ml bin/blocktree.cmi bin/ser.cmx bin/hash.cmx bin/version.cmx bin/utils.cmx bin/db.cmx bin/assets.cmx bin/signat.cmx bin/tx.cmx bin/ctre.cmx bin/block.cmx
+bin/blocktree.cmx: src/blocktree.ml bin/blocktree.cmi bin/ser.cmx bin/hash.cmx bin/version.cmx bin/utils.cmx bin/db.cmx bin/assets.cmx bin/signat.cmx bin/tx.cmx bin/ctre.cmx bin/block.cmx bin/net.cmx
 	$(OCAMLOPT) -I bin -o bin/blocktree.cmx -c src/blocktree.ml
 
 bin/setconfig.cmx: src/setconfig.ml bin/setconfig.cmi bin/config.cmx
@@ -218,7 +218,7 @@ bin/block.cmo: src/block.ml bin/block.cmi bin/hash.cmo bin/mathdata.cmo bin/asse
 bin/net.cmo: src/net.ml bin/net.cmi bin/ser.cmo bin/hash.cmo bin/version.cmo bin/utils.cmo
 	$(OCAMLC) -I bin -I +threads -o bin/net.cmo -c src/net.ml
 
-bin/blocktree.cmo: src/blocktree.ml bin/blocktree.cmi bin/ser.cmo bin/hash.cmo bin/version.cmo bin/utils.cmo bin/db.cmo bin/assets.cmo bin/signat.cmo bin/tx.cmo bin/ctre.cmo bin/block.cmo
+bin/blocktree.cmo: src/blocktree.ml bin/blocktree.cmi bin/ser.cmo bin/hash.cmo bin/version.cmo bin/utils.cmo bin/db.cmo bin/assets.cmo bin/signat.cmo bin/tx.cmo bin/ctre.cmo bin/block.cmo bin/net.cmo
 	$(OCAMLC) -I bin -o bin/blocktree.cmo -c src/blocktree.ml
 
 bin/setconfig.cmo: src/setconfig.ml bin/setconfig.cmi bin/config.cmo
