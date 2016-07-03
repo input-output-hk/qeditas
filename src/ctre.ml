@@ -697,11 +697,7 @@ let get_hcons_element h =
   try
     DbHConsElt.dbget h
   with Not_found -> (*** request it and fail ***)
-(***
-    let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qhcons " ^ hh) (Unix.environment()) in
-    ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
-(*    raise (Failure ("could not resolve a needed hcons " ^ hh ^ "; requesting from peers")) *)
-***)
+    broadcast_requestdata GetHConsElement h;
     raise GettingRemoteData
 
 let rec save_hlist_elements hl =
@@ -960,11 +956,7 @@ let get_ctree_element h =
   try
     DbCTreeElt.dbget h
   with Not_found -> (*** request it and fail ***)
-(***
-    let (qednetinch,qednetoutch,qedneterrch) = Unix.open_process_full ((qednetd()) ^ " getdata qctree " ^ hh) (Unix.environment()) in
-    ignore (Unix.close_process_full (qednetinch,qednetoutch,qedneterrch));
-(*    raise (Failure ("could not resolve a needed ctree " ^ hh ^ "; requesting from peers")) *)
-***)
+    broadcast_requestdata GetCTreeElement h;
     raise GettingRemoteData
 
 let rec octree_S_inv c =
@@ -2263,4 +2255,71 @@ let rec minimal_asset_supporting_ctree tr bl aid n =
 	| (true::br) -> minimal_asset_supporting_ctree trr br aid n
 	| _ -> false
       end
-  | _ -> false
+  | _ -> false;;
+
+Hashtbl.add msgtype_handler GetHConsElement
+    (fun (sin,sout,cs,ms) ->
+      let (h,_) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetHConsElement in
+      if not (List.mem (i,h) cs.sentinv) then (*** don't resend ***)
+	try
+	  let hk = DbHConsElt.dbget h in
+	  let hksb = Buffer.create 100 in
+	  seosbf (seo_prod seo_hashval (seo_option seo_hashval) seosb hk (seo_hashval seosb h (hksb,None)));
+	  let hkser = Buffer.contents hksb in
+	  ignore (send_msg sout HConsElement hkser);
+	  cs.sentinv <- (i,h)::cs.sentinv
+	with Not_found -> ());;
+
+Hashtbl.add msgtype_handler HConsElement
+    (fun (sin,sout,cs,ms) ->
+      let (h,r) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetHConsElement in
+      if not (DbHConsElt.dbexists h) then (*** if we already have it, abort ***)
+	if List.mem (i,h) cs.invreq then (*** only continue if it was requested ***)
+          let (hk,_) = sei_prod sei_hashval (sei_option sei_hashval) seis r in
+	  let hkh =
+	    match hk with
+	    | (h1,None) -> hashtag h1 3l
+	    | (h1,Some(k1)) -> hashtag (hashpair h1 k1) 4l
+	  in
+	  if hkh = h then
+	    begin
+  	      DbHConsElt.dbput h hk;
+	      cs.invreq <- List.filter (fun (j,k) -> not (i = j && h = k)) cs.invreq
+	    end
+          else (*** otherwise, it seems to be a misbehaving peer --  ignore for now ***)
+	    (Printf.fprintf !Utils.log "misbehaving peer? [malformed HConsElement]\n"; flush !Utils.log)
+	else (*** if something unrequested was sent, then seems to be a misbehaving peer ***)
+	  (Printf.fprintf !Utils.log "misbehaving peer? [unrequested HConsElement]\n"; flush !Utils.log));;
+	  
+Hashtbl.add msgtype_handler GetCTreeElement
+    (fun (sin,sout,cs,ms) ->
+      let (h,_) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetCTreeElement in
+      if not (List.mem (i,h) cs.sentinv) then (*** don't resend ***)
+	try
+	  let c = DbCTreeElt.dbget h in
+	  let csb = Buffer.create 100 in
+	  seosbf (seo_ctree seosb c (seo_hashval seosb h (csb,None)));
+	  let cser = Buffer.contents csb in
+	  ignore (send_msg sout CTreeElement cser);
+	  cs.sentinv <- (i,h)::cs.sentinv
+	with Not_found -> ());;
+
+Hashtbl.add msgtype_handler CTreeElement
+    (fun (sin,sout,cs,ms) ->
+      let (h,r) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetCTreeElement in
+      if not (DbCTreeElt.dbexists h) then (*** if we already have it, abort ***)
+	if List.mem (i,h) cs.invreq then (*** only continue if it was requested ***)
+          let (c,_) = sei_ctree seis r in
+	  if ctree_element_p c && ctree_hashroot c = h then
+	    begin
+  	      DbCTreeElt.dbput h c;
+	      cs.invreq <- List.filter (fun (j,k) -> not (i = j && h = k)) cs.invreq
+	    end
+          else (*** otherwise, it seems to be a misbehaving peer --  ignore for now ***)
+	    (Printf.fprintf !Utils.log "misbehaving peer? [malformed CTreeElement]\n"; flush !Utils.log)
+	else (*** if something unrequested was sent, then seems to be a misbehaving peer ***)
+	  (Printf.fprintf !Utils.log "misbehaving peer? [unrequested CTreeElement]\n"; flush !Utils.log));;
