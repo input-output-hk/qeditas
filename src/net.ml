@@ -8,6 +8,8 @@ open Ser
 open Hashaux
 open Hash
 
+let netblkh : int64 ref = ref 0L
+
 type msgtype =
   | Version
   | Verack
@@ -15,20 +17,20 @@ type msgtype =
   | Inv
   | GetData
   | MNotFound
-  | GetSTxs
-  | GetTxs
+  | GetSTx
+  | GetTx
   | GetTxSignatures
-  | GetBlocks
-  | GetBlockdeltas
-  | GetBlockdeltahs
+  | GetBlock
+  | GetBlockdelta
+  | GetBlockdeltah
   | GetHeaders
-  | MSTx
-  | MTx
-  | MTxSignature
-  | MBlock
+  | STx
+  | Tx
+  | TxSignatures
+  | Block
   | Headers
-  | MBlockdelta
-  | MBlockdeltah
+  | Blockdelta
+  | Blockdeltah
   | GetAddr
   | Mempool
   | Alert
@@ -47,9 +49,9 @@ type msgtype =
 let msgtype_of_int i =
   try
     List.nth
-      [Version;Verack;Addr;Inv;GetData;MNotFound;GetSTxs;GetTxs;GetTxSignatures;
-       GetBlocks;GetBlockdeltas;GetBlockdeltahs;GetHeaders;MSTx;MTx;MTxSignature;MBlock;
-       Headers;MBlockdelta;MBlockdeltah;GetAddr;Mempool;Alert;Ping;Pong;Reject;
+      [Version;Verack;Addr;Inv;GetData;MNotFound;GetSTx;GetTx;GetTxSignatures;
+       GetBlock;GetBlockdelta;GetBlockdeltah;GetHeaders;STx;Tx;TxSignatures;Block;
+       Headers;Blockdelta;Blockdeltah;GetAddr;Mempool;Alert;Ping;Pong;Reject;
        GetCTreeElement;GetHConsElement;GetAsset;CTreeElement;HConsElement;Asset;
        Checkpoint;AntiCheckpoint]
       i
@@ -63,20 +65,20 @@ let int_of_msgtype mt =
   | Inv -> 3
   | GetData -> 4
   | MNotFound -> 5
-  | GetSTxs -> 6
-  | GetTxs -> 7
+  | GetSTx -> 6
+  | GetTx -> 7
   | GetTxSignatures -> 8
-  | GetBlocks -> 9
-  | GetBlockdeltas -> 10
-  | GetBlockdeltahs -> 11
+  | GetBlock -> 9
+  | GetBlockdelta -> 10
+  | GetBlockdeltah -> 11
   | GetHeaders -> 12
-  | MSTx -> 13
-  | MTx -> 14
-  | MTxSignature -> 15
-  | MBlock -> 16
+  | STx -> 13
+  | Tx -> 14
+  | TxSignatures -> 15
+  | Block -> 16
   | Headers -> 17
-  | MBlockdelta -> 18
-  | MBlockdeltah -> 19
+  | Blockdelta -> 18
+  | Blockdeltah -> 19
   | GetAddr -> 20
   | Mempool -> 21
   | Alert -> 22
@@ -100,20 +102,20 @@ let string_of_msgtype mt =
   | Inv -> "Inv"
   | GetData -> "GetData"
   | MNotFound -> "MNotFound"
-  | GetSTxs -> "GetSTxs"
-  | GetTxs -> "GetTxs"
+  | GetSTx -> "GetSTx"
+  | GetTx -> "GetTx"
   | GetTxSignatures -> "GetTxSignatures"
-  | GetBlocks -> "GetBlocks"
-  | GetBlockdeltas -> "GetBlockdeltas"
-  | GetBlockdeltahs -> "GetBlockdeltahs"
+  | GetBlock -> "GetBlock"
+  | GetBlockdelta -> "GetBlockdelta"
+  | GetBlockdeltah -> "GetBlockdeltah"
   | GetHeaders -> "GetHeaders"
-  | MSTx -> "MSTx"
-  | MTx -> "MTx"
-  | MTxSignature -> "MTxSignature"
-  | MBlock -> "MBlock"
+  | STx -> "STx"
+  | Tx -> "Tx"
+  | TxSignatures -> "TxSignatures"
+  | Block -> "Block"
   | Headers -> "Headers"
-  | MBlockdelta -> "MBlockdelta"
-  | MBlockdeltah -> "MBlockdeltah"
+  | Blockdelta -> "Blockdelta"
+  | Blockdeltah -> "Blockdeltah"
   | GetAddr -> "GetAddr"
   | Mempool -> "Mempool"
   | Alert -> "Alert"
@@ -144,6 +146,7 @@ let fallbacknodes = [
 ]
 
 let testnetfallbacknodes = [
+ "108.61.219.125:20804"
 (* ":20804" *)
 ]
 
@@ -326,9 +329,8 @@ type connstate = {
 let msgtype_handler : (msgtype,in_channel * out_channel * connstate * string -> unit) Hashtbl.t = Hashtbl.create 50
 
 let send_msg_real c replyto mt ms =
-  let magic = if !Config.testnet then 0x51656454l else 0x5165644dl in
+  let magic = if !Config.testnet then 0x51656454l else 0x5165644dl in (*** Magic Number for testnet: QedT and for mainnet: QedM ***)
   let msl = String.length ms in
-  (*** Magic Number for mainnet: QedM ***)
   seocf (seo_int32 seoc magic (c,None));
   begin
     match replyto with
@@ -355,7 +357,7 @@ let send_reply c h mt m = send_msg_real c (Some(h)) mt m
  Throw IllformedMsg if something's wrong with the format or if it reads the first byte but times out before reading the full message.
  If IllformedMsg is thrown, the connection should be severed.
  ***)
-let rec_msg c =
+let rec_msg blkh c =
   let (mag0,mag1,mag2,mag3) = if !Config.testnet then (0x51,0x65,0x64,0x54) else (0x51,0x65,0x64,0x4d) in
   let by0 = input_byte c in
   if not (by0 = mag0) then raise IllformedMsg;
@@ -382,7 +384,7 @@ let rec_msg c =
       with Not_found -> raise IllformedMsg
     in
     let (msl,_) = sei_int32 seic (c,None) in
-    if msl > 67108863l then raise IllformedMsg;
+    if msl > Int32.of_int (maxblockdeltasize blkh) then raise IllformedMsg;
     let msl = Int32.to_int msl in
     let (mh,_) = sei_hashval seic (c,None) in
     let sb = Buffer.create msl in
@@ -516,7 +518,7 @@ let connlistener (s,sin,sout,gcs) =
   try
     while true do
       try
-	let (replyto,mh,mt,m) = rec_msg sin in
+	let (replyto,mh,mt,m) = rec_msg !netblkh sin in
 	match !gcs with
 	| Some(cs) -> cs.lastmsgtm <- Unix.time(); handle_msg replyto mt sin sout cs mh m
 	| None -> raise End_of_file (*** connection died; this probably shouldn't happen, as we should have left this thread when it died ***)
@@ -692,3 +694,19 @@ let netseeker () =
   loadknownpeers();
   netseekerth := Some(Thread.create netseeker_loop ())
 
+let broadcast_requestdata mt h =
+  let i = int_of_msgtype mt in
+  let msb = Buffer.create 20 in
+  seosbf (seo_hashval seosb h (msb,None));
+  let ms = Buffer.contents msb in
+  List.iter
+    (fun (th,(fd,sin,sout,gcs)) ->
+       match !gcs with
+       | Some(cs) ->
+         if not (List.mem (i,h) cs.invreq) then
+           begin
+             send_msg sout mt ms;
+             cs.invreq <- (i,h)::cs.invreq
+           end
+       | None -> ())
+    !netconns

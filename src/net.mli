@@ -9,6 +9,8 @@ exception GettingRemoteData
 exception RequestRejected
 exception IllformedMsg
 
+val netblkh : int64 ref
+
 type msgtype =
   | Version
   | Verack
@@ -16,20 +18,20 @@ type msgtype =
   | Inv
   | GetData
   | MNotFound
-  | GetSTxs
-  | GetTxs
+  | GetSTx
+  | GetTx
   | GetTxSignatures
-  | GetBlocks
-  | GetBlockdeltas
-  | GetBlockdeltahs
+  | GetBlock
+  | GetBlockdelta
+  | GetBlockdeltah
   | GetHeaders
-  | MSTx
-  | MTx
-  | MTxSignature
-  | MBlock
+  | STx
+  | Tx
+  | TxSignatures
+  | Block
   | Headers
-  | MBlockdelta
-  | MBlockdeltah
+  | Blockdelta
+  | Blockdeltah
   | GetAddr
   | Mempool
   | Alert
@@ -44,6 +46,8 @@ type msgtype =
   | Asset
   | Checkpoint
   | AntiCheckpoint
+
+val int_of_msgtype : msgtype -> int
 
 val openlistener : string -> int -> int -> Unix.file_descr
 val connectpeer : string -> int -> Unix.file_descr
@@ -82,3 +86,6 @@ val netseeker : unit -> unit
 
 val network_time : unit -> int64 * int
 
+val rec_msg : int64 -> in_channel -> hashval option * hashval * msgtype * string
+val send_msg : out_channel -> msgtype -> string -> hashval
+val broadcast_requestdata : msgtype -> hashval -> unit
