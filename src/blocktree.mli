@@ -16,6 +16,7 @@ type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval 
 
 val genesisblocktreenode : blocktree ref
 val lastcheckpointnode : blocktree ref
+val blkheadernode : (hashval option,blocktree) Hashtbl.t
 val bestnode : blocktree ref
 val initblocktree : unit -> unit
 val node_recent_stakers : blocktree -> hashval list
