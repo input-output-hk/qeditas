@@ -937,7 +937,7 @@ let cumul_stake cs tar deltm =
     cs
     (max_big_int unit_big_int (div_big_int !max_target (shift_right_towards_zero_big_int (mult_big_int tar (big_int_of_int32 deltm)) 20)))
 
-let blockheader_succ_a deltm1 tmstamp1 tinfo1 bh2 =
+let blockheader_succ_a tmstamp1 tinfo1 bh2 =
   let (bhd2,bhs2) = bh2 in
   bhd2.timestamp = Int64.add tmstamp1 (Int64.of_int32 bhd2.deltatime)
     &&
@@ -947,14 +947,14 @@ let blockheader_succ_a deltm1 tmstamp1 tinfo1 bh2 =
     &&
   stakemod_pushbit (stakemod_firstbit fsm2) fsm1 = fsm2 (*** the new bit of the new future stake modifier fsm2 is freely chosen by the staker ***)
     &&
-  eq_big_int tar2 (retarget tar1 deltm1)
+  eq_big_int tar2 (retarget tar1 bhd2.deltatime)
 
 let blockheader_succ bh1 bh2 =
   let (bhd1,bhs1) = bh1 in
   let (bhd2,bhs2) = bh2 in
   bhd2.prevblockhash = Some (hash_blockheaderdata bhd1)
     &&
-  blockheader_succ_a bhd1.deltatime bhd1.timestamp bhd1.tinfo bh2
+  blockheader_succ_a bhd1.timestamp bhd1.tinfo bh2
 
 let rec valid_blockchain_aux blkh bl =
   match bl with
@@ -974,7 +974,7 @@ let rec valid_blockchain_aux blkh bl =
       if blkh = 1L && valid_block None None blkh (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bh,bd)
 	  && bhd.prevblockhash = None
 	  && ctree_hashroot bhd.prevledger = !genesisledgerroot
-	  && blockheader_succ_a (Int64.to_int32 (Int64.sub bhd.timestamp !genesistimestamp)) !genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) bh
+	  && blockheader_succ_a !genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) bh
       then
 	(txout_update_ottree (tx_outputs (tx_of_block (bh,bd))) None,
 	 txout_update_ostree (tx_outputs (tx_of_block (bh,bd))) None)
@@ -1008,7 +1008,7 @@ let rec valid_blockheaderchain_aux blkh bhl =
 	&&
       ctree_hashroot bhd.prevledger = !genesisledgerroot
 	&&
-      blockheader_succ_a (Int64.to_int32 (Int64.sub bhd.timestamp !genesistimestamp)) !genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bhd,bhs)
+      blockheader_succ_a !genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bhd,bhs)
   | [] -> false
 
 let valid_blockheaderchain blkh bhc =
