@@ -470,6 +470,7 @@ let stakingthread () =
 		  in
 		  Printf.fprintf !log "block at height %Ld: %s, deltm = %ld, timestamp %Ld, cumul stake %s\n" blkh (hashval_hexstring bhdnewh) bhdnew.deltatime tm (string_of_big_int cs); 
 		  record_recent_staker alpha newnode 6;
+		  Hashtbl.add blkheadernode (Some(bhdnewh)) newnode;
 		  bestnode := newnode;
 		  netblkh := node_blockheight !bestnode;
 		  let children_ref = node_children_ref best in
