@@ -34,7 +34,6 @@ val seo_targetinfo : (int -> int -> 'a -> 'a) -> targetinfo -> 'a -> 'a
 val sei_targetinfo : (int -> 'a -> int * 'a) -> 'a -> targetinfo * 'a
 
 val rewfn : int64 -> int64
-val maxblockdeltasize : int64 -> int
 val hitval : int64 -> hashval -> stakemod -> big_int
 
 type postor =

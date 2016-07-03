@@ -9,3 +9,20 @@ let openlog () =
 
 let closelog () =
   close_out !log
+
+(***
+ era ranges from 1 and 43 (roughly 1 + 41*4 = 165 years until final era when reward drops to 0
+ era 1 is for the first 70000 blocks (1 to 70000)
+ era 2 is for the next 210000 blocks (70001 to 280000)
+ and so on until 8680001 when the final (unlimited) era of 43 begins.
+ ***)
+let era blkh =
+  if blkh < 8680001L then
+    let blki = Int64.to_int blkh in
+    ((blki + 349999) / 210000) (*** start counting here at blkh = 1L, corresponding to Bitcoin block at height 350000 ***)
+  else
+    43
+
+(*** the max block size is 500K during era 1 and doubles with each era, with a final max block size of 512M. ***)
+let maxblockdeltasize blkh = 250000 lsl (era blkh)
+

@@ -5,3 +5,6 @@
 val log : out_channel ref
 val openlog : unit -> unit
 val closelog : unit -> unit
+
+val era : int64 -> int
+val maxblockdeltasize : int64 -> int
