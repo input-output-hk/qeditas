@@ -155,22 +155,22 @@ let rec check_tx_in_signatures txhe outpl inpl al sl =
       raise BadOrMissingSignature
 
 let rec check_tx_out_signatures txhe outpl sl =
-  match outpl,sl with
-  | [],[] -> true
-  | (_,(_,TheoryPublication(alpha,n,thy)))::outpr,sg::sr ->
-      check_tx_out_signatures txhe outpr sr
+  match outpl with
+  | [] -> true
+  | (_,(_,TheoryPublication(alpha,n,thy)))::outpr ->
+      check_tx_out_signatures txhe outpr sl
 	&&
-      verify_gensignat txhe sg (payaddr_addr alpha)
-  | (_,(_,SignaPublication(alpha,n,th,si)))::outpr,sg::sr ->
-      check_tx_out_signatures txhe outpr sr
+      (try ignore (List.find (fun sg -> verify_gensignat txhe sg (payaddr_addr alpha)) sl); true with Not_found -> false)
+  | (_,(_,SignaPublication(alpha,n,th,si)))::outpr ->
+      check_tx_out_signatures txhe outpr sl
 	&&
-      verify_gensignat txhe sg (payaddr_addr alpha)
-  | (_,(_,DocPublication(alpha,n,th,d)))::outpr,sg::sr ->
-      check_tx_out_signatures txhe outpr sr
+      (try ignore (List.find (fun sg -> verify_gensignat txhe sg (payaddr_addr alpha)) sl); true with Not_found -> false)
+  | (_,(_,DocPublication(alpha,n,th,d)))::outpr ->
+      check_tx_out_signatures txhe outpr sl
 	&&
-      verify_gensignat txhe sg (payaddr_addr alpha)
-  | _::outpr,_ -> check_tx_out_signatures txhe outpr sl
-  | _,_ -> false
+      (try ignore (List.find (fun sg -> verify_gensignat txhe sg (payaddr_addr alpha)) sl); true with Not_found -> false)
+  | _::outpr ->
+      check_tx_out_signatures txhe outpr sl
 
 let tx_signatures_valid_asof_blkh al stau =
   let (tau,(sli,slo)) = stau in
