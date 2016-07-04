@@ -669,10 +669,6 @@ let load_octree f =
   close_in ch;
   tr
 
-let remove_hashed_ctree r =
-  let fn = Filename.concat !ctreedatadir (hashval_hexstring r) in
-  if Sys.file_exists fn then Sys.remove fn
-
 let ensure_dir_exists d =
   try
     let s = Unix.stat d in
