@@ -139,7 +139,7 @@ type validationstatus = Waiting of float | Valid | Invalid
 
 type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * int64 * big_int * int64 * validationstatus ref * bool ref * (hashval * blocktree) list ref
 
-let genesisblocktreenode = ref (BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []));;
+let genesisblocktreenode = ref (BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!Config.genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []));;
 
 let lastcheckpointnode = ref !genesisblocktreenode;;
 
@@ -496,7 +496,7 @@ let init_headers () =
   init_headers_a (Filename.concat (datadir()) "headers") false
 
 let initblocktree () =
-  genesisblocktreenode := BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []);
+  genesisblocktreenode := BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!Config.genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []);
   lastcheckpointnode := !genesisblocktreenode;
   bestnode := !genesisblocktreenode;
   netblkh := node_blockheight !bestnode;

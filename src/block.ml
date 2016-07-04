@@ -21,7 +21,6 @@ type stakemod = int64 * int64 * int64 * int64
 
 let genesiscurrentstakemod : stakemod ref = ref (0L,0L,0L,0L)
 let genesisfuturestakemod : stakemod ref = ref (0L,0L,0L,0L)
-let genesistimestamp : int64 ref = ref 1466784703L
 
 let set_genesis_stakemods x =
   let (x4,x3,x2,x1,x0) = hexstring_hashval x in
@@ -974,7 +973,7 @@ let rec valid_blockchain_aux blkh bl =
       if blkh = 1L && valid_block None None blkh (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bh,bd)
 	  && bhd.prevblockhash = None
 	  && ctree_hashroot bhd.prevledger = !genesisledgerroot
-	  && blockheader_succ_a !genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) bh
+	  && blockheader_succ_a !Config.genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) bh
       then
 	(txout_update_ottree (tx_outputs (tx_of_block (bh,bd))) None,
 	 txout_update_ostree (tx_outputs (tx_of_block (bh,bd))) None)
@@ -1008,7 +1007,7 @@ let rec valid_blockheaderchain_aux blkh bhl =
 	&&
       ctree_hashroot bhd.prevledger = !genesisledgerroot
 	&&
-      blockheader_succ_a !genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bhd,bhs)
+      blockheader_succ_a !Config.genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bhd,bhs)
   | [] -> false
 
 let valid_blockheaderchain blkh bhc =

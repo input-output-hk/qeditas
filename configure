@@ -13,12 +13,27 @@ do
 	    if [ ${v:0:9} == "-datadir=" ]; then
 		DATADIR=${v:9}
 	    else
-		echo "Unknown command line argument $v"
-		echo "configure can be given the following arguments:"
-		echo "-bytecode (to only build bytecode)"
-		echo "-qeditasdir=<dir> (to specify the install directory)"
-		echo "-datadir=<dir> (to specify the default directory for Qeditas data)"
-		exit 1
+		if [ ${v:0:13} == "-genesistime=" ]; then
+		    GENESISTIME=${v:13}
+		else
+		    if [ ${v:0:6} == "-seed=" ]; then
+			SEED=${v:6}
+		    else
+			if [ ${v:0:24} = "-optionalfakerandomseed=" ]; then
+			    OPTIONALFAKERANDOMSEED=${v:24}
+			else
+			    echo "Unknown command line argument $v"
+			    echo "configure can be given the following arguments:"
+			    echo "-bytecode (to only build bytecode)"
+			    echo "-qeditasdir=<dir> (to specify the install directory)"
+			    echo "-datadir=<dir> (to specify the default directory for Qeditas data)"
+			    echo "-genesistime=<int> (to specify the genesis time stamp; regularly updated for the testnet)"
+			    echo "-seed=<20 bytes as a hexstring> (to specify the seed that is hashed to determine the genesis stake modifiers)"
+			    echo "-optionalfakerandomseed=<string> (a user provided string to fake randomness under Windows)"
+			    exit 1
+			fi
+		    fi
+		fi
 	    fi
 	fi
     fi
@@ -41,13 +56,24 @@ echo let port = ref 20805 >> src/config.ml
 echo let socks = ref None >> src/config.ml
 echo let socksport = ref 9050 >> src/config.ml
 echo let maxconns = ref 20 >> src/config.ml
-echo let seed = ref \"\" >> src/config.ml
 echo let lastcheckpoint = ref \"\" >> src/config.ml
 echo let currledgerroot = ref \"a47da9044687cc40e368fbd60f404ad5b4ddd4cf\" >> src/config.ml
-echo let qednetdexec = ref \"$HOME/qednet/src/qednetd\" >> src/config.ml
-echo let ctreedatadir = ref \"/tmp/deprecated\" >> src/config.ml
-echo let chaindatadir = ref \"/tmp/deprecated\" >> src/config.ml
 echo let prompt = ref \"\> \" >> src/config.ml
+if [ $GENESISTIME ]; then
+    echo let genesistimestamp = ref ${GENESISTIME}L >> src/config.ml
+else
+    echo let genesistimestamp = ref 1467588727L >> src/config.ml
+fi
+if [ $SEED ]; then
+    echo let seed = ref \"$SEED\" >> src/config.ml
+else
+    echo let seed = ref \"\" >> src/config.ml
+fi
+if [ $OPTIONALFAKERANDOMSEED ]; then
+    echo let optionalfakerandomseed = ref \(Some \"$OPTIONALFAKERANDOMSEED\"\) >> src/config.ml
+else
+    echo let optionalfakerandomseed = ref None >> src/config.ml
+fi
 if [ $BYTECODE ]; then
     if [ $INSTALLDIR ]; then
 	echo "bytecode cannot be installed"

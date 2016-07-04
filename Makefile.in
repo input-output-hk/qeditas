@@ -83,7 +83,7 @@ bin/commands.cmi: src/commands.mli bin/ctre.cmi
 bin/version.cmx: src/version.ml bin/version.cmi
 	$(OCAMLOPT) -I bin -o bin/version.cmx -c src/version.ml
 
-bin/utils.cmx: src/utils.ml bin/utils.cmi
+bin/utils.cmx: src/utils.ml bin/utils.cmi bin/config.cmx
 	$(OCAMLOPT) -I bin -o bin/utils.cmx -c src/utils.ml
 
 bin/ser.cmx: src/ser.ml bin/ser.cmi
@@ -92,7 +92,7 @@ bin/ser.cmx: src/ser.ml bin/ser.cmi
 bin/secp256k1.cmx: src/secp256k1.ml bin/secp256k1.cmi
 	$(OCAMLOPT) -I bin -o bin/secp256k1.cmx -c src/secp256k1.ml
 
-bin/cryptocurr.cmx: src/cryptocurr.ml bin/cryptocurr.cmi bin/ser.cmx bin/hashaux.cmx bin/sha256.cmx bin/hash.cmx bin/secp256k1.cmx
+bin/cryptocurr.cmx: src/cryptocurr.ml bin/cryptocurr.cmi bin/ser.cmx bin/hashaux.cmx bin/sha256.cmx bin/hash.cmx bin/secp256k1.cmx bin/config.cmx
 	$(OCAMLOPT) -I bin -o bin/cryptocurr.cmx -c src/cryptocurr.ml
 
 bin/signat.cmx: src/signat.ml bin/signat.cmi bin/config.cmx bin/ser.cmx bin/sha256.cmx bin/hash.cmx bin/secp256k1.cmx bin/cryptocurr.cmx bin/net.cmx
@@ -158,7 +158,7 @@ bin/qeditas.cmx: src/qeditas.ml bin/assets.cmx bin/tx.cmx bin/ctre.cmx bin/block
 bin/version.cmo: src/version.ml bin/version.cmi
 	$(OCAMLC) -I bin -o bin/version.cmo -c src/version.ml
 
-bin/utils.cmo: src/utils.ml bin/utils.cmi
+bin/utils.cmo: src/utils.ml bin/utils.cmi bin/config.cmo
 	$(OCAMLC) -I bin -o bin/utils.cmo -c src/utils.ml
 
 bin/ser.cmo: src/ser.ml bin/ser.cmi
@@ -167,7 +167,7 @@ bin/ser.cmo: src/ser.ml bin/ser.cmi
 bin/secp256k1.cmo: src/secp256k1.ml bin/secp256k1.cmi
 	$(OCAMLC) -I bin -o bin/secp256k1.cmo -c src/secp256k1.ml
 
-bin/cryptocurr.cmo: src/cryptocurr.ml bin/cryptocurr.cmi bin/ser.cmo bin/hashaux.cmo bin/sha256.cmo bin/hash.cmo bin/secp256k1.cmo
+bin/cryptocurr.cmo: src/cryptocurr.ml bin/cryptocurr.cmi bin/ser.cmo bin/hashaux.cmo bin/sha256.cmo bin/hash.cmo bin/secp256k1.cmo bin/config.cmo
 	$(OCAMLC) -I bin -o bin/cryptocurr.cmo -c src/cryptocurr.ml
 
 bin/signat.cmo: src/signat.ml bin/signat.cmi bin/config.cmo bin/ser.cmo bin/sha256.cmo bin/hash.cmo bin/secp256k1.cmo bin/cryptocurr.cmo bin/net.cmo

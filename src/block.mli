@@ -22,7 +22,6 @@ val genesisfuturestakemod : stakemod ref
 val genesisledgerroot : hashval ref
 val genesistarget : big_int ref
 val max_target : big_int ref
-val genesistimestamp : int64 ref
 
 val stakemod_pushbit : bool -> stakemod -> stakemod
 val stakemod_lastbit : stakemod -> bool

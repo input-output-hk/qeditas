@@ -3,8 +3,6 @@
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
 let stringconfigvars = [
-("ctreedatadir",fun x -> Config.ctreedatadir := x);
-("chaindatadir",fun x -> Config.chaindatadir := x);
 ("seed",fun x -> Config.seed := x);
 ("lastcheckpoint",fun x -> Config.lastcheckpoint := x);
 ("currledgerroot",fun x -> Config.currledgerroot := x);
@@ -19,8 +17,12 @@ let intconfigvars = [
 ("socksport",fun x -> Config.socksport := x);
 ("maxconns",fun x -> Config.maxconns := x)
 ];;
+let int64configvars = [
+("genesistime",fun x -> Config.genesistimestamp := x)
+];;
 let stringoptionconfigvars = [
-("ip",fun x -> Config.ip := x)
+("ip",fun x -> Config.ip := x);
+("optionalfakerandomseed",fun x -> Config.optionalfakerandomseed := x)
 ];;
 let intoptionconfigvars = [
 ("socks",fun x -> Config.socks := x)
@@ -74,6 +76,17 @@ let process_config_line l =
 	    end
 	  )
 	intconfigvars;
+      List.iter
+	(fun (v,r) ->
+	  let vl = String.length v in
+	  if ll > 1 + vl && String.sub l 0 (vl) = v && l.[vl] = '=' then
+	    begin
+	      setl := v::!setl;
+	      r (Int64.of_string (String.sub l (vl+1) (ll-(vl+1))));
+	      raise Done
+	    end
+	  )
+	int64configvars;
       List.iter
 	(fun (v,r) ->
 	  let vl = String.length v in
