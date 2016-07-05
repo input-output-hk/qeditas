@@ -166,62 +166,34 @@ let random_initialized : bool ref = ref false;;
 
 (*** generate 512 random bits and then use sha256 on them each time we need a new random number ***)
 let initialize_random_seed () =
-  if Sys.file_exists "/dev/random" then
-    let r = open_in_bin "/dev/random" in
-    let v = ref 0l in
-    for i = 0 to 15 do
-      v := 0l;
-      for j = 0 to 3 do
-	v := Int32.logor (Int32.shift_left !v 8) (Int32.of_int (input_byte r))
+  match !Config.randomseed with
+  | Some(s) ->
+      let l = String.length s in
+      let a = Array.make l 0 in
+      for i = 0 to l-1 do
+	a.(i) <- Char.code s.[i]
       done;
-      random_int32_array.(i) <- !v;
-    done;
-    random_initialized := true
-  else
-    match !Config.optionalfakerandomseed with
-    | None ->
-	Printf.printf "Since /dev/random is not on your system (Windows?), you must give some random seed with -optionalfakerandomseed\n";
-	!exitfn 1
-    | Some(s) ->
-	let ((m0,m1,m2,m3,m4,m5,m6,m7) as md) = Sha256.sha256str (s ^ ":" ^ (string_of_float (Unix.time()))) in
-	random_int32_array.(0) <- m0;
-	random_int32_array.(1) <- m1;
-	random_int32_array.(2) <- m2;
-	random_int32_array.(3) <- m3;
-	random_int32_array.(4) <- m4;
-	random_int32_array.(5) <- m5;
-	random_int32_array.(6) <- m6;
-	random_int32_array.(7) <- m7;
-	let ((m0,m1,m2,m3,m4,m5,m6,m7) as md) = Sha256.sha256dstr (s ^ "^" ^ (string_of_float (Unix.time()))) in
-	random_int32_array.(8) <- m0;
-	random_int32_array.(9) <- m1;
-	random_int32_array.(10) <- m2;
-	random_int32_array.(11) <- m3;
-	random_int32_array.(12) <- m4;
-	random_int32_array.(13) <- m5;
-	random_int32_array.(14) <- m6;
-	random_int32_array.(15) <- m7;;
+      Random.full_init a;
+      random_initialized := true
+  | None ->
+      if Sys.file_exists "/dev/random" then
+	let r = open_in_bin "/dev/random" in
+	let v = ref 0l in
+	for i = 0 to 15 do
+	  v := 0l;
+	  for j = 0 to 3 do
+	    v := Int32.logor (Int32.shift_left !v 8) (Int32.of_int (input_byte r))
+	  done;
+	  random_int32_array.(i) <- !v;
+	done;
+	random_initialized := true
+      else
+	begin
+	  Printf.printf "Since /dev/random is not on your system (Windows?), you must give some random seed with -randomseed\nMake sure the seed is really random or serious problems could result.\n";
+	  !exitfn 1
+	end
 
-let sha256_random_int32_array () =
-  Sha256.sha256init();
-  for i = 0 to 15 do
-    Sha256.currblock.(i) <- random_int32_array.(i)
-  done;
-  Sha256.sha256round();
-  let (x7,x6,x5,x4,x3,x2,x1,x0) = Sha256.getcurrmd256() in
-  for i = 0 to 7 do
-    random_int32_array.(i+8) <- random_int32_array.(i)
-  done;
-  random_int32_array.(0) <- x0;
-  random_int32_array.(1) <- x1;
-  random_int32_array.(2) <- x2;
-  random_int32_array.(3) <- x3;
-  random_int32_array.(4) <- x4;
-  random_int32_array.(5) <- x5;
-  random_int32_array.(6) <- x6;
-  random_int32_array.(7) <- x7;;
-
-let rand_256 () =
+let strong_rand_256 () =
   if Sys.file_exists "/dev/random" then
     begin
       let dr = open_in_bin "/dev/random" in
@@ -230,43 +202,31 @@ let rand_256 () =
       Sha256.md256_big_int n
     end
   else
-    begin
-      if not !random_initialized then initialize_random_seed();
-      sha256_random_int32_array();
-      Sha256.md256_big_int (Sha256.getcurrmd256())
-    end
+    raise (Failure "Cannot generate cryptographically strong random numbers")
 
 let rand_bit () =
-  if Sys.file_exists "/dev/random" then
-    begin
-      let dr = open_in_bin "/dev/random" in
-      let (n,_) = sei_bool seic (dr,None) in
-      close_in dr;
-      n
-    end
-  else
-    begin
-      if not !random_initialized then initialize_random_seed();
-      sha256_random_int32_array();
-      random_int32_array.(0) < 0l
-    end;;
+  if not !random_initialized then initialize_random_seed();
+  Random.bool()
+
+let rand_int32 () =
+  if not !random_initialized then initialize_random_seed();
+  Int32.logor (Int32.shift_left (Random.int32 65536l) 16) (Random.int32 65536l)
 
 let rand_int64 () =
-  if Sys.file_exists "/dev/random" then
-    begin
-      let dr = open_in_bin "/dev/random" in
-      let (n,_) = sei_int64 seic (dr,None) in
-      close_in dr;
-      n
-    end
-  else
-    begin
-      if not !random_initialized then initialize_random_seed();
-      sha256_random_int32_array();
-      Int64.logor
-	(Int64.of_int32 random_int32_array.(0))
-	(Int64.shift_right_logical (Int64.of_int32 random_int32_array.(1)) 32)
-    end;;
+  if not !random_initialized then initialize_random_seed();
+  Int64.logor (Int64.shift_left (Random.int64 4294967296L) 32) (Random.int64 4294967296L)
+
+let rand_256 () =
+  if not !random_initialized then initialize_random_seed();
+  let m0 = rand_int32() in
+  let m1 = rand_int32() in
+  let m2 = rand_int32() in
+  let m3 = rand_int32() in
+  let m4 = rand_int32() in
+  let m5 = rand_int32() in
+  let m6 = rand_int32() in
+  let m7 = rand_int32() in
+  Sha256.md256_big_int (m0,m1,m2,m3,m4,m5,m6,m7)
 
 let stakingthread () =
   let sleepuntil = ref (Unix.time()) in
@@ -529,6 +489,7 @@ let stakingthread () =
 		  publish_new_block())
 	      end
 	| NoStakeUpTo(tm) ->
+Printf.printf "No stake up to %Ld\n" tm; flush stdout; (* delete me *)
 	    let ftm = Int64.add (Int64.of_float (Unix.time())) 36000L in (* reduce to 3600 *)
 	    if tm < ftm then
 	      compute_staking_chances best tm ftm
@@ -783,7 +744,7 @@ let initialize () =
     if !Config.testnet then
       begin
 	max_target := shift_left_big_int unit_big_int 230; (*** make the max_target higher (so difficulty can be easier for testing) ***)
-	genesistarget := shift_left_big_int unit_big_int 202; (*** make the genesistarget higher (so difficulty can be easier for testing) ***)
+	genesistarget := shift_left_big_int unit_big_int 208; (*** make the genesistarget higher (so difficulty can be easier for testing) ***)
       end;
     initblocktree();
     Printf.printf "Loading wallet\n"; flush stdout;

@@ -22,7 +22,7 @@ let int64configvars = [
 ];;
 let stringoptionconfigvars = [
 ("ip",fun x -> Config.ip := x);
-("optionalfakerandomseed",fun x -> Config.optionalfakerandomseed := x)
+("randomseed",fun x -> Config.randomseed := x)
 ];;
 let intoptionconfigvars = [
 ("socks",fun x -> Config.socks := x)

@@ -16,4 +16,4 @@ val currledgerroot : string ref
 val prompt : string ref
 val genesistimestamp : int64 ref
 val seed : string ref
-val optionalfakerandomseed : string option ref
+val randomseed : string option ref

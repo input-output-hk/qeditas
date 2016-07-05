@@ -19,8 +19,8 @@ do
 		    if [ ${v:0:6} == "-seed=" ]; then
 			SEED=${v:6}
 		    else
-			if [ ${v:0:24} = "-optionalfakerandomseed=" ]; then
-			    OPTIONALFAKERANDOMSEED=${v:24}
+			if [ ${v:0:12} = "-randomseed=" ]; then
+			    RANDOMSEED=${v:12}
 			else
 			    echo "Unknown command line argument $v"
 			    echo "configure can be given the following arguments:"
@@ -29,7 +29,7 @@ do
 			    echo "-datadir=<dir> (to specify the default directory for Qeditas data)"
 			    echo "-genesistime=<int> (to specify the genesis time stamp; regularly updated for the testnet)"
 			    echo "-seed=<20 bytes as a hexstring> (to specify the seed that is hashed to determine the genesis stake modifiers)"
-			    echo "-optionalfakerandomseed=<string> (a user provided string to fake randomness under Windows)"
+			    echo "-randomseed=<string> (a user provided string to seed OCaml's Random module)"
 			    exit 1
 			fi
 		    fi
@@ -69,10 +69,10 @@ if [ $SEED ]; then
 else
     echo let seed = ref \"\" >> src/config.ml
 fi
-if [ $OPTIONALFAKERANDOMSEED ]; then
-    echo let optionalfakerandomseed = ref \(Some \"$OPTIONALFAKERANDOMSEED\"\) >> src/config.ml
+if [ $RANDOMSEED ]; then
+    echo let randomseed = ref \(Some \"$RANDOMSEED\"\) >> src/config.ml
 else
-    echo let optionalfakerandomseed = ref None >> src/config.ml
+    echo let randomseed = ref None >> src/config.ml
 fi
 if [ $BYTECODE ]; then
     if [ $INSTALLDIR ]; then
