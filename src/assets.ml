@@ -415,13 +415,11 @@ Hashtbl.add msgtype_handler Asset
       let i = int_of_msgtype GetAsset in
       if not (DbAsset.dbexists h) then (*** if we already have it, abort ***)
 	if List.mem (i,h) cs.invreq then (*** only continue if it was requested ***)
-          let (a,_) = sei_asset seis r in
-	  if assetid a = h then
-	    begin
-  	      DbAsset.dbput h a;
-	      cs.invreq <- List.filter (fun (j,k) -> not (i = j && h = k)) cs.invreq
-	    end
-          else (*** otherwise, it seems to be a misbehaving peer --  ignore for now ***)
-	    (Printf.fprintf !Utils.log "misbehaving peer? [malformed Asset]\n"; flush !Utils.log)
+          let (bday,r) = sei_int64 seis r in (*** note that now we only need to read the remaining 3 components of the 4-tuple ***)
+          let (obl,r) = sei_obligation seis r in
+          let (u,_) = sei_preasset seis r in
+	  let a = (h,bday,obl,u) in
+  	  DbAsset.dbput h a;
+	  cs.invreq <- List.filter (fun (j,k) -> not (i = j && h = k)) cs.invreq
 	else (*** if something unrequested was sent, then seems to be a misbehaving peer ***)
 	  (Printf.fprintf !Utils.log "misbehaving peer? [unrequested Asset]\n"; flush !Utils.log));;
