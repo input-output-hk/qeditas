@@ -752,14 +752,9 @@ let initialize () =
     Printf.printf "Loading txpool\n"; flush stdout;
     Commands.load_txpool();
     (*** We next compute a nonce for the node to prevent self conns; it doesn't need to be cryptographically secure ***)
-    if Sys.file_exists "/dev/urandom" then (* in linux this should give a random enough nonce *)
-      let dur = open_in_bin "/dev/urandom" in
-      let (n,_) = sei_int64 seic (dur,None) in
-      close_in dur;
-      this_nodes_nonce := n
-    else
-      let n = Int64.of_float (Unix.time()) in (*** if /dev/urandom is not available, then just use the current time as the nonce ***)
-      this_nodes_nonce := n;
+    if not !random_initialized then initialize_random_seed();
+    let n = rand_int64() in
+    this_nodes_nonce := n;
     Printf.fprintf !log "Nonce: %Ld\n" n; flush !log
   end;;
 
