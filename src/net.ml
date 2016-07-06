@@ -52,10 +52,10 @@ let msgtype_of_int i =
   try
     List.nth
       [Version;Verack;Addr;Inv;GetData;MNotFound;GetSTx;GetTx;GetTxSignatures;
-       GetBlock;GetBlockdelta;GetBlockdeltah;GetHeader;GetHeaders;STx;Tx;TxSignatures;Block;
+       GetBlock;GetBlockdelta;GetBlockdeltah;GetHeader;STx;Tx;TxSignatures;Block;
        Headers;Blockdelta;Blockdeltah;GetAddr;Mempool;Alert;Ping;Pong;Reject;
        GetCTreeElement;GetHConsElement;GetAsset;CTreeElement;HConsElement;Asset;
-       Checkpoint;AntiCheckpoint;NewHeader]
+       Checkpoint;AntiCheckpoint;NewHeader;GetHeaders]
       i
   with Failure("nth") -> raise Not_found
 
@@ -306,7 +306,6 @@ let connectpeer_socks4 proxyport ip port =
   flush sout;
   let z = input_byte sin in
   let cd = input_byte sin in
-  Printf.fprintf !log "%d %d\n" z cd; flush !log;
   if not (cd = 90) then raise RequestRejected;
   for i = 1 to 6 do
     ignore (input_byte sin)
@@ -589,7 +588,6 @@ let initialize_conn_accept ra s =
     end
 
 let initialize_conn_2 n s sin sout =
-  Printf.fprintf !log "calling 2\n"; flush !log;
   (*** initiate handshake ***)
   let vers = 1l in
   let srvs = 1L in
