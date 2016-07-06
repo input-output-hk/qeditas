@@ -234,7 +234,7 @@ Hashtbl.add msgtype_handler GetTx
 	try
 	  let tau = DbTx.dbget h in
 	  let tausb = Buffer.create 100 in
-	  seosbf (seo_tx seosb tau (tausb,None));
+	  seosbf (seo_tx seosb tau (seo_hashval seosb h (tausb,None)));
 	  let tauser = Buffer.contents tausb in
 	  ignore (send_msg sout Tx tauser);
 	  cs.sentinv <- (i,h)::cs.sentinv
@@ -265,7 +265,7 @@ Hashtbl.add msgtype_handler GetTxSignatures
 	try
 	  let s = DbTxSignatures.dbget h in
 	  let ssb = Buffer.create 100 in
-	  seosbf (seo_txsigs seosb s (ssb,None));
+	  seosbf (seo_txsigs seosb s (seo_hashval seosb h (ssb,None)));
 	  let sser = Buffer.contents ssb in
 	  ignore (send_msg sout TxSignatures sser);
 	  cs.sentinv <- (i,h)::cs.sentinv
