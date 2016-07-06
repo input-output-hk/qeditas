@@ -673,7 +673,6 @@ let signtx_p2pkh beta taue =
     let (alpha,gamma,(x,y),recid,fcomp,esg) =
       List.find 
 	(fun (alpha,gam,_,_,_,_) ->
-	  Printf.printf "%s %s %s\n" (addr_qedaddrstr (p2pkhaddr_addr beta)) (addr_qedaddrstr (payaddr_addr alpha)) (addr_qedaddrstr (payaddr_addr gam)); flush stdout; (* delete me *)
 	  let (p,a4,a3,a2,a1,a0) = alpha in
 	  not p && (a4,a3,a2,a1,a0) = beta)
 	!walletendorsements
@@ -686,13 +685,9 @@ let signtx_p2pkh beta taue =
       let r = rand_256() in
       let s1 = signat_big_int taue k r in
       let s = EndP2pkhToP2pkhSignat(Some(x,y),fcomp,Some(x2,y2),b2,esg,s1) in
-      Printf.printf "Signed %s\n" (string_of_big_int taue); (* delete me *)
-      if not (verify_signed_big_int taue (Some(x2,y2)) s1) then (Printf.printf "bad signat\n"; flush stdout; exit 2); (* delete me *)
-      if not (verify_gensignat taue s (p2pkhaddr_addr beta)) then (Printf.printf "bad gensignat\n"; flush stdout; exit 2); (* delete me *)
       s
 
 let rec signtx_ins taue inpl al outpl sl ci =
-  Printf.printf "signtx_ins sl length %d\n" (List.length sl); (* delete me *)
   match inpl,al with
   | (alpha,k)::inpr,(a::ar) ->
       begin
