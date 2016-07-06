@@ -21,10 +21,11 @@ type msgtype =
   | GetSTx
   | GetTx
   | GetTxSignatures
+  | GetHeader
+  | GetHeaders
   | GetBlock
   | GetBlockdelta
   | GetBlockdeltah
-  | GetHeaders
   | STx
   | Tx
   | TxSignatures
@@ -73,6 +74,7 @@ type connstate = {
     mutable last_height : int64; (*** how up to date the node is ***)
   }
 
+val send_inv_fn : (int -> out_channel -> connstate -> unit) ref
 val msgtype_handler : (msgtype,in_channel * out_channel * connstate * string -> unit) Hashtbl.t
 
 val netlistenerth : Thread.t option ref

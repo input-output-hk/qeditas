@@ -59,87 +59,16 @@ let known_blockdelta_p blkh h =
 let known_stx_p h =
   Hashtbl.mem recentstxs h (*** should also check if it's in a file ***)
 
-(*** This is only approximate; it takes the height of a recent block header with the highest cumul stake ***)
-let current_block_height () =
-  match !recentblockheaders with
-  | (_,(_,blkh,_))::_ -> blkh
-  | [] -> 0L
-
-let send_initial_inv sout cs =
-  let tosend = ref [] in
-  let cnt = ref 0 in
-  List.iter (fun (bhh,(cumulstk,blkh,bh)) ->
-    incr cnt;
-    if !cnt < 50000 then
-      begin
-	tosend := (int_of_msgtype Headers,blkh,bhh)::!tosend;
-	if Hashtbl.mem recentblockdeltahs bhh then (incr cnt; if !cnt < 50000 then tosend := (int_of_msgtype Blockdelta,blkh,bhh)::!tosend);
-      end)
-    !recentblockheaders;
-  Hashtbl.iter (fun txh _ -> incr cnt; if !cnt < 50000 then tosend := (int_of_msgtype STx,0L,txh)::!tosend) recentstxs;
-(*
-  if not (!tosend = []) then ignore (send_msg sout (Inv(!tosend)));
-*)
-  cs.sentinv <- List.map (fun (k,_,h) -> (k,h)) !tosend
-
-let extra_inv_h invl mblkh =
-  let invr = ref invl in
-  let cnt = ref 0 in
-  let i = int_of_msgtype Headers in
-  List.iter (fun (bhh,(cumulstk,blkh,bh)) ->
-    incr cnt;
-    if !cnt < 50000 && blkh >= mblkh && not (List.mem (i,blkh,bhh) !invr) then
-      invr := (i,blkh,bhh)::!invr)
-    !recentblockheaders;
-  !invr
-
-let lastbroadcastextra = ref (Unix.time());;
-
-(*** extra_inv is a function that adds extra inventory to inventory messages to make certain block headers propagate ***)
-let extra_inv invl =
-  let tm = Unix.time() in
-  if tm -. !lastbroadcastextra > 5400.0 then (*** every 90 minutes or so, send a big inv broadcast including the last 256 headers or so ***)
-    begin
-      lastbroadcastextra := tm;
-      extra_inv_h invl (Int64.sub (current_block_height()) 256L)
-    end
-  else (*** otherwise also send the past 8 headers or so ***)
-    extra_inv_h invl (Int64.sub (current_block_height()) 8L)
-
-let broadcast_inv invl =
-  let invl = extra_inv invl in
-  if not (invl = []) then
-    let invl2 = List.map (fun (k,_,h) -> (k,h)) invl in
-    List.iter
-      (fun (cth,(s,sin,sout,gcs)) ->
-	try
-	  match !gcs with
-	  | Some(cs) ->
-	      if not (cs.locked) then
-		begin
-(*** should acquire a lock on cs.locked, or there could be a race condition with cth ***)
-		  cs.locked <- true;
-(*
-		  ignore (send_msg sout (Inv(invl)));
-*)
-		  cs.locked <- false;
-(*** should now give up lock on cs.locked ***)
-		  cs.sentinv <- invl2 @ cs.sentinv
-		end
-	  | _ -> ()
-	with _ -> ())
-      !netconns
-
 let stxpool : (hashval,stx) Hashtbl.t = Hashtbl.create 1000;;
 let published_stx : (hashval,unit) Hashtbl.t = Hashtbl.create 1000;;
 let thytree : (hashval,Mathdata.ttree) Hashtbl.t = Hashtbl.create 1000;;
 let sigtree : (hashval,Mathdata.stree) Hashtbl.t = Hashtbl.create 1000;;
 
-type validationstatus = Waiting of float | Valid | Invalid
+type validationstatus = Waiting of float | ValidBlock | InvalidBlock
 
 type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * int64 * big_int * int64 * validationstatus ref * bool ref * (hashval * blocktree) list ref
 
-let genesisblocktreenode = ref (BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!Config.genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []));;
+let genesisblocktreenode = ref (BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!Config.genesistimestamp,zero_big_int,1L,ref ValidBlock,ref false,ref []));;
 
 let lastcheckpointnode = ref !genesisblocktreenode;;
 
@@ -195,7 +124,7 @@ let eq_node n1 n2 = node_prevblockhash n1 = node_prevblockhash n2
 
 let blkheaders : (hashval,unit) Hashtbl.t = Hashtbl.create 1000;;
 let blkheadernode : (hashval option,blocktree) Hashtbl.t = Hashtbl.create 1000;;
-let orphanblkheaders : (hashval option,blockheader) Hashtbl.t = Hashtbl.create 1000;;
+let orphanblkheaders : (hashval option,hashval * blockheader) Hashtbl.t = Hashtbl.create 1000;;
 let earlyblocktreenodes : (int64 * blocktree) list ref = ref [];;
 let tovalidatelist : (validationstatus ref * (unit -> unit)) list ref = ref [];;
 
@@ -228,6 +157,36 @@ let add_sigtree sigroot osigt =
   match sigroot,osigt with
   | Some(r),Some(sigt) -> if not (Hashtbl.mem sigtree r) then Hashtbl.add sigtree r sigt
   | _,_ -> ()
+
+let rec collect_inv m cnt tosend n =
+  if !cnt < m then
+    let BlocktreeNode(par,_,pbh,_,_,_,_,_,_,blkh,_,_,_) = n in
+    match pbh with
+    | None -> ()
+    | Some(pbh) ->
+	if DbBlockHeader.dbexists pbh then
+	  begin
+	    tosend := (int_of_msgtype Headers,blkh,pbh)::!tosend; incr cnt;
+	    if DbBlockDelta.dbexists pbh then (tosend := (int_of_msgtype Blockdelta,blkh,pbh)::!tosend; incr cnt)
+	  end;
+	match par with
+	| None -> ()
+	| Some(p) -> collect_inv m cnt tosend p
+
+let send_inv m sout cs =
+  let cnt = ref 0 in
+  let tosend = ref [] in
+  collect_inv m cnt tosend !bestnode;
+  let invmsg = Buffer.create 10000 in
+  let c = ref (seo_int32 seosb (Int32.of_int !cnt) (invmsg,None)) in
+  List.iter
+    (fun (i,blkh,h) ->
+      let cn = seo_prod3 seo_int8 seo_int64 seo_hashval seosb (i,blkh,h) !c in
+      c := cn)
+    !tosend;
+  ignore (send_msg sout Inv (Buffer.contents invmsg));;
+
+send_inv_fn := send_inv;;
 
 let rec insertnewdelayed (tm,n) btnl =
   match btnl with
@@ -356,7 +315,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 ***)
           let (csm1,fsm1,tar1) = currtinfo in
           let newcumulstake = cumul_stake prevcumulstk tar1 blkhd1.deltatime in
-	  let validated = ref (if knownvalid then Valid else Waiting(Unix.time())) in
+	  let validated = ref (if knownvalid then ValidBlock else Waiting(Unix.time())) in
           let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],Some(h),blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,blkhd1.tinfo,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
 	  (*** add it as a leaf, indicate that we want the block delta to validate it, and check if it's the best ***)
 	  Hashtbl.add blkheadernode (Some(h)) newnode;
@@ -389,7 +348,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 		if known_thytree_p thyroot && known_sigtree_p sigroot then (*** these should both be known if the parent block has been validated ***)
 		  if valid_block (lookup_thytree thyroot) (lookup_sigtree sigroot) blkhght blkhd1.tinfo blk then
 		    begin (*** if valid_block succeeds, then latesttht and latestsigt will be set to the transformed theory tree and signature tree ***)
-		      validated := Valid;
+		      validated := ValidBlock;
 		      if not initialization then add_to_validheaders_file hh;
                       let BlocktreeNode(_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
 		      if gt_big_int newcumulstake bestcumulstk then
@@ -411,7 +370,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 		    end
 		  else
 		    begin
-		      validated := Invalid; (*** could delete and possibly blacklist the qblockdeltah, but will leave it for now ***)
+		      validated := InvalidBlock; (*** could delete and possibly blacklist the qblockdeltah, but will leave it for now ***)
 		    end
 	    with
 	    | Not_found -> (*** request blockdeltah h from peers ***)
@@ -434,7 +393,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 		netblkh := node_blockheight !bestnode
 	      end;
             List.iter
-              (fun blkh1 -> let (blkhd1,_) = blkh1 in let h = hash_blockheaderdata blkhd1 in process_new_header_a h (hashval_hexstring h) blkh1 blkhd1 initialization knownvalid)
+              (fun (h,blkh1) -> let (blkhd1,_) = blkh1 in process_new_header_a h (hashval_hexstring h) blkh1 blkhd1 initialization knownvalid)
               (Hashtbl.find_all orphanblkheaders (Some(h)))
         end
       else
@@ -443,14 +402,13 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 	  DbBlockHeader.dbdelete h;
         end
     with Not_found -> (*** orphan block header, put it on the relevant hash table and request parent ***)
-      Hashtbl.add orphanblkheaders prevblkh blkh1;
+      Hashtbl.add orphanblkheaders prevblkh (h,blkh1);
       match prevblkh with
       | Some(pbh) ->
 	  if DbBlockHeader.dbexists pbh then
 	    process_new_header pbh (hashval_hexstring pbh) initialization knownvalid
 	  else
-	    (*** todo: request qblockheader pbh ***)
-	    ()
+	    broadcast_requestdata GetHeader pbh
       | None -> ()
   end
 and process_new_header_b h hh initialization knownvalid =
@@ -496,7 +454,7 @@ let init_headers () =
   init_headers_a (Filename.concat (datadir()) "headers") false
 
 let initblocktree () =
-  genesisblocktreenode := BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!Config.genesistimestamp,zero_big_int,1L,ref Valid,ref false,ref []);
+  genesisblocktreenode := BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!Config.genesistimestamp,zero_big_int,1L,ref ValidBlock,ref false,ref []);
   lastcheckpointnode := !genesisblocktreenode;
   bestnode := !genesisblocktreenode;
   netblkh := node_blockheight !bestnode;
@@ -505,7 +463,7 @@ let initblocktree () =
 
 let rec find_best_validated_block_from fromnode bestcumulstk =
   let BlocktreeNode(_,_,_,_,_,_,_,_,cumulstk,_,validatedp,blklistp,succl) = fromnode in
-  if not !blklistp && !validatedp = Valid then
+  if not !blklistp && !validatedp = ValidBlock then
     begin
       let newbestcumulstk = ref
 	(if gt_big_int cumulstk bestcumulstk then
@@ -576,30 +534,67 @@ let qednetmain initfn preloopfn =
 
 Hashtbl.add msgtype_handler NewHeader
   (fun (sin,sout,cs,ms) ->
-    let (h,c) = sei_hashval seis (ms,String.length ms,None,0,0) in
-    let ((bhd,bhs),_) = sei_blockheader seis c in
-    let bhdh = hash_blockheaderdata bhd in
-    if bhdh = h then
-      begin
-	try
-	  let n = Hashtbl.find blkheadernode bhd.prevblockhash in
-	  if valid_blockheader (node_blockheight n) (node_targetinfo n) (bhd,bhs) then
-	    begin
-	      DbBlockHeader.dbput h (bhd,bhs);
-	      process_new_header h (hashval_hexstring h) false false
-	    end
-	  else (*** invalid block header, ignore but log ***)
-	    begin
-	      Printf.fprintf !log "Invalid block header %s. Dropping.\n" (hashval_hexstring h);
-	      flush !log;
-	    end
-	with Not_found -> (*** orphan, to do ***)
-	  Printf.fprintf !log "Orphan block header %s. Dropping because relevant code has not been written.\n" (hashval_hexstring h);
-	  flush !log;
-      end
-    else (*** if hashval mismatch, ignore but log ***)
-      begin
-	Printf.fprintf !log "Got new header with hash %s but claimed hash %s. Ignoring.\n" (hashval_hexstring bhdh) (hashval_hexstring h);
-	flush !log;
-      end);;
+    let (h,_) = sei_hashval seis (ms,String.length ms,None,0,0) in
+    if not (DbBlockHeader.dbexists h) then
+      let i = int_of_msgtype GetHeader in
+      cs.invreq <- (i,h)::cs.invreq;
+      ignore (send_msg sout GetHeader ms));;
 
+Hashtbl.add msgtype_handler GetHeader
+  (fun (sin,sout,cs,ms) ->
+    let (h,_) = sei_hashval seis (ms,String.length ms,None,0,0) in
+    let i = int_of_msgtype GetHeader in
+    if not (List.mem (i,h) cs.sentinv) then (*** don't resend ***)
+      try
+	let bh = DbBlockHeader.dbget h in
+	let s = Buffer.create 1000 in
+	seosbf (seo_blockheader seosb bh (seo_hashval seosb h (seo_int8 seosb 1 (s,None))));
+	cs.sentinv <- (i,h)::cs.sentinv;
+	ignore (send_msg sout Headers (Buffer.contents s))
+      with Not_found ->
+	(*** don't have it to send, ignore ***)
+	());;
+
+Hashtbl.add msgtype_handler GetHeaders
+  (fun (sin,sout,cs,ms) ->
+    let c = ref (ms,String.length ms,None,0,0) in
+    let m = ref 0 in
+    let bhl = ref [] in
+    let (n,cn) = sei_int8 seis !c in (*** peers can request at most 255 headers at a time **)
+    c := cn;
+    let i = int_of_msgtype GetHeader in
+    for j = 1 to n do
+      let (h,cn) = sei_hashval seis !c in
+      c := cn;
+      if not (List.mem (i,h) cs.sentinv) then (*** don't resend ***)
+	try
+	  let bh = DbBlockHeader.dbget h in
+	  incr m;
+	  bhl := (h,bh)::!bhl;
+	  cs.sentinv <- (i,h)::cs.sentinv
+	with Not_found ->
+	  (*** don't have it to send, ignore ***)
+	    ()
+      done;
+    let s = Buffer.create 10000 in
+    let co = ref (seo_int8 seosb !m (s,None)) in
+    List.iter (fun (h,bh) -> co := seo_blockheader seosb bh (seo_hashval seosb h !co)) !bhl;
+    seosbf !co;
+    ignore (send_msg sout Headers (Buffer.contents s))
+  );;
+
+Hashtbl.add msgtype_handler Headers
+  (fun (sin,sout,cs,ms) ->
+    let c = ref (ms,String.length ms,None,0,0) in
+    let m = ref 0 in
+    let bhl = ref [] in
+    let (n,cn) = sei_int8 seis !c in (*** peers can request at most 255 headers at a time **)
+    c := cn;
+    let i = int_of_msgtype GetHeader in
+    for j = 1 to n do
+      let (h,cn) = sei_hashval seis !c in
+      let (bh,cn) = sei_blockheader seis cn in (*** deserialize if only to get to the next one ***)
+      c := cn;
+      if not (DbBlockHeader.dbexists h) && List.mem (i,h) cs.invreq then
+	process_new_header h (hashval_hexstring h) false false
+    done);;

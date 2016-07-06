@@ -10,7 +10,7 @@ open Tx
 open Ctre
 open Block
 
-type validationstatus = Waiting of float | Valid | Invalid
+type validationstatus = Waiting of float | ValidBlock | InvalidBlock
 
 type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * int64 * big_int * int64 * validationstatus ref * bool ref * (hashval * blocktree) list ref
 

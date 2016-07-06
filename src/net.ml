@@ -20,10 +20,11 @@ type msgtype =
   | GetSTx
   | GetTx
   | GetTxSignatures
+  | GetHeader
+  | GetHeaders
   | GetBlock
   | GetBlockdelta
   | GetBlockdeltah
-  | GetHeaders
   | STx
   | Tx
   | TxSignatures
@@ -51,7 +52,7 @@ let msgtype_of_int i =
   try
     List.nth
       [Version;Verack;Addr;Inv;GetData;MNotFound;GetSTx;GetTx;GetTxSignatures;
-       GetBlock;GetBlockdelta;GetBlockdeltah;GetHeaders;STx;Tx;TxSignatures;Block;
+       GetBlock;GetBlockdelta;GetBlockdeltah;GetHeader;GetHeaders;STx;Tx;TxSignatures;Block;
        Headers;Blockdelta;Blockdeltah;GetAddr;Mempool;Alert;Ping;Pong;Reject;
        GetCTreeElement;GetHConsElement;GetAsset;CTreeElement;HConsElement;Asset;
        Checkpoint;AntiCheckpoint;NewHeader]
@@ -72,7 +73,7 @@ let int_of_msgtype mt =
   | GetBlock -> 9
   | GetBlockdelta -> 10
   | GetBlockdeltah -> 11
-  | GetHeaders -> 12
+  | GetHeader -> 12
   | STx -> 13
   | Tx -> 14
   | TxSignatures -> 15
@@ -95,6 +96,7 @@ let int_of_msgtype mt =
   | Checkpoint -> 32
   | AntiCheckpoint -> 33
   | NewHeader -> 34
+  | GetHeaders -> 35
 
 let string_of_msgtype mt =
   match mt with
@@ -110,6 +112,7 @@ let string_of_msgtype mt =
   | GetBlock -> "GetBlock"
   | GetBlockdelta -> "GetBlockdelta"
   | GetBlockdeltah -> "GetBlockdeltah"
+  | GetHeader -> "GetHeader"
   | GetHeaders -> "GetHeaders"
   | STx -> "STx"
   | Tx -> "Tx"
@@ -329,6 +332,7 @@ type connstate = {
     mutable last_height : int64; (*** how up to date the node is ***)
   }
 
+let send_inv_fn : (int -> out_channel -> connstate -> unit) ref = ref (fun _ _ _ -> ())
 let msgtype_handler : (msgtype,in_channel * out_channel * connstate * string -> unit) Hashtbl.t = Hashtbl.create 50
 
 let send_msg_real c replyto mt ms =
@@ -492,6 +496,7 @@ let handle_msg replyto mt sin sout cs mh m =
 			cs.first_header_height <- fhh;
 			cs.first_full_height <- ffh;
 			cs.last_height <- lh;
+			!send_inv_fn 5000 sout cs
 		      end
 		    else
 		      raise (ProtocolViolation "Handshake failed")
@@ -501,7 +506,10 @@ let handle_msg replyto mt sin sout cs mh m =
 		if cs.handshakestep = 2 then
 		  cs.handshakestep <- 4
 		else if cs.handshakestep = 3 then
-		  cs.handshakestep <- 5
+		  begin
+		    cs.handshakestep <- 5;
+		    !send_inv_fn 5000 sout cs
+		  end
 		else
 		  raise (ProtocolViolation("Unexpected Verack"))
 	      end
