@@ -714,10 +714,13 @@ let broadcast_requestdata mt h =
        | None -> ())
     !netconns
 
-let broadcast_new_header bhser =
+let broadcast_new_header h =
   List.iter
     (fun (th,(fd,sin,sout,gcs)) ->
        match !gcs with
-       | Some(cs) -> ignore (send_msg sout NewHeader bhser)
+       | Some(cs) ->
+	   let s = Buffer.create 20 in
+	   seosbf (seo_hashval seosb h (s,None));
+	   ignore (send_msg sout NewHeader (Buffer.contents s))
        | None -> ())
     !netconns

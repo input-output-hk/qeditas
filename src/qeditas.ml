@@ -466,10 +466,7 @@ let stakingthread () =
 		  DbBlockHeader.dbput bhdnewh (bhdnew,bhsnew);
 		  DbBlockDelta.dbput bhdnewh bdnew;
 		  add_to_validheaders_file (hashval_hexstring bhdnewh);
-		  let s = Buffer.create 10000 in
-		  seosbf (seo_blockheader seosb (bhdnew,bhsnew) (seo_hashval seosb bhdnewh (s,None)));
-		  let bhser = Buffer.contents s in
-		  broadcast_new_header bhser;
+		  broadcast_new_header bhdnewh;
 		  let newnode =
 		    BlocktreeNode(Some(best),ref [],Some(bhdnewh),newthtroot,newsigtroot,ctree_hashroot !dync,bhdnew.tinfo,tm,csnew,Int64.add 1L blkh,ref Valid,ref false,ref [])
 		  in
