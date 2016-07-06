@@ -468,7 +468,7 @@ let stakingthread () =
 		  add_to_validheaders_file (hashval_hexstring bhdnewh);
 		  broadcast_new_header bhdnewh;
 		  let newnode =
-		    BlocktreeNode(Some(best),ref [],Some(bhdnewh),newthtroot,newsigtroot,ctree_hashroot !dync,bhdnew.tinfo,tm,csnew,Int64.add 1L blkh,ref Valid,ref false,ref [])
+		    BlocktreeNode(Some(best),ref [],Some(bhdnewh),newthtroot,newsigtroot,ctree_hashroot !dync,bhdnew.tinfo,tm,csnew,Int64.add 1L blkh,ref ValidBlock,ref false,ref [])
 		  in
 		  Printf.fprintf !log "block at height %Ld: %s, deltm = %ld, timestamp %Ld, cumul stake %s\n" blkh (hashval_hexstring bhdnewh) bhdnew.deltatime tm (string_of_big_int cs); 
 		  record_recent_staker alpha newnode 6;
