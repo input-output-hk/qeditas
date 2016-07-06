@@ -486,7 +486,6 @@ let stakingthread () =
 		  publish_new_block())
 	      end
 	| NoStakeUpTo(tm) ->
-Printf.printf "No stake up to %Ld\n" tm; flush stdout; (* delete me *)
 	    let ftm = Int64.add (Int64.of_float (Unix.time())) 36000L in (* reduce to 3600 *)
 	    if tm < ftm then
 	      compute_staking_chances best tm ftm
@@ -705,6 +704,25 @@ let do_command l =
       let blkh = node_blockheight node in
       Printf.printf "Current target (for block at height %Ld): %s\n" blkh (string_of_big_int tar);
       flush stdout
+  | "blockchain" ->
+      begin
+	let rec pblockchain n c m =
+	  let BlocktreeNode(par,_,pbh,_,_,_,_,_,_,blkh,_,_,chl) = n in
+	  if m > 0 then
+	    begin
+	      match par with
+	      | Some(p) -> pblockchain p pbh (m-1)
+	      | None -> ()
+	    end;
+	  match c with
+	  | Some(h) ->
+	      List.iter (fun (k,_) -> if not (k = h) then Printf.printf "[orphan %s]\n" (hashval_hexstring k)) !chl;
+	      Printf.printf "block %Ld %s\n" blkh (hashval_hexstring h);
+	  | None ->
+	      List.iter (fun (k,_) -> Printf.printf "[extra child, not yet considered best %s]\n" (hashval_hexstring k)) !chl
+	in
+	pblockchain !bestnode None 1000
+      end
   | _ ->
       (Printf.fprintf stdout "Ignoring unknown command: %s\n" c; List.iter (fun a -> Printf.printf "%s\n" a) al; flush stdout);;
 
