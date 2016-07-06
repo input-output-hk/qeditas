@@ -39,12 +39,6 @@ let rec insertnewblockheader_real bhh cs mine blkh bh l =
 
 let insertnewblockheader bhh cs mine blkh bh =
   recentblockheaders := insertnewblockheader_real bhh cs mine blkh bh !recentblockheaders;
-  Printf.printf "After insertnewblockheader\n";
-  List.iter
-    (fun (bhh1,(cs1,blkh1,bh1)) ->
-      Printf.printf "%Ld %s cs: %s timestamp %Ld\n" blkh1 (hashval_hexstring bhh1) (string_of_big_int cs1) (let (bhd1,_) = bh1 in bhd1.timestamp)
-      )
-    !recentblockheaders;
   flush stdout
 
 let known_blockheader_p blkh h =
@@ -308,6 +302,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 	blockheader_succ_a tmstamp currtinfo blkh1
       then
 	begin
+	  if not (DbBlockHeader.dbexists h) then DbBlockHeader.dbput h blkh1;
           Hashtbl.add blkheaders h ();
 (*** (*** todo: relay ***)
 	  let qednetch = Unix.open_process_in ((qednetd()) ^ " relaydata qblockheader " ^ h) in
@@ -586,8 +581,6 @@ Hashtbl.add msgtype_handler GetHeaders
 Hashtbl.add msgtype_handler Headers
   (fun (sin,sout,cs,ms) ->
     let c = ref (ms,String.length ms,None,0,0) in
-    let m = ref 0 in
-    let bhl = ref [] in
     let (n,cn) = sei_int8 seis !c in (*** peers can request at most 255 headers at a time **)
     c := cn;
     let i = int_of_msgtype GetHeader in
@@ -596,5 +589,47 @@ Hashtbl.add msgtype_handler Headers
       let (bh,cn) = sei_blockheader seis cn in (*** deserialize if only to get to the next one ***)
       c := cn;
       if not (DbBlockHeader.dbexists h) && List.mem (i,h) cs.invreq then
-	process_new_header h (hashval_hexstring h) false false
+	let (bhd,bhs) = bh in
+	if hash_blockheaderdata bhd = h then
+	  process_new_header_a h (hashval_hexstring h) bh bhd false false
+	else
+	  begin
+	    Printf.fprintf !log "got a header with the wrong hash, dropping it\n"; flush !log;
+	  end
     done);;
+
+let req_headers sout cs m nw =
+  if m > 0 then
+    begin
+      let s = Buffer.create 1000 in
+      let co = ref (seo_int8 seosb m (s,None)) in
+      List.iter (fun h -> co := seo_hashval seosb h !co) nw;
+      seosbf !co;
+      ignore (send_msg sout GetHeaders (Buffer.contents s))
+    end;;
+
+let rec req_header_batches sout cs m hl nw =
+  if m = 255 then
+    (req_headers sout cs m nw; req_header_batches sout cs 0 hl [])
+  else
+    match hl with
+    | (_,h)::hr ->
+	let i = int_of_msgtype GetHeader in
+	cs.invreq <- (i,h)::cs.invreq;
+	req_header_batches sout cs (m+1) hr (h::nw)
+    | [] -> req_headers sout cs m nw;;
+
+Hashtbl.add msgtype_handler Inv
+  (fun (sin,sout,cs,ms) ->
+    let c = ref (ms,String.length ms,None,0,0) in
+    let hl = ref [] in
+    let (n,cn) = sei_int32 seis !c in
+    c := cn;
+    for j = 1 to Int32.to_int n do
+      let ((i,blkh,h),cn) = sei_prod3 sei_int8 sei_int64 sei_hashval seis !c in
+      c := cn;
+      cs.rinv <- (i,h)::cs.rinv;
+      if i = int_of_msgtype Headers && not (DbBlockHeader.dbexists h) then
+	hl := List.merge (fun (blkh1,_) (blkh2,_) -> compare blkh2 blkh1) !hl [(blkh,h)] (*** reverse order because they will be reversed again when requested ***)
+    done;
+    req_header_batches sout cs 0 !hl []);;
