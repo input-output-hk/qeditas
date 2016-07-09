@@ -539,20 +539,20 @@ let coinstake b =
       ((p2pkhaddr_addr bhd.stakeaddr,bhd.stakeassetid)::List.map (fun fid -> (a,fid)) fal,bd.stakeoutput)
 
 let hash_blockheaderdata bh =
-  hashopair2 bh.prevblockhash
-    (hashpair
-       (hashopair2 bh.newtheoryroot
-	  (hashopair2 bh.newsignaroot
-	     bh.newledgerroot))
+  hashtag
+    (hashopair2 bh.prevblockhash
        (hashpair
-	  (hashpair bh.stakeaddr bh.stakeassetid)
-	  (hashopair2
-	     (hashopostor bh.stored)
-	     (hashpair
-		(hashtargetinfo bh.tinfo)
+	  (hashopair2 bh.newtheoryroot
+	     (hashopair2 bh.newsignaroot
+		bh.newledgerroot))
+	  (hashpair
+	     (hashpair bh.stakeaddr bh.stakeassetid)
+	     (hashopair2
+		(hashopostor bh.stored)
 		(hashpair
-		   (hashpair (hashint64 bh.timestamp) (hashint32 bh.deltatime))
-		   (ctree_hashroot bh.prevledger))))))
+		   (hashtargetinfo bh.tinfo)
+		   (hashpair (hashint64 bh.timestamp) (hashint32 bh.deltatime)))))))
+    1028l
 
 let valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v) =
   begin
