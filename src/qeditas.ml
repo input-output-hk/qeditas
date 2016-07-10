@@ -179,6 +179,7 @@ let initialize_random_seed () =
       if Sys.file_exists "/dev/random" then
 	let r = open_in_bin "/dev/random" in
 	let v = ref 0l in
+	Printf.printf "Computing random seed, this may take a while.\n"; flush stdout;
 	for i = 0 to 15 do
 	  v := 0l;
 	  for j = 0 to 3 do
