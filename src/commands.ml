@@ -799,12 +799,11 @@ let rec signtx_outs taue outpl sl rl rsl co =
 
 let signtx lr taustr =
   let s = hexstring_string taustr in
-  let (((tauin,tauout) as tau,tausg),_) = sei_stx seis (s,String.length s,None,0,0) in (*** may be partially signed ***)
+  let (((tauin,tauout) as tau,(tausgin,tausgout) as tausg),_) = sei_stx seis (s,String.length s,None,0,0) in (*** may be partially signed ***)
   let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true false tauin (CHash(lr))) in
   let tauh = hashtx tau in
   let tauh2 = if !Config.testnet then hashtag tauh 288l else tauh in
   let taue = hashval_big_int tauh2 in
-  let (tausgin,tausgout) = tausg in
   let (tausgin1,ci) = signtx_ins taue tauin al tauout tausgin [] [] true in
   let (tausgout1,co) = signtx_outs taue tauout tausgout [] [] true in
   let stau = (tau,(tausgin1,tausgout1)) in
