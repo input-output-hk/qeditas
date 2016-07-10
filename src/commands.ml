@@ -687,57 +687,106 @@ let signtx_p2pkh beta taue =
       let s = EndP2pkhToP2pkhSignat(Some(x,y),fcomp,Some(x2,y2),b2,esg,s1) in
       s
 
-let rec signtx_ins taue inpl al outpl sl ci =
+let getsig s rl =
+  match s with
+  | GenSignatReal(s) -> (s,fun gam -> (gam,Some(s))::rl)
+  | GenSignatRef(i) -> (*** only allow up to 64K signatures on the list; should be much less than this in practice ***)
+      if i < 65535 && i >= 0 then
+	match List.nth rl i with
+	| (gam,Some(s)) -> (s,fun _ -> rl)
+	| (gam,None) -> raise BadOrMissingSignature
+      else
+	raise BadOrMissingSignature
+
+let rec assoc_pos b l p =
+  match l with
+  | ((x,v)::r) when x = b -> (v,p)
+  | (_::r) -> assoc_pos b r (p+1)
+  | [] -> raise Not_found
+
+let rec signtx_ins taue inpl al outpl sl rl (rsl:gensignat_or_ref option list) ci =
   match inpl,al with
   | (alpha,k)::inpr,(a::ar) ->
       begin
 	if not (assetid a = k) then raise (Failure "Asset mismatch when trying to sign inputs");
 	match assetpre a with
-	| Marker -> signtx_ins taue inpr ar outpl sl ci
-	| Bounty(_) -> signtx_ins taue inpr ar outpl sl ci
+	| Marker -> signtx_ins taue inpr ar outpl sl rl rsl ci
+	| Bounty(_) -> signtx_ins taue inpr ar outpl sl rl rsl ci
 	| _ ->
 	    let obl = assetobl a in
-	    let blkh = match obl with Some(_,lkh,_) -> lkh | None -> 1L in (*** artificial block height just for checking signatures ***)
-	    try (*** check if an appropriate signature for this input is already in sl ***)
-	      ignore (List.find
-			(fun s ->
-			  check_spend_obligation alpha blkh taue s (assetobl a) || check_move_obligation alpha taue s (assetobl a) (assetpre a) outpl)
-			sl);
-	      signtx_ins taue inpr ar outpl sl ci
-	    with Not_found ->
-	      (*** otherwise, try to sign for this input ***)
-	      match obl with
-	      | Some(beta,lkh,r) ->
-		  let (p,b4,b3,b2,b1,b0) = beta in
-		  if p then
-		    raise (Failure "p2sh signing is not yet supported")		  
-		  else
-		    begin
-		      try
-			let s = signtx_p2pkh (b4,b3,b2,b1,b0) taue in
-			signtx_ins taue inpr ar outpl (s::sl) ci
-		      with _ ->
-			signtx_ins taue inpr ar outpl sl false
-		    end
-	      | None ->
-		  if p2pkhaddr_p alpha then
-		    begin
-		      try
+	    match sl with
+	    | [] -> signtx_ins taue inpl al outpl [None] rl rsl ci
+	    | (None::sr) -> (*** missing signature ***)
+		begin
+		  (*** check if one of the existing signatures can be used for this ***)
+		  try
+		    let beta =
+		      match obl with
+		      | None ->
+			  let (p,a4,a3,a2,a1,a0) = alpha in
+			  (p=1,a4,a3,a2,a1,a0)
+		      | Some(beta,_,_) -> beta
+		    in
+		    match assoc_pos beta rl 0 with
+		    | (Some(s),p) ->
+			signtx_ins taue inpr ar outpl sr rl (Some(GenSignatRef(p))::rsl) ci
+		    | (None,p) -> raise Not_found
+		  with Not_found ->
+		    (*** otherwise, try to sign for this input ***)
+		    match obl with
+		    | Some(beta,lkh,r) ->
+			let (p,b4,b3,b2,b1,b0) = beta in
+			if p then
+			  raise (Failure "p2sh signing is not yet supported")		  
+			else
+			  begin
+			    try
+			      let s = signtx_p2pkh (b4,b3,b2,b1,b0) taue in
+			      signtx_ins taue inpr ar outpl sr ((beta,Some(s))::rl) (Some(GenSignatReal(s))::rsl) ci
+			    with _ ->
+			      signtx_ins taue inpr ar outpl sr ((beta,None)::rl) (None::rsl) false
+			  end
+		  | None ->
+		      if p2pkhaddr_p alpha then
 			let (_,a4,a3,a2,a1,a0) = alpha in
-			let s = signtx_p2pkh (a4,a3,a2,a1,a0) taue in
-			signtx_ins taue inpr ar outpl (s::sl) ci
-		      with _ ->
-			signtx_ins taue inpr ar outpl sl false
+			begin
+			  try
+			    let s = signtx_p2pkh (a4,a3,a2,a1,a0) taue in
+			    signtx_ins taue inpr ar outpl sr (((false,a4,a3,a2,a1,a0),Some(s))::rl) (Some(GenSignatReal(s))::rsl) ci
+			  with _ ->
+			    signtx_ins taue inpr ar outpl sr (((false,a4,a3,a2,a1,a0),None)::rl) (None::rsl) false
+			end
+		      else if p2shaddr_p alpha then
+			raise (Failure "p2sh signing is not yet supported")
+		      else
+			raise (Failure "tx attempts to spend a non-Marker and non-Bounty without an explicit obligation from an address other than a pay address")
+
+		end
+	    | (Some(s)::sr) ->
+		try
+		  let (s1,rl1) = getsig s rl in
+		  let blkh = match obl with Some(_,lkh,_) -> lkh | None -> 1L in (*** artificial block height just for checking signatures ***)
+		  if check_spend_obligation alpha blkh taue s1 obl then
+		    begin
+		      match obl with
+		      | None -> 
+			  let (p,a4,a3,a2,a1,a0) = alpha in
+			  signtx_ins taue inpr ar outpl sr (rl1 (p=1,a4,a3,a2,a1,a0)) (Some(GenSignatReal(s1))::rsl) ci
+		      | Some(gam,_,_) ->
+			  signtx_ins taue inpr ar outpl sr (rl1 gam) (Some(GenSignatReal(s1))::rsl) ci
 		    end
-		  else if p2shaddr_p alpha then
-		    raise (Failure "p2sh signing is not yet supported")
+		  else if check_move_obligation alpha taue s1 obl (assetpre a) outpl then
+		    let (p,a4,a3,a2,a1,a0) = alpha in
+		    signtx_ins taue inpr ar outpl sr (rl1 (p=1,a4,a3,a2,a1,a0)) (Some(GenSignatReal(s1))::rsl) ci
 		  else
-		    raise (Failure "tx attempts to spend a non-Marker and non-Bounty without an explicit obligation from an address other than a pay address")
+		    raise (Failure "bad signature already part of stx")
+		with BadOrMissingSignature ->
+		  raise (Failure "bad signature already part of stx")
       end
-  | [],[] -> (sl,ci)
+  | [],[] -> if sl = [] then (List.rev rsl,ci) else raise (Failure "extra unused signature")
   | _,_ -> raise (Failure "problem signing inputs")
 
-let rec signtx_outs taue outpl sl co =
+let rec signtx_outs taue outpl sl rl rsl co =
   match outpl with
   | (_,(_,TheoryPublication(alpha,n,thy)))::outpr ->
       raise (Failure "to do: write signtx_outs")
@@ -745,8 +794,8 @@ let rec signtx_outs taue outpl sl co =
       raise (Failure "to do: write signtx_outs")
   | (_,(_,DocPublication(alpha,n,th,si)))::outpr ->
       raise (Failure "to do: write signtx_outs")
-  | _::outpr -> signtx_outs taue outpr sl co
-  | [] -> (sl,co)
+  | _::outpr -> signtx_outs taue outpr sl rl rsl co
+  | [] -> (List.rev rsl,co)
 
 let signtx lr taustr =
   let s = hexstring_string taustr in
@@ -756,8 +805,8 @@ let signtx lr taustr =
   let tauh2 = if !Config.testnet then hashtag tauh 288l else tauh in
   let taue = hashval_big_int tauh2 in
   let (tausgin,tausgout) = tausg in
-  let (tausgin1,ci) = signtx_ins taue tauin al tauout tausgin true in
-  let (tausgout1,co) = signtx_outs taue tauout tausgout true in
+  let (tausgin1,ci) = signtx_ins taue tauin al tauout tausgin [] [] true in
+  let (tausgout1,co) = signtx_outs taue tauout tausgout [] [] true in
   let stau = (tau,(tausgin1,tausgout1)) in
   let s = Buffer.create 100 in
   seosbf (seo_stx seosb (tau,(tausgin1,tausgout1)) (s,None));

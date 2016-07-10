@@ -20,7 +20,8 @@ val tx_inputs_valid : addr_assetid list -> bool
 val tx_outputs_valid : addr_preasset list -> bool
 val tx_valid : tx -> bool
 
-type stx = tx * (gensignat list * gensignat list)
+type gensignat_or_ref = GenSignatReal of gensignat | GenSignatRef of int
+type stx = tx * (gensignat_or_ref option list * gensignat_or_ref option list)
 
 exception BadOrMissingSignature
 
@@ -34,8 +35,8 @@ val txout_update_ostree : addr_preasset list -> stree option -> stree option
 
 val seo_tx : (int -> int -> 'a -> 'a) -> tx -> 'a -> 'a
 val sei_tx : (int -> 'a -> int * 'a) -> 'a -> tx * 'a
-val seo_txsigs : (int -> int -> 'a -> 'a) -> gensignat list * gensignat list -> 'a -> 'a
-val sei_txsigs : (int -> 'a -> int * 'a) -> 'a -> (gensignat list * gensignat list) * 'a
+val seo_txsigs : (int -> int -> 'a -> 'a) -> gensignat_or_ref option list * gensignat_or_ref option list -> 'a -> 'a
+val sei_txsigs : (int -> 'a -> int * 'a) -> 'a -> (gensignat_or_ref option list * gensignat_or_ref option list) * 'a
 val seo_stx : (int -> int -> 'a -> 'a) -> stx -> 'a -> 'a
 val sei_stx : (int -> 'a -> int * 'a) -> 'a -> stx * 'a
 
@@ -49,8 +50,8 @@ module DbTx :
 
 module DbTxSignatures :
     sig
-      val dbget : Hash.hashval -> gensignat list * gensignat list
+      val dbget : Hash.hashval -> gensignat_or_ref option list * gensignat_or_ref option list
       val dbexists : Hash.hashval -> bool
-      val dbput : Hash.hashval -> gensignat list * gensignat list -> unit
+      val dbput : Hash.hashval -> gensignat_or_ref option list * gensignat_or_ref option list -> unit
       val dbdelete : Hash.hashval -> unit
     end

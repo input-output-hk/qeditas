@@ -84,7 +84,8 @@ let tx_outputs_valid (outpl: addr_preasset list) =
 
 let tx_valid tau = tx_inputs_valid (tx_inputs tau) && tx_outputs_valid (tx_outputs tau)
 
-type stx = tx * (gensignat list * gensignat list)
+type gensignat_or_ref = GenSignatReal of gensignat | GenSignatRef of int
+type stx = tx * (gensignat_or_ref option list * gensignat_or_ref option list)
 
 exception BadOrMissingSignature
 
@@ -121,63 +122,93 @@ let check_move_obligation alpha txhe s obl2 u2 outpl =
     verify_gensignat txhe s alpha
   with Not_found -> false
 
-let rec check_tx_in_signatures txhe outpl inpl al sl =
-  match inpl,al with
-  | [],[] -> None
-  | (alpha,k)::inpr,(a::ar) ->
-      let b = ref (check_tx_in_signatures txhe outpl inpr ar sl) in
-      if assetid a = k then
-	begin
-	  match assetpre a with
-	  | Marker -> !b
-	  | Bounty(_) -> !b
-	  | _ -> (*** don't require signatures to spend markers and bounties; but there are conditions for the tx to be supported by a ctree ***)
-	      try
-		ignore (List.find
-			  (fun s ->
-			    try
-			      let b2 = check_spend_obligation_upto_blkh alpha txhe s (assetobl a) in
-			      b := opmax !b b2;
-			      true
-			    with BadOrMissingSignature ->
-			      if check_move_obligation alpha txhe s (assetobl a) (assetpre a) outpl then
-				true
-			      else
-				false)
-			  sl);
-		!b
-	      with Not_found ->
-		raise BadOrMissingSignature
-	end
+let getsig s rl =
+  match s with
+  | Some(GenSignatReal(s)) -> (s,s::rl)
+  | Some(GenSignatRef(i)) -> (*** only allow up to 64K signatures on the list; should be much less than this in practice ***)
+      if i < 65535 && i >= 0 then
+	(List.nth rl i,rl)
       else
 	raise BadOrMissingSignature
-  | _,_ ->
+  | None ->
       raise BadOrMissingSignature
 
-let rec check_tx_out_signatures txhe outpl sl =
-  match outpl with
-  | [] -> true
-  | (_,(_,TheoryPublication(alpha,n,thy)))::outpr ->
-      check_tx_out_signatures txhe outpr sl
-	&&
-      (try ignore (List.find (fun sg -> verify_gensignat txhe sg (payaddr_addr alpha)) sl); true with Not_found -> false)
-  | (_,(_,SignaPublication(alpha,n,th,si)))::outpr ->
-      check_tx_out_signatures txhe outpr sl
-	&&
-      (try ignore (List.find (fun sg -> verify_gensignat txhe sg (payaddr_addr alpha)) sl); true with Not_found -> false)
-  | (_,(_,DocPublication(alpha,n,th,d)))::outpr ->
-      check_tx_out_signatures txhe outpr sl
-	&&
-      (try ignore (List.find (fun sg -> verify_gensignat txhe sg (payaddr_addr alpha)) sl); true with Not_found -> false)
-  | _::outpr ->
-      check_tx_out_signatures txhe outpr sl
+let marker_or_bounty_p a =
+  match assetpre a with
+  | Marker -> true
+  | Bounty(_) -> true
+  | _ -> false
+
+let rec check_tx_in_signatures txhe outpl inpl al sl rl =
+  match inpl,al,sl with
+  | [],[],[] -> None
+  | (alpha,k)::inpr,(a::ar),sl when marker_or_bounty_p a -> (*** don't require signatures to spend markers and bounties; but there are conditions for the tx to be supported by a ctree ***)
+      if assetid a = k then
+	check_tx_in_signatures txhe outpl inpr ar sl rl
+      else
+	raise BadOrMissingSignature
+  | (alpha,k)::inpr,(a::ar),(s::sr) ->
+      begin
+	try
+	  let (s1,rl1) = getsig s rl in
+	  if assetid a = k then
+	    let b = check_tx_in_signatures txhe outpl inpr ar sr rl1 in
+	    begin
+	      try
+		opmax b (check_spend_obligation_upto_blkh alpha txhe s1 (assetobl a))
+	      with BadOrMissingSignature ->
+		if check_move_obligation alpha txhe s1 (assetobl a) (assetpre a) outpl then
+		  b
+		else
+		  raise BadOrMissingSignature
+	    end
+	  else
+	    raise BadOrMissingSignature
+	with Not_found -> raise BadOrMissingSignature
+      end
+  | _,_,_ ->
+      raise BadOrMissingSignature
+
+let rec check_tx_out_signatures txhe outpl sl rl =
+  match outpl,sl with
+  | [],[] -> true
+  | _,(_::_) -> false
+  | (_,(_,TheoryPublication(alpha,n,thy)))::outpr,s::sr ->
+      begin
+	try
+	  let (s1,rl1) = getsig s rl in
+	  check_tx_out_signatures txhe outpr sr rl1
+	    &&
+	  verify_gensignat txhe s1 (payaddr_addr alpha)
+	with Not_found -> false
+      end
+  | (_,(_,SignaPublication(alpha,n,th,si)))::outpr,s::sr ->
+      begin
+	try
+	  let (s1,rl1) = getsig s rl in
+	  check_tx_out_signatures txhe outpr sr rl1
+	    &&
+	  verify_gensignat txhe s1 (payaddr_addr alpha)
+	with Not_found -> false
+      end
+  | (_,(_,DocPublication(alpha,n,th,d)))::outpr,s::sr ->
+      begin
+	try
+	  let (s1,rl1) = getsig s rl in
+	  check_tx_out_signatures txhe outpr sr rl1
+	    &&
+	  verify_gensignat txhe s1 (payaddr_addr alpha)
+	with Not_found -> false
+      end
+  | _::outpr,_ ->
+      check_tx_out_signatures txhe outpr sl rl
 
 let tx_signatures_valid_asof_blkh al stau =
   let (tau,(sli,slo)) = stau in
   let txh = if !Config.testnet then hashtag (hashtx tau) 288l else hashtx tau in (*** sign a modified hash for testnet ***)
   let txhe = hashval_big_int txh in
-  let b = check_tx_in_signatures txhe (tx_outputs tau) (tx_inputs tau) al sli in
-  if check_tx_out_signatures txhe (tx_outputs tau) slo then
+  let b = check_tx_in_signatures txhe (tx_outputs tau) (tx_inputs tau) al sli [] in
+  if check_tx_out_signatures txhe (tx_outputs tau) slo [] then
     b
   else
     raise BadOrMissingSignature
@@ -217,14 +248,33 @@ let tx_update_ostree tau sigt = txout_update_ostree (tx_outputs tau) sigt
 
 let seo_tx o g c = seo_prod (seo_list seo_addr_assetid) (seo_list seo_addr_preasset) o g c
 let sei_tx i c = sei_prod (sei_list sei_addr_assetid) (sei_list sei_addr_preasset) i c
-let seo_txsigs o g c = seo_prod (seo_list seo_gensignat) (seo_list seo_gensignat) o g c
-let sei_txsigs i c = sei_prod (sei_list sei_gensignat) (sei_list sei_gensignat) i c
+
+let seo_gensignat_or_ref o g c =
+  match g with
+  | GenSignatReal(s) ->
+      let c = o 1 0 c in
+      seo_gensignat o s c
+  | GenSignatRef(i) ->
+      let c = o 1 1 c in
+      seo_varintb o i c
+
+let sei_gensignat_or_ref i c =
+  let (b,c) = i 1 c in
+  if b = 0 then
+    let (s,c) = sei_gensignat i c in
+    (GenSignatReal(s),c)
+  else
+    let (j,c) = sei_varintb i c in
+    (GenSignatRef(j),c)
+
+let seo_txsigs o g c = seo_prod (seo_list (seo_option seo_gensignat_or_ref)) (seo_list (seo_option seo_gensignat_or_ref)) o g c
+let sei_txsigs i c = sei_prod (sei_list (sei_option sei_gensignat_or_ref)) (sei_list (sei_option sei_gensignat_or_ref)) i c
 let seo_stx o g c = seo_prod seo_tx seo_txsigs o g c
 let sei_stx i c = sei_prod sei_tx sei_txsigs i c
 
 module DbTx = Dbbasic (struct type t = tx let basedir = "tx" let seival = sei_tx seic let seoval = seo_tx seoc end)
 
-module DbTxSignatures = Dbbasic (struct type t = gensignat list * gensignat list let basedir = "txsigs" let seival = sei_txsigs seic let seoval = seo_txsigs seoc end);;
+module DbTxSignatures = Dbbasic (struct type t = gensignat_or_ref option list * gensignat_or_ref option list let basedir = "txsigs" let seival = sei_txsigs seic let seoval = seo_txsigs seoc end);;
 
 Hashtbl.add msgtype_handler GetTx
     (fun (sin,sout,cs,ms) ->
