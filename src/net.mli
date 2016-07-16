@@ -52,8 +52,6 @@ type msgtype =
 val int_of_msgtype : msgtype -> int
 
 val openlistener : string -> int -> int -> Unix.file_descr
-val connectpeer : string -> int -> Unix.file_descr
-val connectpeer_socks4 : int -> string -> int -> Unix.file_descr * in_channel * out_channel
 
 type connstate = {
     conntime : float;
@@ -73,6 +71,23 @@ type connstate = {
     mutable first_full_height : int64; (*** how much block/ctree history is stored at the node ***)
     mutable last_height : int64; (*** how up to date the node is ***)
   }
+
+val peeraddr : connstate option -> string
+
+val connectpeer : string -> int -> Unix.file_descr
+val connectpeer_socks4 : int -> string -> int -> Unix.file_descr * in_channel * out_channel
+val tryconnectpeer : string -> (Thread.t * (Unix.file_descr * in_channel * out_channel * connstate option ref)) option
+
+val addknownpeer : int64 -> string -> unit
+val removeknownpeer : string -> unit
+val getknownpeers : unit -> string list
+val loadknownpeers : unit -> unit
+val saveknownpeers : unit -> unit
+
+exception BannedPeer
+val bannedpeers : (string,unit) Hashtbl.t
+val banpeer : string -> unit
+val clearbanned : unit -> unit
 
 val send_inv_fn : (int -> out_channel -> connstate -> unit) ref
 val msgtype_handler : (msgtype,in_channel * out_channel * connstate * string -> unit) Hashtbl.t

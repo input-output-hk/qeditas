@@ -26,7 +26,7 @@ let lock datadir =
   let lf = Filename.concat datadir ".lock" in
   let c = open_out lf in
   close_out c;
-  exitfn := (fun n -> Sys.remove lf; exit n);;
+  exitfn := (fun n -> saveknownpeers(); Sys.remove lf; exit n);;
 
 let stkth : Thread.t option ref = ref None;;
 
@@ -161,7 +161,6 @@ let compute_staking_chances n fromtm totm =
       Printf.fprintf stdout "Unexpected Exception in Staking Loop: %s\n" (Printexc.to_string exn); flush stdout
 
 
-let random_int32_array : int32 array = [| 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l; 0l |];;
 let random_initialized : bool ref = ref false;;
 
 (*** generate 512 random bits and then use sha256 on them each time we need a new random number ***)
@@ -178,15 +177,12 @@ let initialize_random_seed () =
   | None ->
       if Sys.file_exists "/dev/random" then
 	let r = open_in_bin "/dev/random" in
-	let v = ref 0l in
+	let a = Array.make 32 0 in
 	Printf.printf "Computing random seed, this may take a while.\n"; flush stdout;
-	for i = 0 to 15 do
-	  v := 0l;
-	  for j = 0 to 3 do
-	    v := Int32.logor (Int32.shift_left !v 8) (Int32.of_int (input_byte r))
-	  done;
-	  random_int32_array.(i) <- !v;
+	for i = 0 to 31 do
+	  a.(i) <- input_byte r
 	done;
+	Random.full_init a;
 	random_initialized := true
       else
 	begin
@@ -555,6 +551,34 @@ let do_command l =
       (*** Could call Thread.kill on netth and stkth, but Thread.kill is not always implemented. ***)
       closelog();
       !exitfn 0
+  | "addnode" ->
+      begin
+	let addnode_add n =
+	  match tryconnectpeer n with
+	  | None -> raise (Failure "Failed to add node")
+	  | Some(th,(fd,sin,sout,gcs)) ->
+	      match !gcs with
+	      | None -> raise (Failure "Problem adding node")
+	      | Some(cs) ->
+		  if cs.addrfrom = "" then Unix.sleep 1;
+		  addknownpeer (Int64.of_float cs.conntime) cs.addrfrom
+	in
+	match al with
+	| [n] -> addnode_add n
+	| [n;"add"] -> addnode_add n
+        | [n;"remove"] ->
+          removeknownpeer n;
+          List.iter
+	      (fun (th,(fd,sin,sout,gcs)) -> if peeraddr !gcs = n then (Unix.close fd; gcs := None))
+	      !netconns
+	| [n;"onetry"] ->
+	    ignore (tryconnectpeer n)
+	| _ ->
+	    raise (Failure "addnode <ip:port> [add|remove|onetry]")
+      end
+  | "clearbanned" -> clearbanned()
+  | "listbanned" -> Hashtbl.iter (fun n () -> Printf.printf "%s\n" n) bannedpeers
+  | "bannode" -> List.iter (fun n -> banpeer n) al
   | "getpeerinfo" ->
       remove_dead_conns();
       let ll = List.length !netconns in

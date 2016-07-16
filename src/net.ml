@@ -162,17 +162,23 @@ let getfallbacknodes () =
   else
     fallbacknodes
 
+exception BannedPeer
+let bannedpeers : (string,unit) Hashtbl.t = Hashtbl.create 1000
+let banpeer n = Hashtbl.add bannedpeers n ()
+let clearbanned () = Hashtbl.clear bannedpeers
+
 let knownpeers : (string,int64) Hashtbl.t = Hashtbl.create 1000
 
 let addknownpeer lasttm n =
-  if not (n = "") && not (n = myaddr()) && not (List.mem n (getfallbacknodes())) then
+  if not (n = "") && not (n = myaddr()) && not (List.mem n (getfallbacknodes())) && not (Hashtbl.mem bannedpeers n) then
     try
       let oldtm = Hashtbl.find knownpeers n in
       Hashtbl.replace knownpeers n lasttm
     with Not_found ->
-      let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnet/peers" else "peers") in
+      Hashtbl.add knownpeers n lasttm;
+      let peerfn = Filename.concat (if !Config.testnet then Filename.concat !Config.datadir "testnet" else !Config.datadir) "peers" in
       if Sys.file_exists peerfn then
-	let s = open_out_gen [Open_append;Open_wronly] 0x644 peerfn in
+	let s = open_out_gen [Open_append;Open_wronly] 0o644 peerfn in
 	output_string s n;
 	output_char s '\n';
 	output_string s (Int64.to_string lasttm);
@@ -186,6 +192,10 @@ let addknownpeer lasttm n =
 	output_char s '\n';
 	close_out s
 
+let removeknownpeer n =
+  if not (n = "") && not (n = myaddr()) && not (List.mem n (getfallbacknodes())) then
+    Hashtbl.remove knownpeers n
+
 let getknownpeers () =
   let cnt = ref 0 in
   let peers = ref [] in
@@ -195,7 +205,7 @@ let getknownpeers () =
 
 let loadknownpeers () =
   let currtm = Int64.of_float (Unix.time()) in
-  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnet/peers" else "peers") in
+  let peerfn = Filename.concat (if !Config.testnet then Filename.concat !Config.datadir "testnet" else !Config.datadir) "peers" in
   if Sys.file_exists peerfn then
     let s = open_in peerfn in
     try
@@ -208,8 +218,8 @@ let loadknownpeers () =
     with End_of_file -> ()
 
 let saveknownpeers () =
-  let peerfn = Filename.concat !Config.datadir (if !Config.testnet then "testnetpeers" else "peers") in
-  let s = open_out_gen [Open_append;Open_wronly;Open_trunc] 0x644 peerfn in
+  let peerfn = Filename.concat (if !Config.testnet then Filename.concat !Config.datadir "testnet" else !Config.datadir) "peers" in
+  let s = open_out peerfn in
   Hashtbl.iter
     (fun n lasttm ->
       output_string s n;
@@ -530,7 +540,11 @@ let connlistener (s,sin,sout,gcs) =
       try
 	let (replyto,mh,mt,m) = rec_msg !netblkh sin in
 	match !gcs with
-	| Some(cs) -> cs.lastmsgtm <- Unix.time(); handle_msg replyto mt sin sout cs mh m
+	| Some(cs) ->
+	    let tm = Unix.time() in
+	    cs.lastmsgtm <- tm;
+	    if Hashtbl.mem knownpeers cs.addrfrom then Hashtbl.replace knownpeers cs.addrfrom (Int64.of_float tm);
+	    handle_msg replyto mt sin sout cs mh m
 	| None -> raise End_of_file (*** connection died; this probably shouldn't happen, as we should have left this thread when it died ***)
       with
       | Unix.Unix_error(c,x,y) -> (*** close connection ***)
@@ -611,8 +625,9 @@ let initialize_conn_2 n s sin sout =
   let sgcs = (s,sin,sout,ref (Some(cs))) in
   let cth = Thread.create connlistener sgcs in
   (* should lock netconns *)
-  netconns := (cth,sgcs)::!netconns
+  netconns := (cth,sgcs)::!netconns;
   (* should unlock netconns *)
+  (cth,sgcs)
 
 let initialize_conn n s =
   let sin = Unix.in_channel_of_descr s in
@@ -623,8 +638,9 @@ let initialize_conn n s =
 
 let tryconnectpeer n =
   if List.length !netconns >= !Config.maxconns then raise EnoughConnections;
+  if Hashtbl.mem bannedpeers n then raise BannedPeer;
   try
-    ignore (List.find (fun (_,(_,_,_,gcs)) -> n = peeraddr !gcs) !netconns);
+    Some(List.find (fun (_,(_,_,_,gcs)) -> n = peeraddr !gcs) !netconns);
   with Not_found ->
     let (ip,port,v6) = extract_ip_and_port n in
     begin
@@ -632,10 +648,10 @@ let tryconnectpeer n =
 	match !Config.socks with
 	| None ->
 	    let s = connectpeer ip port in
-	    ignore (initialize_conn n s)
+	    Some (initialize_conn n s)
 	| Some(4) ->
 	    let (s,sin,sout) = connectpeer_socks4 !Config.socksport ip port in
-	    ignore (initialize_conn_2 n s sin sout);
+	    Some (initialize_conn_2 n s sin sout)
 	| Some(5) ->
 	    raise (Failure "socks5 is not yet supported")
 	| Some(z) ->
@@ -643,8 +659,9 @@ let tryconnectpeer n =
       with
       | RequestRejected ->
 	  Printf.fprintf !log "RequestRejected\n"; flush !log;
+	  None
       | _ ->
-	  ()
+	  None
     end
 
 let netlistener l =
@@ -684,14 +701,14 @@ let netseeker_loop () =
 		ignore (List.find
 			  (fun (_,(_,_,_,gcs)) -> peeraddr !gcs = n)
 			  !netconns)
-	      with Not_found -> tryconnectpeer n
+	      with Not_found -> ignore (tryconnectpeer n)
 	      )
 	    knownpeers
 	end;
       if !netconns = [] then
 	begin
 	  List.iter
-	    (fun n -> tryconnectpeer n)
+	    (fun n -> ignore (tryconnectpeer n))
 	    (if !Config.testnet then testnetfallbacknodes else fallbacknodes)
 	end;
       Unix.sleep 600;
