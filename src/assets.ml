@@ -405,7 +405,7 @@ Hashtbl.add msgtype_handler GetAsset
 	  let asb = Buffer.create 100 in
 	  seosbf (seo_asset seosb a (asb,None));
 	  let aser = Buffer.contents asb in
-	  ignore (send_msg sout Asset aser);
+	  ignore (queue_msg cs Asset aser);
 	  cs.sentinv <- (i,h)::cs.sentinv
 	with Not_found -> ());;
 

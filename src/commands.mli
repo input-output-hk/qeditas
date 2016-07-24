@@ -20,7 +20,6 @@ val stakingassets : (p2pkhaddr * hashval * int64 * obligation * int64) list ref
 val storagetrmassets : (hashval option * tm * tp * hashval * hashval) list ref
 val storagedocassets : (pubaddr * hashval * hashval option * pdoc * hashval * hashval) list ref
 val recenttxs : (hashval,Tx.stx) Hashtbl.t
-val txpool : (hashval,Tx.stx) Hashtbl.t
 val unconfirmed_spent_assets : (hashval,hashval) Hashtbl.t
 
 val add_to_txpool : hashval -> Tx.stx -> unit
@@ -50,4 +49,4 @@ val createsplitlocktx : hashval -> payaddr -> payaddr -> addr -> hashval -> int 
 
 val signtx : hashval -> string -> unit
 val savetxtopool : int64 -> hashval -> string -> unit
-val sendtx : string -> unit
+val sendtx : int64 -> hashval -> string -> unit

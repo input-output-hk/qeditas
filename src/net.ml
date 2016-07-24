@@ -325,6 +325,8 @@ let connectpeer_socks4 proxyport ip port =
 type connstate = {
     conntime : float;
     realaddr : string;
+    connmutex : Mutex.t;
+    sendqueue : (hashval * hashval option * msgtype * string) Queue.t;
     mutable handshakestep : int;
     mutable peertimeskew : int;
     mutable protvers : int32;
@@ -344,7 +346,7 @@ type connstate = {
 let send_inv_fn : (int -> out_channel -> connstate -> unit) ref = ref (fun _ _ _ -> ())
 let msgtype_handler : (msgtype,in_channel * out_channel * connstate * string -> unit) Hashtbl.t = Hashtbl.create 50
 
-let send_msg_real c replyto mt ms =
+let send_msg c mh replyto mt ms =
   let magic = if !Config.testnet then 0x51656454l else 0x5165644dl in (*** Magic Number for testnet: QedT and for mainnet: QedM ***)
   let msl = String.length ms in
   seocf (seo_int32 seoc magic (c,None));
@@ -358,16 +360,21 @@ let send_msg_real c replyto mt ms =
   end;
   output_byte c (int_of_msgtype mt);
   seocf (seo_int32 seoc (Int32.of_int msl) (c,None));
-  let mh = hash160 ms in
   seocf (seo_hashval seoc mh (c,None));
   for j = 0 to msl-1 do
     output_byte c (Char.code ms.[j])
   done;
-  flush c;
+  flush c
+
+let queue_msg_real cs replyto mt m =
+  let mh = hash160 m in
+  Mutex.lock cs.connmutex;
+  Queue.add (mh,replyto,mt,m) cs.sendqueue;
+  Mutex.unlock cs.connmutex;
   mh
 
-let send_msg c mt m = send_msg_real c None mt m
-let send_reply c h mt m = send_msg_real c (Some(h)) mt m
+let queue_msg cs mt m = queue_msg_real cs None mt m
+let queue_reply cs h mt m = queue_msg_real cs (Some(h)) mt m
 
 (***
  Throw IllformedMsg if something's wrong with the format or if it reads the first byte but times out before reading the full message.
@@ -417,7 +424,8 @@ let rec_msg blkh c =
 
 let netlistenerth : Thread.t option ref = ref None
 let netseekerth : Thread.t option ref = ref None
-let netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * connstate option ref)) list ref = ref []
+let netconns : (Thread.t * Thread.t * (Unix.file_descr * in_channel * out_channel * connstate option ref)) list ref = ref []
+let netconnsmutex : Mutex.t = Mutex.create()
 let this_nodes_nonce = ref 0L
 
 let peeraddr gcs =
@@ -432,7 +440,7 @@ let log_msg m =
 let network_time () =
   let mytm = Int64.of_float (Unix.time()) in
   let offsets = ref [] in
-  List.iter (fun (_,(_,_,_,gcs)) -> match !gcs with Some(cs) -> offsets := List.merge compare [cs.peertimeskew] !offsets | None -> ()) !netconns;
+  List.iter (fun (_,_,(_,_,_,gcs)) -> match !gcs with Some(cs) -> offsets := List.merge compare [cs.peertimeskew] !offsets | None -> ()) !netconns;
   if !offsets = [] then
     (mytm,0)
   else
@@ -474,7 +482,7 @@ let handle_msg replyto mt sin sout cs mh m =
 		    let tmskew = Int64.to_int tmskew in
 		    if cs.handshakestep = 1 then
 		      begin
-			send_msg sout Verack "";
+			ignore (queue_msg cs Verack "");
 			let vm = Buffer.create 100 in
 			seosbf
 			  (seo_prod
@@ -484,7 +492,7 @@ let handle_msg replyto mt sin sout cs mh m =
 			     ((minvers,0L,mytm,addr_from,myaddr(),!this_nodes_nonce),
 			      (Version.useragent,0L,0L,0L,true,None))
 			     (vm,None));
-			send_msg sout Version (Buffer.contents vm);
+			queue_msg cs Version (Buffer.contents vm);
 			cs.handshakestep <- 3;
 			cs.peertimeskew <- tmskew;
 			cs.useragent <- ua;
@@ -496,7 +504,7 @@ let handle_msg replyto mt sin sout cs mh m =
 		      end
 		    else if cs.handshakestep = 4 then
 		      begin
-			send_msg sout Verack "";
+			queue_msg cs Verack "";
 			cs.handshakestep <- 5;
 			cs.peertimeskew <- tmskew;
 			cs.useragent <- ua;
@@ -573,10 +581,55 @@ let connlistener (s,sin,sout,gcs) =
     done
   with _ -> gcs := None (*** indicate that the connection is dead; it will be removed from netaddr by the netlistener or netseeker ***)
 
+let connsender (s,sin,sout,gcs) =
+  try
+    while true do
+      try
+	match !gcs with
+	| Some(cs) ->
+	    begin
+	      try
+		Mutex.lock cs.connmutex;
+		let (mh,replyto,mt,m) = Queue.take cs.sendqueue in
+		Mutex.unlock cs.connmutex;
+		send_msg sout mh replyto mt m
+	      with
+	      | _ ->
+		  Mutex.unlock cs.connmutex;
+		  Thread.delay 1.0
+	    end
+	| None -> raise End_of_file (*** connection died; this probably shouldn't happen, as we should have left this thread when it died ***)
+      with
+      | Unix.Unix_error(c,x,y) -> (*** close connection ***)
+	  Printf.fprintf !log "Unix error exception raised in connection listener for %s:\n%s %s %s\nClosing connection\n" (peeraddr !gcs) (Unix.error_message c) x y;
+	  flush !log;
+	  Unix.close s;
+	  raise Exit
+      | End_of_file -> (*** close connection ***)
+	  Printf.fprintf !log "Channel for connection %s raised End_of_file. Closing connection\n" (peeraddr !gcs);
+	  flush !log;
+	  Unix.close s;
+	  raise Exit
+      | ProtocolViolation(x) -> (*** close connection ***)
+	  Printf.fprintf !log "Protocol violation by connection %s: %s\nClosing connection\n" (peeraddr !gcs) x;
+	  flush !log;
+	  Unix.close s;
+	  raise Exit
+      | SelfConnection -> (*** detected a self-connection attempt, close ***)
+	  Printf.fprintf !log "Stopping potential self-connection\n";
+	  flush !log;
+	  Unix.close s;
+	  raise Exit
+      | exc -> (*** report but ignore all other exceptions ***)
+	  Printf.fprintf !log "Ignoring exception raised in connection listener for %s:\n%s\n" (peeraddr !gcs) (Printexc.to_string exc);
+	  flush !log;
+    done
+  with _ -> gcs := None (*** indicate that the connection is dead; it will be removed from netaddr by the netlistener or netseeker ***)
+
 let remove_dead_conns () =
-  (*** should lock netconns ***)
-  netconns := List.filter (fun (_,(_,_,_,gcs)) -> match !gcs with Some(_) -> true | None -> false) !netconns
-  (*** should unlock netconns ***)
+  Mutex.lock netconnsmutex;
+  netconns := List.filter (fun (_,_,(_,_,_,gcs)) -> match !gcs with Some(_) -> true | None -> false) !netconns;
+  Mutex.unlock netconnsmutex
 
 exception EnoughConnections
 
@@ -588,12 +641,13 @@ let initialize_conn_accept ra s =
       set_binary_mode_in sin true;
       set_binary_mode_out sout true;
       let tm = Unix.time() in
-      let cs = { conntime = tm; realaddr = ra; handshakestep = 1; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = 0L; first_full_height = 0L; last_height = 0L } in
+      let cs = { conntime = tm; realaddr = ra; connmutex = Mutex.create(); sendqueue = Queue.create(); handshakestep = 1; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = 0L; first_full_height = 0L; last_height = 0L } in
       let sgcs = (s,sin,sout,ref (Some(cs))) in
-      let cth = Thread.create connlistener sgcs in
-      (* should lock netconns *)
-      netconns := (cth,sgcs)::!netconns;
-      (* should unlock netconns *)
+      let clth = Thread.create connlistener sgcs in
+      let csth = Thread.create connsender sgcs in
+      Mutex.lock netconnsmutex;
+      netconns := (clth,csth,sgcs)::!netconns;
+      Mutex.unlock netconnsmutex
     end
   else
     begin
@@ -620,14 +674,15 @@ let initialize_conn_2 n s sin sout =
        ((vers,srvs,Int64.of_float tm,n,myaddr(),!this_nodes_nonce),
 	(Version.useragent,fhh,ffh,lh,relay,lastchkpt))
        (vm,None));
-  send_msg sout Version (Buffer.contents vm);
-  let cs = { conntime = tm; realaddr = n; handshakestep = 2; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
+  let cs = { conntime = tm; realaddr = n; connmutex = Mutex.create(); sendqueue = Queue.create(); handshakestep = 2; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
+  queue_msg cs Version (Buffer.contents vm);
   let sgcs = (s,sin,sout,ref (Some(cs))) in
-  let cth = Thread.create connlistener sgcs in
-  (* should lock netconns *)
-  netconns := (cth,sgcs)::!netconns;
-  (* should unlock netconns *)
-  (cth,sgcs)
+  let clth = Thread.create connlistener sgcs in
+  let csth = Thread.create connsender sgcs in
+  Mutex.lock netconnsmutex;
+  netconns := (clth,csth,sgcs)::!netconns;
+  Mutex.unlock netconnsmutex;
+  (clth,csth,sgcs)
 
 let initialize_conn n s =
   let sin = Unix.in_channel_of_descr s in
@@ -640,7 +695,7 @@ let tryconnectpeer n =
   if List.length !netconns >= !Config.maxconns then raise EnoughConnections;
   if Hashtbl.mem bannedpeers n then raise BannedPeer;
   try
-    Some(List.find (fun (_,(_,_,_,gcs)) -> n = peeraddr !gcs) !netconns);
+    Some(List.find (fun (_,_,(_,_,_,gcs)) -> n = peeraddr !gcs) !netconns);
   with Not_found ->
     let (ip,port,v6) = extract_ip_and_port n in
     begin
@@ -699,7 +754,7 @@ let netseeker_loop () =
 	    (fun n oldtm ->
 	      try (*** don't connect to the same peer twice ***)
 		ignore (List.find
-			  (fun (_,(_,_,_,gcs)) -> peeraddr !gcs = n)
+			  (fun (_,_,(_,_,_,gcs)) -> peeraddr !gcs = n)
 			  !netconns)
 	      with Not_found -> ignore (tryconnectpeer n)
 	      )
@@ -726,12 +781,12 @@ let broadcast_requestdata mt h =
   seosbf (seo_hashval seosb h (msb,None));
   let ms = Buffer.contents msb in
   List.iter
-    (fun (th,(fd,sin,sout,gcs)) ->
+    (fun (lth,sth,(fd,sin,sout,gcs)) ->
        match !gcs with
        | Some(cs) ->
          if not (List.mem (i,h) cs.invreq) then
            begin
-             send_msg sout mt ms;
+             queue_msg cs mt ms;
              cs.invreq <- (i,h)::cs.invreq
            end
        | None -> ())
@@ -739,11 +794,26 @@ let broadcast_requestdata mt h =
 
 let broadcast_new_header h =
   List.iter
-    (fun (th,(fd,sin,sout,gcs)) ->
+    (fun (lth,sth,(fd,sin,sout,gcs)) ->
        match !gcs with
        | Some(cs) ->
 	   let s = Buffer.create 20 in
 	   seosbf (seo_hashval seosb h (s,None));
-	   ignore (send_msg sout NewHeader (Buffer.contents s))
+	   ignore (queue_msg cs NewHeader (Buffer.contents s))
        | None -> ())
+    !netconns
+
+let broadcast_inv tosend =
+  let invmsg = Buffer.create 10000 in
+  let c = ref (seo_int32 seosb (Int32.of_int (List.length tosend)) (invmsg,None)) in
+  List.iter
+    (fun (i,blkh,h) ->
+      c := seo_prod3 seo_int8 seo_int64 seo_hashval seosb (i,blkh,h) !c)
+    tosend;
+  let invmsgstr = Buffer.contents invmsg in
+  List.iter
+    (fun (lth,sth,(fd,sin,sout,gcs)) ->
+      match !gcs with
+      | Some(cs) -> ignore (queue_msg cs Inv invmsgstr)
+      | None -> ())
     !netconns

@@ -41,18 +41,17 @@ let load_recenttxs () =
 	Printf.printf "Problem in recenttxs file: %s\n" (Printexc.to_string exc);
 	close_in ch;;
 
-let txpool : (hashval,Tx.stx) Hashtbl.t = Hashtbl.create 100
 let unconfirmed_spent_assets : (hashval,hashval) Hashtbl.t = Hashtbl.create 100
 
 let add_to_txpool txid stau =
-  Hashtbl.add txpool txid stau;
+  Hashtbl.add stxpool txid stau;
   let ((txin,_),_) = stau in
   List.iter (fun (_,h) -> Hashtbl.add unconfirmed_spent_assets h txid) txin
 
 let remove_from_txpool txid =
   try
-    let stau = Hashtbl.find txpool txid in
-    Hashtbl.remove txpool txid;
+    let stau = Hashtbl.find stxpool txid in
+    Hashtbl.remove stxpool txid;
     let ((txin,_),_) = stau in
     List.iter (fun (_,h) -> Hashtbl.remove unconfirmed_spent_assets h) txin
   with Not_found -> ()
@@ -609,7 +608,7 @@ let printtx_a (tauin,tauout) =
 
 let printtx txid =
   try
-    let (tau,_) = Hashtbl.find txpool txid in
+    let (tau,_) = Hashtbl.find stxpool txid in
     Printf.printf "Tx %s in pool.\n" (hashval_hexstring txid);
     printtx_a tau
   with Not_found ->
@@ -831,8 +830,20 @@ let savetxtopool blkh lr staustr =
   else
     Printf.printf "Invalid tx\n"
 
-(* todo *)
-let sendtx staustr =
+let sendtx blkh lr staustr =
   let s = hexstring_string staustr in
-  let stau = sei_tx seis (s,String.length s,None,0,0) in
-  ()
+  let (((tauin,tauout) as tau,tausg) as stau,_) = sei_stx seis (s,String.length s,None,0,0) in
+  if tx_valid tau then
+    let al = List.map (fun (aid,a) -> a) (ctree_lookup_input_assets true false tauin (CHash(lr))) in
+    if tx_signatures_valid blkh al (tau,tausg) then
+      let txh = hashtx tau in
+      let ch = open_out_gen [Open_creat;Open_append;Open_wronly;Open_binary] 0o660 (Filename.concat (datadir()) "txpool") in
+      seocf (seo_prod seo_hashval seo_stx seoc (txh,(tau,tausg)) (ch,None));
+      close_out ch;
+      publish_stx txh stau;
+      Printf.printf "%s\n" (hashval_hexstring txh);
+      flush stdout;
+    else
+      Printf.printf "Invalid or incomplete signatures\n"
+  else
+    Printf.printf "Invalid tx\n"

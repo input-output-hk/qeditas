@@ -56,6 +56,8 @@ val openlistener : string -> int -> int -> Unix.file_descr
 type connstate = {
     conntime : float;
     realaddr : string;
+    connmutex : Mutex.t;
+    sendqueue : (hashval * hashval option * msgtype * string) Queue.t;
     mutable handshakestep : int;
     mutable peertimeskew : int;
     mutable protvers : int32;
@@ -76,7 +78,7 @@ val peeraddr : connstate option -> string
 
 val connectpeer : string -> int -> Unix.file_descr
 val connectpeer_socks4 : int -> string -> int -> Unix.file_descr * in_channel * out_channel
-val tryconnectpeer : string -> (Thread.t * (Unix.file_descr * in_channel * out_channel * connstate option ref)) option
+val tryconnectpeer : string -> (Thread.t * Thread.t * (Unix.file_descr * in_channel * out_channel * connstate option ref)) option
 
 val addknownpeer : int64 -> string -> unit
 val removeknownpeer : string -> unit
@@ -94,7 +96,8 @@ val msgtype_handler : (msgtype,in_channel * out_channel * connstate * string -> 
 
 val netlistenerth : Thread.t option ref
 val netseekerth : Thread.t option ref
-val netconns : (Thread.t * (Unix.file_descr * in_channel * out_channel * connstate option ref)) list ref
+val netconns : (Thread.t * Thread.t * (Unix.file_descr * in_channel * out_channel * connstate option ref)) list ref
+val netconnsmutex : Mutex.t
 val this_nodes_nonce : int64 ref
 
 val remove_dead_conns : unit -> unit
@@ -105,6 +108,8 @@ val netseeker : unit -> unit
 val network_time : unit -> int64 * int
 
 val rec_msg : int64 -> in_channel -> hashval option * hashval * msgtype * string
-val send_msg : out_channel -> msgtype -> string -> hashval
+val queue_msg : connstate -> msgtype -> string -> hashval
+val queue_reply : connstate -> hashval -> msgtype -> string -> hashval
 val broadcast_requestdata : msgtype -> hashval -> unit
 val broadcast_new_header : hashval -> unit
+val broadcast_inv : (int * int64 * hashval) list -> unit

@@ -52,6 +52,8 @@ type nextstakeinfo = NextStake of (int64 * p2pkhaddr * hashval * int64 * obligat
 
 let nextstakechances : (hashval option,nextstakeinfo) Hashtbl.t = Hashtbl.create 100;;
 
+let stakingassetsmutex = Mutex.create();;
+
 let compute_recid (r,s) k =
   match smulp k _g with
   | Some(x,y) ->
@@ -61,16 +63,15 @@ let compute_recid (r,s) k =
 	if evenp y then 2 else 3
   | None -> raise (Failure "bad0");;
 
-
 let rec hlist_stakingassets blkh alpha hl n =
   if n > 0 then
     match hl with
     | HCons((aid,bday,obl,Currency(v)),hr) ->
-(*** lock stakingassets ***)
+	Mutex.lock stakingassetsmutex;
 	let ca = coinage blkh bday obl v in
 	if gt_big_int ca zero_big_int && not (Hashtbl.mem Commands.unconfirmed_spent_assets aid) then
 	  Commands.stakingassets := (alpha,aid,bday,obl,v)::!Commands.stakingassets;
-(*** unlock stakingassets ***)
+	Mutex.unlock stakingassetsmutex;
 	hlist_stakingassets blkh alpha hr (n-1)
     | HCons(_,hr) -> hlist_stakingassets blkh alpha hr (n-1)
     | HConsH(h,hr) ->
@@ -336,7 +337,7 @@ let stakingthread () =
 			  flush !log;
 			  Commands.remove_from_txpool h;
 			end)
-		  Commands.txpool;
+		  stxpool;
 		let ostxs = !otherstxs in
 		let otherstxs = ref [] in
 		List.iter
@@ -556,7 +557,7 @@ let do_command l =
 	let addnode_add n =
 	  match tryconnectpeer n with
 	  | None -> raise (Failure "Failed to add node")
-	  | Some(th,(fd,sin,sout,gcs)) ->
+	  | Some(lth,sth,(fd,sin,sout,gcs)) ->
 	      match !gcs with
 	      | None -> raise (Failure "Problem adding node")
 	      | Some(cs) ->
@@ -569,7 +570,7 @@ let do_command l =
         | [n;"remove"] ->
           removeknownpeer n;
           List.iter
-	      (fun (th,(fd,sin,sout,gcs)) -> if peeraddr !gcs = n then (Unix.close fd; gcs := None))
+	      (fun (lth,sth,(fd,sin,sout,gcs)) -> if peeraddr !gcs = n then (Unix.close fd; gcs := None))
 	      !netconns
 	| [n;"onetry"] ->
 	    ignore (tryconnectpeer n)
@@ -584,7 +585,7 @@ let do_command l =
       let ll = List.length !netconns in
       Printf.printf "%d connection%s\n" ll (if ll = 1 then "" else "s");
       List.iter
-	(fun (_,(_,_,_,gcs)) ->
+	(fun (_,_,(_,_,_,gcs)) ->
 	  match !gcs with
 	  | Some(cs) ->
 	      Printf.printf "%s (%s): %s\n" cs.realaddr cs.addrfrom cs.useragent;
@@ -707,6 +708,14 @@ let do_command l =
 	| [s] -> Commands.savetxtopool (node_blockheight !bestnode) (node_ledgerroot !bestnode) s
 	| _ ->
 	    Printf.printf "savetxtopool <tx in hex>\n";
+	    flush stdout
+      end
+  | "sendtx" ->
+      begin
+	match al with
+	| [s] -> Commands.sendtx (node_blockheight !bestnode) (node_ledgerroot !bestnode) s
+	| _ ->
+	    Printf.printf "sendtx <tx in hex>\n";
 	    flush stdout
       end
   | "bestblock" ->

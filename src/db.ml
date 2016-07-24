@@ -445,3 +445,5 @@ module Dbbasic : dbtype = functor (M:sig type t val basedir : string val seival 
   end
 
 module DbBlacklist = Dbbasic (struct type t = bool let basedir = "blacklist" let seival = sei_bool seic let seoval = seo_bool seoc end)
+
+module DbArchived = Dbbasic (struct type t = bool let basedir = "archived" let seival = sei_bool seic let seoval = seo_bool seoc end)

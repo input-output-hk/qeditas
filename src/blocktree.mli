@@ -10,6 +10,8 @@ open Tx
 open Ctre
 open Block
 
+val stxpool : (hashval,stx) Hashtbl.t
+
 type validationstatus = Waiting of float | ValidBlock | InvalidBlock
 
 type blocktree = BlocktreeNode of blocktree option * hashval list ref * hashval option * hashval option * hashval option * hashval * targetinfo * int64 * big_int * int64 * validationstatus ref * bool ref * (hashval * blocktree) list ref
@@ -44,3 +46,5 @@ val publish_stx : hashval -> stx -> unit
 val publish_block : hashval -> block -> unit
 
 val qednetmain : (unit -> unit) -> (unit -> unit) -> unit
+
+val send_inv : int -> out_channel -> connstate -> unit

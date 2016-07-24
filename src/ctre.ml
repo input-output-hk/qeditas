@@ -1434,7 +1434,8 @@ let rec ctree_lookup_input_assets exp req inpl tr =
   | (alpha,k)::inpr ->
       match ctree_lookup_asset exp req k tr (addr_bitseq alpha) with
       | Some(a) -> (alpha,a)::ctree_lookup_input_assets exp req inpr tr
-      | None -> raise NotSupported
+      | None ->
+	  raise NotSupported
 
 (*** exp is a boolean indicating whether expanding hash abbrevs should be tried ***)
 (*** req is a boolean indicating whether or not missing data should be requested of peers ***)
@@ -2263,7 +2264,7 @@ Hashtbl.add msgtype_handler GetHConsElement
 	  let hksb = Buffer.create 100 in
 	  seosbf (seo_prod seo_hashval (seo_option seo_hashval) seosb hk (seo_hashval seosb h (hksb,None)));
 	  let hkser = Buffer.contents hksb in
-	  ignore (send_msg sout HConsElement hkser);
+	  ignore (queue_msg cs HConsElement hkser);
 	  cs.sentinv <- (i,h)::cs.sentinv
 	with Not_found -> ());;
 
@@ -2299,7 +2300,7 @@ Hashtbl.add msgtype_handler GetCTreeElement
 	  let csb = Buffer.create 100 in
 	  seosbf (seo_ctree seosb c (seo_hashval seosb h (csb,None)));
 	  let cser = Buffer.contents csb in
-	  ignore (send_msg sout CTreeElement cser);
+	  ignore (queue_msg cs CTreeElement cser);
 	  cs.sentinv <- (i,h)::cs.sentinv
 	with Not_found -> ());;
 

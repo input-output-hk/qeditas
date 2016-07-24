@@ -20,3 +20,11 @@ module DbBlacklist :
     val dbput : hashval -> bool -> unit
     val dbdelete : hashval -> unit
   end
+
+module DbArchived :
+  sig
+    val dbget : hashval -> bool
+    val dbexists : hashval -> bool
+    val dbput : hashval -> bool -> unit
+    val dbdelete : hashval -> unit
+  end

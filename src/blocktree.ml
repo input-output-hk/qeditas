@@ -152,25 +152,36 @@ let add_sigtree sigroot osigt =
   | Some(r),Some(sigt) -> if not (Hashtbl.mem sigtree r) then Hashtbl.add sigtree r sigt
   | _,_ -> ()
 
-let rec collect_inv m cnt tosend n =
+let rec collect_inv m cnt tosend n txinv =
   if !cnt < m then
-    let BlocktreeNode(par,_,pbh,_,_,_,_,_,_,blkh,_,_,_) = n in
-    match pbh with
-    | None -> ()
-    | Some(pbh) ->
-	if DbBlockHeader.dbexists pbh then
-	  begin
-	    tosend := (int_of_msgtype Headers,blkh,pbh)::!tosend; incr cnt;
-	    if DbBlockDelta.dbexists pbh then (tosend := (int_of_msgtype Blockdelta,blkh,pbh)::!tosend; incr cnt)
-	  end;
-	match par with
-	| None -> ()
-	| Some(p) -> collect_inv m cnt tosend p
+    if !cnt mod 5 = 0 && not (txinv = []) then
+      begin
+	match txinv with
+	| (txid::txinvr) ->
+	    tosend := (int_of_msgtype STx,0L,txid)::!tosend; incr cnt;
+	    collect_inv m cnt tosend n txinvr
+	| [] -> incr cnt; collect_inv m cnt tosend n [] (*** can never happen ***)
+      end
+    else
+      let BlocktreeNode(par,_,pbh,_,_,_,_,_,_,blkh,_,_,_) = n in
+      match pbh with
+      | None -> ()
+      | Some(pbh) ->
+	  if DbBlockHeader.dbexists pbh then
+	    begin
+	      tosend := (int_of_msgtype Headers,blkh,pbh)::!tosend; incr cnt;
+	      if DbBlockDelta.dbexists pbh then (tosend := (int_of_msgtype Blockdelta,blkh,pbh)::!tosend; incr cnt)
+	    end;
+	  match par with
+	  | None -> ()
+	  | Some(p) -> collect_inv m cnt tosend p txinv
 
 let send_inv m sout cs =
   let cnt = ref 0 in
   let tosend = ref [] in
-  collect_inv m cnt tosend !bestnode;
+  let txinv = ref [] in
+  Hashtbl.iter (fun k _ -> txinv := k::!txinv) stxpool;
+  collect_inv m cnt tosend !bestnode !txinv;
   let invmsg = Buffer.create 10000 in
   let c = ref (seo_int32 seosb (Int32.of_int !cnt) (invmsg,None)) in
   List.iter
@@ -178,9 +189,7 @@ let send_inv m sout cs =
       let cn = seo_prod3 seo_int8 seo_int64 seo_hashval seosb (i,blkh,h) !c in
       c := cn)
     !tosend;
-  ignore (send_msg sout Inv (Buffer.contents invmsg));;
-
-send_inv_fn := send_inv;;
+  ignore (queue_msg cs Inv (Buffer.contents invmsg));;
 
 let rec insertnewdelayed (tm,n) btnl =
   match btnl with
@@ -481,9 +490,11 @@ let rec find_best_validated_block_from fromnode bestcumulstk =
 
 let publish_stx txh stx1 =
   let (tx1,txsigs1) = stx1 in
+  if not (Hashtbl.mem stxpool txh) then Hashtbl.add stxpool txh stx1;
   DbTx.dbput txh tx1;
   DbTxSignatures.dbput txh txsigs1;
-  Hashtbl.add published_stx txh ()
+  Hashtbl.add published_stx txh ();
+  broadcast_inv [(int_of_msgtype STx,0L,txh)]
 
 let publish_block bhh (bh,bd) =
   DbBlockHeader.dbput bhh bh;
@@ -533,7 +544,7 @@ Hashtbl.add msgtype_handler NewHeader
     if not (DbBlockHeader.dbexists h) then
       let i = int_of_msgtype GetHeader in
       cs.invreq <- (i,h)::cs.invreq;
-      ignore (send_msg sout GetHeader ms));;
+      ignore (queue_msg cs GetHeader ms));;
 
 Hashtbl.add msgtype_handler GetHeader
   (fun (sin,sout,cs,ms) ->
@@ -545,7 +556,7 @@ Hashtbl.add msgtype_handler GetHeader
 	let s = Buffer.create 1000 in
 	seosbf (seo_blockheader seosb bh (seo_hashval seosb h (seo_int8 seosb 1 (s,None))));
 	cs.sentinv <- (i,h)::cs.sentinv;
-	ignore (send_msg sout Headers (Buffer.contents s))
+	ignore (queue_msg cs Headers (Buffer.contents s))
       with Not_found ->
 	(*** don't have it to send, ignore ***)
 	());;
@@ -575,7 +586,7 @@ Hashtbl.add msgtype_handler GetHeaders
     let co = ref (seo_int8 seosb !m (s,None)) in
     List.iter (fun (h,bh) -> co := seo_blockheader seosb bh (seo_hashval seosb h !co)) !bhl;
     seosbf !co;
-    ignore (send_msg sout Headers (Buffer.contents s))
+    ignore (queue_msg cs Headers (Buffer.contents s))
   );;
 
 Hashtbl.add msgtype_handler Headers
@@ -605,7 +616,7 @@ let req_headers sout cs m nw =
       let co = ref (seo_int8 seosb m (s,None)) in
       List.iter (fun h -> co := seo_hashval seosb h !co) nw;
       seosbf !co;
-      ignore (send_msg sout GetHeaders (Buffer.contents s))
+      ignore (queue_msg cs GetHeaders (Buffer.contents s))
     end;;
 
 let rec req_header_batches sout cs m hl nw =
@@ -624,12 +635,131 @@ Hashtbl.add msgtype_handler Inv
     let c = ref (ms,String.length ms,None,0,0) in
     let hl = ref [] in
     let (n,cn) = sei_int32 seis !c in
+    Printf.fprintf !log "Inv %ld\n" n;
     c := cn;
     for j = 1 to Int32.to_int n do
       let ((i,blkh,h),cn) = sei_prod3 sei_int8 sei_int64 sei_hashval seis !c in
+      Printf.fprintf !log "%d %Ld %s\n" i blkh (hashval_hexstring h);
       c := cn;
       cs.rinv <- (i,h)::cs.rinv;
-      if i = int_of_msgtype Headers && not (DbBlockHeader.dbexists h) then
+      if i = int_of_msgtype Headers && not (DbBlockHeader.dbexists h) && not (DbArchived.dbexists h) then
 	hl := List.merge (fun (blkh1,_) (blkh2,_) -> compare blkh2 blkh1) !hl [(blkh,h)] (*** reverse order because they will be reversed again when requested ***)
+      else if i = int_of_msgtype STx && not (DbArchived.dbexists h) then
+	begin
+	  if DbTx.dbexists h then
+	    if not (DbTxSignatures.dbexists h) then
+	      begin
+                cs.invreq <- (int_of_msgtype GetTxSignatures,h)::cs.invreq;
+		let s = Buffer.create 1000 in
+		seosbf (seo_hashval seosb h (s,None));
+		ignore (queue_msg cs GetTxSignatures (Buffer.contents s))
+	      end
+            else ()
+          else
+ 	    begin
+              cs.invreq <- (int_of_msgtype GetTx,h)::cs.invreq;
+              let s = Buffer.create 1000 in
+	      seosbf (seo_hashval seosb h (s,None));
+	      ignore (queue_msg cs GetTx (Buffer.contents s))
+	    end
+	end
     done;
     req_header_batches sout cs 0 !hl []);;
+
+Hashtbl.add msgtype_handler GetTx
+    (fun (sin,sout,cs,ms) ->
+      Printf.fprintf !log "Processing GetTx\n";
+      let (h,_) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      Printf.fprintf !log "Processing GetTx %s\n" (hashval_hexstring h);
+      let i = int_of_msgtype GetTx in
+      if not (List.mem (i,h) cs.sentinv) then (*** don't resend ***)
+	try
+	  let (tau,_) = Hashtbl.find stxpool h in
+	  let tausb = Buffer.create 100 in
+	  seosbf (seo_tx seosb tau (seo_hashval seosb h (tausb,None)));
+	  let tauser = Buffer.contents tausb in
+	  Printf.fprintf !log "Sending Tx (from pool) %s\n" (hashval_hexstring h);
+	  ignore (queue_msg cs Tx tauser);
+	  cs.sentinv <- (i,h)::cs.sentinv
+	with Not_found ->
+	  try
+	    let tau = DbTx.dbget h in
+	    let tausb = Buffer.create 100 in
+	    seosbf (seo_tx seosb tau (seo_hashval seosb h (tausb,None)));
+	    let tauser = Buffer.contents tausb in
+	    Printf.fprintf !log "Sending Tx (from db) %s\n" (hashval_hexstring h);
+	    ignore (queue_msg cs Tx tauser);
+	    cs.sentinv <- (i,h)::cs.sentinv
+	  with Not_found ->
+	    Printf.fprintf !log "Unknown Tx %s\n" (hashval_hexstring h);
+	    ());;
+
+Hashtbl.add msgtype_handler Tx
+    (fun (sin,sout,cs,ms) ->
+      let (h,r) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetTx in
+      if not (DbTx.dbexists h) then (*** if we already have it, abort ***)
+	if List.mem (i,h) cs.invreq then (*** only continue if it was requested ***)
+          let (tau,_) = sei_tx seis r in
+	  if hashtx tau = h then
+	    begin
+  	      DbTx.dbput h tau;
+	      cs.invreq <- List.filter (fun (j,k) -> not (i = j && h = k)) cs.invreq
+	    end
+          else (*** otherwise, it seems to be a misbehaving peer --  ignore for now ***)
+	    (Printf.fprintf !Utils.log "misbehaving peer? [malformed Tx]\n"; flush !Utils.log)
+	else (*** if something unrequested was sent, then seems to be a misbehaving peer ***)
+	  (Printf.fprintf !Utils.log "misbehaving peer? [unrequested Tx]\n"; flush !Utils.log));;
+
+Hashtbl.add msgtype_handler GetTxSignatures
+    (fun (sin,sout,cs,ms) ->
+      let (h,_) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      Printf.fprintf !log "Processing GetTxSignatures %s\n" (hashval_hexstring h);
+      let i = int_of_msgtype GetTxSignatures in
+      if not (List.mem (i,h) cs.sentinv) then (*** don't resend ***)
+	try
+	  let (_,s) = Hashtbl.find stxpool h in
+	  let ssb = Buffer.create 100 in
+	  seosbf (seo_txsigs seosb s (seo_hashval seosb h (ssb,None)));
+	  let sser = Buffer.contents ssb in
+	  Printf.fprintf !log "Sending TxSignatures (from pool) %s\n" (hashval_hexstring h);
+	  ignore (queue_msg cs TxSignatures sser);
+	  cs.sentinv <- (i,h)::cs.sentinv
+	with Not_found ->
+	  try
+	    let s = DbTxSignatures.dbget h in
+	    let ssb = Buffer.create 100 in
+	    seosbf (seo_txsigs seosb s (seo_hashval seosb h (ssb,None)));
+	    let sser = Buffer.contents ssb in
+	    Printf.fprintf !log "Sending TxSignatures (from db) %s\n" (hashval_hexstring h);
+	    ignore (queue_msg cs TxSignatures sser);
+	    cs.sentinv <- (i,h)::cs.sentinv
+	with Not_found ->
+	  Printf.fprintf !log "Unknown TxSignatures %s\n" (hashval_hexstring h);
+	  ());;
+
+Hashtbl.add msgtype_handler TxSignatures
+    (fun (sin,sout,cs,ms) ->
+      let (h,r) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetTxSignatures in
+      if not (DbTxSignatures.dbexists h) then (*** if we already have it, abort ***)
+	try
+	  let ((tauin,_) as tau) = DbTx.dbget h in
+	  if List.mem (i,h) cs.invreq then (*** only continue if it was requested ***)
+            let (s,_) = sei_txsigs seis r in
+	    try
+	      let al = List.map (fun (_,aid) -> DbAsset.dbget aid) tauin in
+	      ignore (tx_signatures_valid_asof_blkh al (tau,s)); (*** signatures valid at some block height ***)
+              Hashtbl.add stxpool h (tau,s);
+  	      DbTxSignatures.dbput h s;
+	      cs.invreq <- List.filter (fun (j,k) -> not (i = j && h = k)) cs.invreq
+	    with
+	    | BadOrMissingSignature -> (*** otherwise, it seems to be a misbehaving peer --  ignore for now ***)
+		(Printf.fprintf !Utils.log "misbehaving peer? [malformed TxSignatures]\n"; flush !Utils.log)
+	    | Not_found -> (*** in this case, we don't have all the spent assets in the database, which means we shouldn't have requested the signatures, ignore ***)
+		()
+	  else (*** if something unrequested was sent, then seems to be a misbehaving peer ***)
+	    (Printf.fprintf !Utils.log "misbehaving peer? [unrequested TxSignatures]\n"; flush !Utils.log)
+	with Not_found -> (*** do not know the tx, so drop the sig ***)
+	  ());;
+
