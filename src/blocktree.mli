@@ -45,6 +45,4 @@ val lookup_sigtree : hashval option -> Mathdata.stree option
 val publish_stx : hashval -> stx -> unit
 val publish_block : hashval -> block -> unit
 
-val qednetmain : (unit -> unit) -> (unit -> unit) -> unit
-
 val send_inv : int -> out_channel -> connstate -> unit

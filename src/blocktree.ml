@@ -15,44 +15,6 @@ open Tx
 open Ctre
 open Block
 
-(*** It's not clear how much of this recent* data is used and what is outdated. Investigate and delete unused. ***)
-(*** recentblockheaders: associate block header hash with block height and block header ***)
-(*** recentblockdeltahs: associate block header hash with a blockdeltah (summarizing stxs by hashvals) ***)
-(*** recentblockdeltas: associate block header hash with a blockdelta (with all stxs explicit) ***)
-(*** recentstxs: associate hashes of txs/stxs with stxs (may or may not be in blocks) ***)
-let recentblockheaders : (hashval * (big_int * int64 * blockheader)) list ref = ref [] (*** ordered by cumulative stake ***)
-let recentorphanblockheaders : (hashval * (int64 * blockheader)) list ref = ref []
-let recentearlyblockheaders : (hashval * (big_int * int64 * blockheader)) list ref = ref []
-let recentcommitments : (int64 * hashval) list ref = ref []
-let recentblockdeltahs : (hashval, blockdeltah) Hashtbl.t = Hashtbl.create 1024
-let recentblockdeltas : (hashval, blockdelta) Hashtbl.t = Hashtbl.create 1024
-let recentstxs : (hashval, stx) Hashtbl.t = Hashtbl.create 65536
-
-let waitingblock : (int64 * int64 * hashval * blockheader * blockdelta * big_int) option ref = ref None;;
-
-let rec insertnewblockheader_real bhh cs mine blkh bh l =
-  match l with
-  | (bhh1,(_,_,bh1))::r when bhh = bhh1 -> l (*** already in the list ***)
-  | (bhh1,(cs1,blkh1,bh1))::r when lt_big_int cs1 cs || (mine && eq_big_int cs1 cs) -> (bhh,(cs,blkh,bh))::l (*** consider the ones this process has created preferable to others with the same cumulative stake ***)
-  | x::r -> x::insertnewblockheader_real bhh cs mine blkh bh r
-  | [] -> [(bhh,(cs,blkh,bh))]
-
-let insertnewblockheader bhh cs mine blkh bh =
-  recentblockheaders := insertnewblockheader_real bhh cs mine blkh bh !recentblockheaders;
-  flush stdout
-
-let known_blockheader_p blkh h =
-  List.mem_assoc h !recentblockheaders (*** should also check if it's in a file ***)
-
-let known_blockdeltah_p blkh h =
-  Hashtbl.mem recentblockdeltahs h (*** should also check if it's in a file ***)
-
-let known_blockdelta_p blkh h =
-  Hashtbl.mem recentblockdeltas h (*** should also check if it's in a file ***)
-
-let known_stx_p h =
-  Hashtbl.mem recentstxs h (*** should also check if it's in a file ***)
-
 let stxpool : (hashval,stx) Hashtbl.t = Hashtbl.create 1000;;
 let published_stx : (hashval,unit) Hashtbl.t = Hashtbl.create 1000;;
 let thytree : (hashval,Mathdata.ttree) Hashtbl.t = Hashtbl.create 1000;;
@@ -197,9 +159,6 @@ let rec insertnewdelayed (tm,n) btnl =
   | (tm2,n2)::btnr when tm < tm2 -> (tm,n)::btnl
   | (tm2,n2)::btnr -> (tm2,n2)::insertnewdelayed (tm,n) btnr
 
-let setsigpipeignore () =
-  Sys.set_signal Sys.sigpipe Sys.Signal_ignore;;
-
 let process_new_tx h hh =
   try
     let tx1 = DbTx.dbget h in
@@ -313,10 +272,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 	begin
 	  if not (DbBlockHeader.dbexists h) then DbBlockHeader.dbput h blkh1;
           Hashtbl.add blkheaders h ();
-(*** (*** todo: relay ***)
-	  let qednetch = Unix.open_process_in ((qednetd()) ^ " relaydata qblockheader " ^ h) in
-	  ignore (Unix.close_process_in qednetch);
-***)
+	  broadcast_inv [(int_of_msgtype Headers,blkhght,h)];
           let (csm1,fsm1,tar1) = currtinfo in
           let newcumulstake = cumul_stake prevcumulstk tar1 blkhd1.deltatime in
 	  let validated = ref (if knownvalid then ValidBlock else Waiting(Unix.time())) in
@@ -335,10 +291,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 		  if not (Hashtbl.mem stxpool txh) then
 		    begin
 		      alltxs := false;
-(*** (*** todo: request tx ***)
-		      let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qtx " ^ (hashval_hexstring txh)) in
-		      ignore (Unix.close_process_in qednetch);
-***)
+		      broadcast_requestdata GetSTx txh
 		    end)
 		txhl;
 	      if !alltxs then
@@ -362,10 +315,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 			end;
 		      add_thytree blkhd1.newtheoryroot !latesttht;
 		      add_sigtree blkhd1.newsignaroot !latestsigt;
-(*** (** todo: relay **)
-		      let qednetch = Unix.open_process_in ((qednetd()) ^ " relaydata qblockdeltah " ^ h) in
-		      ignore (Unix.close_process_in qednetch);
-***)
+		      broadcast_inv [(int_of_msgtype Blockdelta,blkhght,h)];
 		      (*** construct a transformed tree consisting of elements ***)
 		      let prevc = load_expanded_ctree (ctree_of_block blk) in
 		      match txl_octree_trans blkhght (txl_of_block blk) (Some(prevc)) with
@@ -378,11 +328,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 		    end
 	    with
 	    | Not_found -> (*** request blockdeltah h from peers ***)
-		()
-(***
-	      let qednetch = Unix.open_process_in ((qednetd()) ^ " getdata qblockdeltah " ^ h) in
-	      ignore (Unix.close_process_in qednetch);
-***)
+		broadcast_requestdata GetBlockdeltah h
 	  in
 	  tovalidatelist := (validated,validatefn)::!tovalidatelist;
           if not initialization then add_to_headers_file hh;
@@ -511,32 +457,7 @@ let publish_block bhh (bh,bd) =
   DbBlockHeader.dbput bhh bh;
   DbBlockDeltaH.dbput bhh bdh;
   (*** todo: relay bdh ***)
-  ()
-
-let qednetmain initfn preloopfn =
-  setsigpipeignore();
-  Printf.fprintf !log "Starting networking\n"; flush !log;
-  Printf.fprintf !log "Init headers\n"; flush !log;
-  init_headers();
-  initfn();
-  Printf.fprintf !log "Initialization phase complete.\n"; flush !log;
-  while true do
-      preloopfn();
-      earlyblocktreenodes := processdelayednodes (Int64.of_float (Unix.time())) !earlyblocktreenodes;
-      tovalidatelist := processblockvalidation !tovalidatelist;
-(***
-      ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 1.0 });
-      let l = input_line qednetch3 in
-      ignore (Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; Unix.it_value = 0.0 });
-      let ll = String.length l in
-      if ll = 68 && String.sub l 0 4 = "QTX:" then
-	let hh = String.sub l 28 40 in
-	process_new_tx (hexstring_hashval hh) hh
-      else if ll = 72 && String.sub l 0 8 = "QHEADER:" then
-	let hh = String.sub l 32 40 in
-	process_new_header (hexstring_hashval hh) hh false false
-***)
-  done;;
+  ();;
 
 Hashtbl.add msgtype_handler NewHeader
   (fun (sin,sout,cs,ms) ->
