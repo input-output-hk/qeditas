@@ -327,6 +327,7 @@ type connstate = {
     realaddr : string;
     connmutex : Mutex.t;
     sendqueue : (hashval * hashval option * msgtype * string) Queue.t;
+    sendqueuenonempty : Condition.t;
     mutable handshakestep : int;
     mutable peertimeskew : int;
     mutable protvers : int32;
@@ -371,6 +372,7 @@ let queue_msg_real cs replyto mt m =
   Mutex.lock cs.connmutex;
   Queue.add (mh,replyto,mt,m) cs.sendqueue;
   Mutex.unlock cs.connmutex;
+  Condition.signal cs.sendqueuenonempty;
   mh
 
 let queue_msg cs mt m = queue_msg_real cs None mt m
@@ -590,13 +592,15 @@ let connsender (s,sin,sout,gcs) =
 	    begin
 	      try
 		Mutex.lock cs.connmutex;
-		let (mh,replyto,mt,m) = Queue.take cs.sendqueue in
+		while true do
+		  let (mh,replyto,mt,m) = Queue.take cs.sendqueue in
+		  send_msg sout mh replyto mt m
+		done;
 		Mutex.unlock cs.connmutex;
-		send_msg sout mh replyto mt m
 	      with
 	      | _ ->
+		  Condition.wait cs.sendqueuenonempty cs.connmutex;
 		  Mutex.unlock cs.connmutex;
-		  Thread.delay 1.0
 	    end
 	| None -> raise End_of_file (*** connection died; this probably shouldn't happen, as we should have left this thread when it died ***)
       with
@@ -641,7 +645,7 @@ let initialize_conn_accept ra s =
       set_binary_mode_in sin true;
       set_binary_mode_out sout true;
       let tm = Unix.time() in
-      let cs = { conntime = tm; realaddr = ra; connmutex = Mutex.create(); sendqueue = Queue.create(); handshakestep = 1; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = 0L; first_full_height = 0L; last_height = 0L } in
+      let cs = { conntime = tm; realaddr = ra; connmutex = Mutex.create(); sendqueue = Queue.create(); sendqueuenonempty = Condition.create(); handshakestep = 1; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = 0L; first_full_height = 0L; last_height = 0L } in
       let sgcs = (s,sin,sout,ref (Some(cs))) in
       let clth = Thread.create connlistener sgcs in
       let csth = Thread.create connsender sgcs in
@@ -674,7 +678,7 @@ let initialize_conn_2 n s sin sout =
        ((vers,srvs,Int64.of_float tm,n,myaddr(),!this_nodes_nonce),
 	(Version.useragent,fhh,ffh,lh,relay,lastchkpt))
        (vm,None));
-  let cs = { conntime = tm; realaddr = n; connmutex = Mutex.create(); sendqueue = Queue.create(); handshakestep = 2; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
+  let cs = { conntime = tm; realaddr = n; connmutex = Mutex.create(); sendqueue = Queue.create(); sendqueuenonempty = Condition.create(); handshakestep = 2; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
   queue_msg cs Version (Buffer.contents vm);
   let sgcs = (s,sin,sout,ref (Some(cs))) in
   let clth = Thread.create connlistener sgcs in

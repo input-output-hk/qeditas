@@ -58,6 +58,7 @@ type connstate = {
     realaddr : string;
     connmutex : Mutex.t;
     sendqueue : (hashval * hashval option * msgtype * string) Queue.t;
+    sendqueuenonempty : Condition.t;
     mutable handshakestep : int;
     mutable peertimeskew : int;
     mutable protvers : int32;
