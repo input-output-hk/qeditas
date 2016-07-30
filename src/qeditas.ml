@@ -463,7 +463,7 @@ let stakingthread () =
 		let publish_new_block () =
 		  DbBlockHeader.dbput bhdnewh (bhdnew,bhsnew);
 		  DbBlockDelta.dbput bhdnewh bdnew;
-		  add_to_validheaders_file (hashval_hexstring bhdnewh);
+		  add_to_headers_file (hashval_hexstring bhdnewh);
 		  broadcast_new_header bhdnewh;
 		  let newnode =
 		    BlocktreeNode(Some(best),ref [],Some(bhdnewh),newthtroot,newsigtroot,ctree_hashroot !dync,bhdnew.tinfo,tm,csnew,Int64.add 1L blkh,ref ValidBlock,ref false,ref [])

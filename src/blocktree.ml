@@ -214,12 +214,6 @@ let rec processblockvalidation vl =
       | Waiting(_) -> (v,f)::vr2
       | _ -> vr2
 
-let add_to_validheaders_file h =
-  let fn = Filename.concat (datadir()) "validheaders" in
-  let f = open_out_gen [Open_append;Open_creat] 0o664 fn in
-  output_string f (h ^ "\n");
-  close_out f
-
 let add_to_headers_file h =
   let fn = Filename.concat (datadir()) "headers" in
   let f = open_out_gen [Open_append;Open_creat] 0o664 fn in
@@ -261,6 +255,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
       let BlocktreeNode(_,_,_,thyroot,sigroot,ledgerroot,currtinfo,tmstamp,prevcumulstk,blkhght,validated,blacklisted,succl) = prevnode in
       if !blacklisted then (*** child of a blacklisted node, drop and blacklist it ***)
         begin
+	  Printf.fprintf !log "Header %s is child of blacklisted node; deleting and blacklisting it.\n" hh;
 	  DbBlacklist.dbput h true;
 	  DbBlockHeader.dbdelete h;
         end
@@ -306,7 +301,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
 		  if valid_block (lookup_thytree thyroot) (lookup_sigtree sigroot) blkhght blkhd1.tinfo blk then
 		    begin (*** if valid_block succeeds, then latesttht and latestsigt will be set to the transformed theory tree and signature tree ***)
 		      validated := ValidBlock;
-		      if not initialization then add_to_validheaders_file hh;
+		      if not initialization then add_to_headers_file hh;
                       let BlocktreeNode(_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
 		      if gt_big_int newcumulstake bestcumulstk then
 			begin
@@ -348,6 +343,9 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
         end
       else
         begin (*** if it's wrong, delete it and blacklist it so it won't look new in the future ***)
+	  Printf.fprintf !log "Header %s was invalid, deleting and blacklisting it.\n" hh;
+          let newnode = BlocktreeNode(Some(prevnode),ref [],Some(h),blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,blkhd1.tinfo,blkhd1.timestamp,zero_big_int,Int64.add blkhght 1L,ref InvalidBlock,ref true,ref []) in (*** dummy node just to remember it is blacklisted ***)
+	  Hashtbl.add blkheadernode (Some(h)) newnode;
           DbBlacklist.dbput h true;
 	  DbBlockHeader.dbdelete h;
         end
@@ -391,7 +389,7 @@ let init_headers_a fn knownvalid =
       try
         while true do
           let h = input_line f in
-	  Printf.printf "processing valid header %s\n" h; flush stdout;
+	  Printf.printf "processing header %s\n" h; flush stdout;
           process_new_header (hexstring_hashval h) h true knownvalid
         done
       with End_of_file -> close_in f
@@ -400,7 +398,6 @@ let init_headers_a fn knownvalid =
     ()
 
 let init_headers () =
-  init_headers_a (Filename.concat (datadir()) "validheaders") true;
   init_headers_a (Filename.concat (datadir()) "headers") false
 
 let initblocktree () =
