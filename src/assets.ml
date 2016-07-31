@@ -388,11 +388,28 @@ let sei_addr_asset i c = sei_prod sei_addr sei_asset i c
 
 module DbAsset = Dbbasic (struct type t = asset let basedir = "asset" let seival = sei_asset seic let seoval = seo_asset seoc end)
 
+module DbAssetH = Dbbasic (struct type t = hashval let basedir = "asseth" let seival = sei_hashval seic let seoval = seo_hashval seoc end)
+
 let get_asset h =
   try
     DbAsset.dbget h
   with Not_found -> (*** request it and fail ***)
     broadcast_requestdata GetAsset h;
+    raise GettingRemoteData;;
+
+let get_asseth h =
+  try
+    DbAssetH.dbget h
+  with Not_found -> (*** request it and fail ***)
+    broadcast_requestdata GetAssetH h;
+    raise GettingRemoteData;;
+
+let get_asset_from_hash h =
+  try
+    let aid = DbAssetH.dbget h in
+    get_asset aid
+  with Not_found -> (*** request it and fail ***)
+    broadcast_requestdata GetAssetH h;
     raise GettingRemoteData;;
 
 Hashtbl.add msgtype_handler GetAsset
@@ -423,3 +440,29 @@ Hashtbl.add msgtype_handler Asset
 	  cs.invreq <- List.filter (fun (j,k) -> not (i = j && h = k)) cs.invreq
 	else (*** if something unrequested was sent, then seems to be a misbehaving peer ***)
 	  (Printf.fprintf !Utils.log "misbehaving peer? [unrequested Asset]\n"; flush !Utils.log));;
+
+Hashtbl.add msgtype_handler GetAssetH
+    (fun (sin,sout,cs,ms) ->
+      let (h,_) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetAssetH in
+      if not (List.mem (i,h) cs.sentinv) then (*** don't resend ***)
+	try
+	  let aid = DbAssetH.dbget h in
+	  let asb = Buffer.create 100 in
+	  seosbf (seo_hashval seosb aid (asb,None));
+	  let aser = Buffer.contents asb in
+	  ignore (queue_msg cs AssetH aser);
+	  cs.sentinv <- (i,h)::cs.sentinv
+	with Not_found -> ());;
+
+Hashtbl.add msgtype_handler AssetH
+    (fun (sin,sout,cs,ms) ->
+      let (h,r) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let i = int_of_msgtype GetAssetH in
+      if not (DbAssetH.dbexists h) then (*** if we already have it, abort ***)
+	if List.mem (i,h) cs.invreq then (*** only continue if it was requested ***)
+          let (aid,r) = sei_hashval seis r in (*** note that now we only need to read the remaining 3 components of the 4-tuple ***)
+  	  DbAssetH.dbput h aid;
+	  cs.invreq <- List.filter (fun (j,k) -> not (i = j && h = k)) cs.invreq
+	else (*** if something unrequested was sent, then seems to be a misbehaving peer ***)
+	  (Printf.fprintf !Utils.log "misbehaving peer? [unrequested AssetH]\n"; flush !Utils.log));;
