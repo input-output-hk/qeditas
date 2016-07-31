@@ -936,8 +936,10 @@ let cumul_stake cs tar deltm =
     cs
     (max_big_int unit_big_int (div_big_int !max_target (shift_right_towards_zero_big_int (mult_big_int tar (big_int_of_int32 deltm)) 20)))
 
-let blockheader_succ_a tmstamp1 tinfo1 bh2 =
+let blockheader_succ_a prevledgerroot tmstamp1 tinfo1 bh2 =
   let (bhd2,bhs2) = bh2 in
+  ctree_hashroot bhd2.prevledger = prevledgerroot
+    &&
   bhd2.timestamp = Int64.add tmstamp1 (Int64.of_int32 bhd2.deltatime)
     &&
   let (csm1,fsm1,tar1) = tinfo1 in
@@ -953,7 +955,7 @@ let blockheader_succ bh1 bh2 =
   let (bhd2,bhs2) = bh2 in
   bhd2.prevblockhash = Some (hash_blockheaderdata bhd1)
     &&
-  blockheader_succ_a bhd1.timestamp bhd1.tinfo bh2
+  blockheader_succ_a bhd1.newledgerroot bhd1.timestamp bhd1.tinfo bh2
 
 let rec valid_blockchain_aux blkh bl =
   match bl with
@@ -972,8 +974,7 @@ let rec valid_blockchain_aux blkh bl =
       let (bhd,bhs) = bh in
       if blkh = 1L && valid_block None None blkh (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bh,bd)
 	  && bhd.prevblockhash = None
-	  && ctree_hashroot bhd.prevledger = !genesisledgerroot
-	  && blockheader_succ_a !Config.genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) bh
+	  && blockheader_succ_a !genesisledgerroot !Config.genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) bh
       then
 	(txout_update_ottree (tx_outputs (tx_of_block (bh,bd))) None,
 	 txout_update_ostree (tx_outputs (tx_of_block (bh,bd))) None)
@@ -1007,7 +1008,7 @@ let rec valid_blockheaderchain_aux blkh bhl =
 	&&
       ctree_hashroot bhd.prevledger = !genesisledgerroot
 	&&
-      blockheader_succ_a !Config.genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bhd,bhs)
+      blockheader_succ_a !genesisledgerroot !Config.genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bhd,bhs)
   | [] -> false
 
 let valid_blockheaderchain blkh bhc =

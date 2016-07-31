@@ -152,7 +152,7 @@ val latestsigt : stree option ref
 
 val valid_block : ttree option -> stree option -> int64 -> targetinfo -> block -> bool
 
-val blockheader_succ_a : int64 -> targetinfo -> blockheader -> bool
+val blockheader_succ_a : hashval -> int64 -> targetinfo -> blockheader -> bool
 val blockheader_succ : blockheader -> blockheader -> bool
 
 type blockchain = block * block list

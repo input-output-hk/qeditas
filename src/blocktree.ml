@@ -262,7 +262,7 @@ let rec process_new_header_a h hh blkh1 blkhd1 initialization knownvalid =
       else if
 	valid_blockheader blkhght currtinfo blkh1
           && 
-	blockheader_succ_a tmstamp currtinfo blkh1
+	blockheader_succ_a ledgerroot tmstamp currtinfo blkh1
       then
 	begin
 	  if not (DbBlockHeader.dbexists h) then DbBlockHeader.dbput h blkh1;
