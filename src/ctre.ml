@@ -700,9 +700,7 @@ let rec save_hlist_elements hl =
   match hl with
   | HCons(a,hr) ->
       let ah = hashasset a in
-      let aid = assetid a in
-      DbAssetH.dbput ah aid;
-      DbAsset.dbput aid a;
+      DbAsset.dbput ah a;
       let h = save_hlist_elements hr in
       let r =
 	match h with
@@ -727,9 +725,7 @@ let save_nehlist_elements hl =
   match hl with
   | NehCons(a,hr) ->
       let ah = hashasset a in
-      let aid = assetid a in
-      DbAssetH.dbput ah aid;
-      DbAsset.dbput aid a;
+      DbAsset.dbput ah a;
       let h = save_hlist_elements hr in
       let r = 
 	match h with
@@ -758,8 +754,7 @@ let rec hlist_lookup_asset_gen exp req p hl =
   | HCons(a,hr) when p a -> Some(a)
   | HConsH(h,hr) ->
       if exp then
-	let aid = if req then get_asseth h else DbAssetH.dbget h in
-	let a = if req then get_asset aid else DbAsset.dbget aid in
+	let a = if req then get_asset h else DbAsset.dbget h in
 	hlist_lookup_asset_gen exp req p (HCons(a,hr))
       else
 	hlist_lookup_asset_gen exp req p hr (* Skip this one and search for another asset satisfying p. Note: This means that if the asset with id h satisfies p, we will miss it. This is even the case when p a means assetid a = h *)
@@ -1049,12 +1044,10 @@ let rec expand_hlist req hl z =
   | HCons(a,hr),None -> HCons(a,expand_hlist req hr None)
   | HCons(a,hr),Some(i) -> HCons(a,expand_hlist req hr (Some(i-1)))
   | HConsH(h,hr),None ->
-      let aid = if req then get_asseth h else DbAssetH.dbget h in
-      let a = if req then get_asset aid else DbAsset.dbget aid in
+      let a = if req then get_asset h else DbAsset.dbget h in
       HCons(a,expand_hlist req hr None)
   | HConsH(h,hr),Some(i) ->
-      let aid = if req then get_asseth h else DbAssetH.dbget h in
-      let a = if req then get_asset aid else DbAsset.dbget aid in
+      let a = if req then get_asset h else DbAsset.dbget h in
       HCons(a,expand_hlist req hr (Some(i-1)))
 
 let rec expand_nehlist req hl z =
@@ -1068,8 +1061,8 @@ let rec expand_nehlist req hl z =
       end
   | NehCons(a,hr),None -> NehCons(a,expand_hlist req hr None)
   | NehCons(a,hr),Some(i) -> NehCons(a,expand_hlist req hr (Some(i-1)))
-  | NehConsH(h,hr),None -> NehCons(get_asset_from_hash h,expand_hlist req hr None)
-  | NehConsH(h,hr),Some(i) -> NehCons(get_asset_from_hash h,expand_hlist req hr (Some(i-1)))
+  | NehConsH(h,hr),None -> NehCons(get_asset h,expand_hlist req hr None)
+  | NehConsH(h,hr),Some(i) -> NehCons(get_asset h,expand_hlist req hr (Some(i-1)))
 
 let rec truncate_hlist hl i =
   if i <= 0 then
@@ -2011,7 +2004,7 @@ let rec hlist_reduce_to_min_support aidl hl =
 	| HConsH(h,hr) ->
 	    begin
 	      try
-		let (aid,bh,o,u) = get_asset_from_hash h in
+		let (aid,bh,o,u) = get_asset h in
 		if List.mem aid aidl then
 		  HCons((aid,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr)
 		else
@@ -2028,13 +2021,13 @@ let rec get_full_hlist hl =
   match hl with
   | HNil -> HNil
   | HCons(a,hr) -> HCons(a,get_full_hlist hr)
-  | HConsH(h,hr) -> HCons(get_asset_from_hash h,get_full_hlist hr)
+  | HConsH(h,hr) -> HCons(get_asset h,get_full_hlist hr)
   | HHash(h) -> get_full_hlist (get_hlist_element h)
 
 let rec get_full_nehlist hl =
   match hl with
   | NehCons(a,hr) -> NehCons(a,get_full_hlist hr)
-  | NehConsH(h,hr) -> NehCons(get_asset_from_hash h,get_full_hlist hr)
+  | NehConsH(h,hr) -> NehCons(get_asset h,get_full_hlist hr)
   | NehHash(h) -> get_full_nehlist (get_nehlist_element h)
       
 let rec ctree_reduce_to_min_support n inpl outpl full c =
@@ -2105,12 +2098,12 @@ let rec ctree_reduce_to_min_support n inpl outpl full c =
 	    let aidl = List.map (fun (_,k) -> k) inpl in
 	    begin
 	      match get_nehlist_element h with
-	      | NehConsH(aid,hr) ->
+	      | NehConsH(h,hr) ->
+		  let ((aid,_,_,_) as a) = get_asset h in
 		  if List.mem aid aidl then
-		    let a = get_asset aid in
 		    CLeaf([],NehCons(a,hlist_reduce_to_min_support (List.filter (fun z -> not (z = aid)) aidl) hr))
 		  else
-		    CLeaf([],NehConsH(aid,hlist_reduce_to_min_support aidl hr))
+		    CLeaf([],NehConsH(h,hlist_reduce_to_min_support aidl hr))
 	      | _ -> raise (Failure "impossible")
 	    end
       | CLeaf([],(NehCons((h,bh,o,u),hr) as hl)) ->
@@ -2127,8 +2120,8 @@ let rec ctree_reduce_to_min_support n inpl outpl full c =
 	    CLeaf([],NehHash(nehlist_hashroot hl))
 	  else
 	    let aidl = List.map (fun (_,k) -> k) inpl in
-	    if List.mem h aidl then
-	      let a = get_asset h in
+	    let ((aid,_,_,_) as a) = get_asset h in
+	    if List.mem aid aidl then
 	      CLeaf([],NehCons(a,hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr))
 	    else
 	      CLeaf([],NehConsH(h,hlist_reduce_to_min_support aidl hr))

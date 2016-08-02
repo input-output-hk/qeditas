@@ -41,11 +41,9 @@ type msgtype =
   | GetCTreeElement
   | GetHConsElement
   | GetAsset
-  | GetAssetH
   | CTreeElement
   | HConsElement
   | Asset
-  | AssetH
   | Checkpoint
   | AntiCheckpoint
   | NewHeader
@@ -57,7 +55,7 @@ let msgtype_of_int i =
        GetBlock;GetBlockdelta;GetBlockdeltah;GetHeader;STx;Tx;TxSignatures;Block;
        Headers;Blockdelta;Blockdeltah;GetAddr;Mempool;Alert;Ping;Pong;Reject;
        GetCTreeElement;GetHConsElement;GetAsset;CTreeElement;HConsElement;Asset;
-       Checkpoint;AntiCheckpoint;NewHeader;GetHeaders;GetAssetH;AssetH]
+       Checkpoint;AntiCheckpoint;NewHeader;GetHeaders]
       i
   with Failure("nth") -> raise Not_found
 
@@ -99,8 +97,6 @@ let int_of_msgtype mt =
   | AntiCheckpoint -> 33
   | NewHeader -> 34
   | GetHeaders -> 35
-  | GetAssetH -> 36
-  | AssetH -> 37
 
 let string_of_msgtype mt =
   match mt with
@@ -134,11 +130,9 @@ let string_of_msgtype mt =
   | GetCTreeElement -> "GetCTreeElement"
   | GetHConsElement -> "GetHConsElement"
   | GetAsset -> "GetAsset"
-  | GetAssetH -> "GetAssetH"
   | CTreeElement -> "CTreeElement"
   | HConsElement -> "HConsElement"
   | Asset -> "Asset"
-  | AssetH -> "AssetH"
   | Checkpoint -> "Checkpoint"
   | AntiCheckpoint -> "AntiCheckpoint"
   | NewHeader -> "NewHeader"

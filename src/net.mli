@@ -42,11 +42,9 @@ type msgtype =
   | GetCTreeElement
   | GetHConsElement
   | GetAsset
-  | GetAssetH
   | CTreeElement
   | HConsElement
   | Asset
-  | AssetH
   | Checkpoint
   | AntiCheckpoint
   | NewHeader

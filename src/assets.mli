@@ -94,14 +94,4 @@ module DbAsset :
       val dbdelete : Hash.hashval -> unit
     end
 
-module DbAssetH :
-    sig
-      val dbget : Hash.hashval -> Hash.hashval
-      val dbexists : Hash.hashval -> bool
-      val dbput : Hash.hashval -> Hash.hashval -> unit
-      val dbdelete : Hash.hashval -> unit
-    end
-
 val get_asset : hashval -> asset
-val get_asseth : hashval -> hashval
-val get_asset_from_hash : hashval -> asset
