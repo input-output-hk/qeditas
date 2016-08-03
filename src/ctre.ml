@@ -908,7 +908,8 @@ let rec remove_assets_hlist hl spent =
       else
 	HCons(a,remove_assets_hlist hr spent)
   | HConsH(h,hr) ->
-      if List.mem h spent then
+      let ((aid,bh,obl,u) as a) = get_asset h in
+      if List.mem aid spent then
 	remove_assets_hlist hr spent
       else
 	HConsH(h,remove_assets_hlist hr spent)
@@ -1996,17 +1997,17 @@ let rec hlist_reduce_to_min_support aidl hl =
   | _ ->
       begin
 	match hl with
-	| HCons((h,bh,o,u),hr) ->
-	    if List.mem h aidl then
-	      HCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr)
+	| HCons((aid,bh,o,u) as a,hr) ->
+	    if List.mem aid aidl then
+	      HCons(a,hlist_reduce_to_min_support (List.filter (fun z -> not (z = aid)) aidl) hr)
 	    else
-	      HConsH(hashasset (h,bh,o,u),hlist_reduce_to_min_support aidl hr)
+	      HConsH(hashasset a,hlist_reduce_to_min_support aidl hr)
 	| HConsH(h,hr) ->
 	    begin
 	      try
 		let (aid,bh,o,u) = get_asset h in
 		if List.mem aid aidl then
-		  HCons((aid,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr)
+		  HCons((aid,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = aid)) aidl) hr)
 		else
 		  HConsH(h,hlist_reduce_to_min_support aidl hr)
 	      with
@@ -2114,7 +2115,7 @@ let rec ctree_reduce_to_min_support n inpl outpl full c =
 	    if List.mem h aidl then
 	      CLeaf([],NehCons((h,bh,o,u),hlist_reduce_to_min_support (List.filter (fun z -> not (z = h)) aidl) hr))
 	    else
-	      CLeaf([],NehConsH(h,hlist_reduce_to_min_support aidl hr))
+	      CLeaf([],NehConsH(hashasset (h,bh,o,u),hlist_reduce_to_min_support aidl hr))
       | CLeaf([],(NehConsH(h,hr) as hl)) ->
 	  if inpl = [] then
 	    CLeaf([],NehHash(nehlist_hashroot hl))
