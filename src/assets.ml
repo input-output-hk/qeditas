@@ -403,7 +403,7 @@ Hashtbl.add msgtype_handler GetAsset
 	try
 	  let a = DbAsset.dbget h in
 	  let asb = Buffer.create 100 in
-	  seosbf (seo_asset seosb a (asb,None));
+	  seosbf (seo_asset seosb a (seo_hashval seosb h (asb,None)));
 	  let aser = Buffer.contents asb in
 	  ignore (queue_msg cs Asset aser);
 	  cs.sentinv <- (i,h)::cs.sentinv
@@ -415,10 +415,7 @@ Hashtbl.add msgtype_handler Asset
       let i = int_of_msgtype GetAsset in
       if not (DbAsset.dbexists h) then (*** if we already have it, abort ***)
 	if List.mem (i,h) cs.invreq then (*** only continue if it was requested ***)
-          let (bday,r) = sei_int64 seis r in (*** note that now we only need to read the remaining 3 components of the 4-tuple ***)
-          let (obl,r) = sei_obligation seis r in
-          let (u,_) = sei_preasset seis r in
-	  let a = (h,bday,obl,u) in
+          let (a,r) = sei_asset seis r in
   	  DbAsset.dbput h a;
 	  cs.invreq <- List.filter (fun (j,k) -> not (i = j && h = k)) cs.invreq
 	else (*** if something unrequested was sent, then seems to be a misbehaving peer ***)
