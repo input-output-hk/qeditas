@@ -545,6 +545,21 @@ let parse_command l =
   | [] -> raise Exit (*** empty command, silently ignore ***)
   | (c::al) -> (c,al)
 
+let rec pblockchain s n c m =
+  let BlocktreeNode(par,_,pbh,_,_,_,_,_,_,blkh,_,_,chl) = n in
+  if m > 0 then
+    begin
+      match par with
+      | Some(p) -> pblockchain s p pbh (m-1)
+      | None -> ()
+    end;
+  match c with
+  | Some(h) ->
+      List.iter (fun (k,_) -> if not (k = h) then Printf.fprintf s "[orphan %s]\n" (hashval_hexstring k)) !chl;
+      Printf.fprintf s "block %Ld %s\n" blkh (hashval_hexstring h);
+  | None ->
+      List.iter (fun (k,_) -> Printf.fprintf s "[extra child, not yet considered best %s]\n" (hashval_hexstring k)) !chl
+
 let do_command l =
   let (c,al) = parse_command l in
   match c with
@@ -552,6 +567,48 @@ let do_command l =
       (*** Could call Thread.kill on netth and stkth, but Thread.kill is not always implemented. ***)
       closelog();
       !exitfn 0
+  | "dumpstate" -> (*** dump state to a file for debugging ***)
+      begin
+	match al with
+	| [fa] ->
+	    let sa = open_out fa in
+	    Printf.fprintf sa "=========\nNetwork connections: %d\n" (List.length !netconns);
+	    List.iter
+	      (fun (lth,sth,(fd,sin,sout,gcs)) ->
+		match !gcs with
+		| None -> Printf.fprintf sa "[Dead Connection]\n";
+		| Some(cs) ->
+		    Printf.fprintf sa "-----------\nConnection: %s %f\n" cs.realaddr cs.conntime;
+		    Printf.fprintf sa "peertimeskew %d\nprotvers %ld\nuseragent %s\naddrfrom %s\nlocked %s\nlastmsgtm %f\nfirst_header_height %Ld\nfirst_full_height %Ld\nlast_height %Ld\n" cs.peertimeskew cs.protvers cs.useragent cs.addrfrom (if cs.locked then "true" else "false") cs.lastmsgtm cs.first_header_height cs.first_full_height cs.last_height;
+		    Printf.fprintf sa "- pending %d:\n" (List.length cs.pending);
+		    List.iter
+		      (fun (h,(b,tm1,tm2,f)) ->
+			Printf.fprintf sa "%s %s %f %f\n" (hashval_hexstring h) (if b then "true" else "false") tm1 tm2
+		      )
+		      cs.pending;
+		    Printf.fprintf sa "sentinv %d:\n" (List.length cs.sentinv);
+		    List.iter
+		      (fun (m,h) ->
+			Printf.fprintf sa "%d %s\n" m (hashval_hexstring h))
+		      cs.sentinv;
+		    Printf.fprintf sa "rinv %d:\n" (List.length cs.sentinv);
+		    List.iter
+		      (fun (m,h) ->
+			Printf.fprintf sa "%d %s\n" m (hashval_hexstring h))
+		      cs.rinv;
+		    Printf.fprintf sa "sentinv %d:\n" (List.length cs.invreq);
+		    List.iter
+		      (fun (m,h) ->
+			Printf.fprintf sa "%d %s\n" m (hashval_hexstring h))
+		      cs.invreq;
+	      )
+	      !netconns;
+	    Printf.fprintf sa "=================\nBlock Chain:\n";
+	    pblockchain sa !bestnode None 10000;
+	    dumpblocktreestate sa;
+	    close_out sa
+	| _ -> raise (Failure "dumpstate <textfile>")
+      end
   | "addnode" ->
       begin
 	let addnode_add n =
@@ -738,25 +795,7 @@ let do_command l =
       let blkh = node_blockheight node in
       Printf.printf "Current target (for block at height %Ld): %s\n" blkh (string_of_big_int tar);
       flush stdout
-  | "blockchain" ->
-      begin
-	let rec pblockchain n c m =
-	  let BlocktreeNode(par,_,pbh,_,_,_,_,_,_,blkh,_,_,chl) = n in
-	  if m > 0 then
-	    begin
-	      match par with
-	      | Some(p) -> pblockchain p pbh (m-1)
-	      | None -> ()
-	    end;
-	  match c with
-	  | Some(h) ->
-	      List.iter (fun (k,_) -> if not (k = h) then Printf.printf "[orphan %s]\n" (hashval_hexstring k)) !chl;
-	      Printf.printf "block %Ld %s\n" blkh (hashval_hexstring h);
-	  | None ->
-	      List.iter (fun (k,_) -> Printf.printf "[extra child, not yet considered best %s]\n" (hashval_hexstring k)) !chl
-	in
-	pblockchain !bestnode None 1000
-      end
+  | "blockchain" -> pblockchain stdout !bestnode None 1000
   | _ ->
       (Printf.fprintf stdout "Ignoring unknown command: %s\n" c; List.iter (fun a -> Printf.printf "%s\n" a) al; flush stdout);;
 

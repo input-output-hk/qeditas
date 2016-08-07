@@ -681,3 +681,98 @@ Hashtbl.add msgtype_handler TxSignatures
 	with Not_found -> (*** do not know the tx, so drop the sig ***)
 	  ());;
 
+let dumpblocktreestate sa =
+  Printf.fprintf sa "=========\nstxpool:\n";
+  Hashtbl.iter
+    (fun h ((tauin,tauout) as tau,tausg) ->
+      Printf.fprintf sa "- tx %s\n" (hashval_hexstring (hashtx tau));
+      Printf.fprintf sa "inputs %d\n" (List.length tauin);
+      let c = ref 0 in
+      List.iter
+	(fun (alpha,aid) ->
+	  Printf.fprintf sa "%d. %s %s\n" !c (Cryptocurr.addr_qedaddrstr alpha) (hashval_hexstring aid);
+	  incr c)
+	tauin;
+      Printf.fprintf sa "outputs %d\n" (List.length tauin);
+      c := 0;
+      List.iter (fun (alpha,(obl,u)) ->
+	Printf.fprintf sa "%d. %s %s %s\n" !c (Cryptocurr.addr_qedaddrstr alpha) (obligation_string obl) (preasset_string u);
+	incr c)
+	tauout;
+      let sb = Buffer.create 100 in
+      seosbf (seo_stx seosb (tau,tausg) (sb,None));
+      Printf.fprintf sa "%s\n" (string_hexstring (Buffer.contents sb))
+    )
+    stxpool;
+  Printf.fprintf sa "=========\npublished_stx:\n";
+  Hashtbl.iter (fun h () ->
+      Printf.fprintf sa "- tx %s\n" (hashval_hexstring h))
+    published_stx;
+  Printf.fprintf sa "=========\nthytree:\n";
+  Hashtbl.iter (fun h _ ->
+    Printf.fprintf sa "- thytree root %s\n" (hashval_hexstring h))
+    thytree;
+  Printf.fprintf sa "=========\nsigtree:\n";
+  Hashtbl.iter (fun h _ ->
+    Printf.fprintf sa "- sigtree root %s\n" (hashval_hexstring h))
+    sigtree;
+  Printf.fprintf sa "=========\nblkheaders:\n";
+  Hashtbl.iter
+    (fun h _ ->
+      Printf.fprintf sa "- blk %s\n" (hashval_hexstring h))
+    blkheaders;
+  Printf.fprintf sa "=========\nblkheadernode:\n";
+  Hashtbl.iter
+    (fun h (BlocktreeNode(_,rs,pbh,tr,sr,lr,((csm3,csm2,csm1,csm0),(fsm3,fsm2,fsm1,fsm0),tar),tm,cs,blkh,vs,bl,chr)) ->
+      Printf.fprintf sa "- blk %s node:\n" (match h with Some(h) -> hashval_hexstring h | None -> "[genesis]");
+      Printf.fprintf sa "recentstakers:\n";
+      List.iter (fun k -> Printf.fprintf sa "%s\n" (hashval_hexstring k)) !rs;
+      Printf.fprintf sa "prevblockhash: %s\n" (match pbh with Some(h) -> hashval_hexstring h | None -> "[genesis]");
+      Printf.fprintf sa "theory tree root: %s\n" (match tr with Some(h) -> hashval_hexstring h | None -> "[empty]");
+      Printf.fprintf sa "sig tree root: %s\n" (match sr with Some(h) -> hashval_hexstring h | None -> "[empty]");
+      Printf.fprintf sa "ledger tree root: %s\n" (hashval_hexstring lr);
+      Printf.fprintf sa "targetinfo:\ncsm %Lx %Lx %Lx %Lx\nfsm %Lx %Lx %Lx %Lx\ntar %s\n" csm3 csm2 csm1 csm0 fsm3 fsm2 fsm1 fsm0 (string_of_big_int tar);
+      Printf.fprintf sa "timestamp: %Ld\n" tm;
+      Printf.fprintf sa "cumulative stake: %s\n" (string_of_big_int cs);
+      Printf.fprintf sa "block height: %Ld\n" blkh;
+      Printf.fprintf sa "validation status: %s\n"
+	(match !vs with Waiting(tm) -> "Waiting " ^ string_of_float tm | ValidBlock -> "Valid" | InvalidBlock -> "Invalid");
+      if !bl then Printf.fprintf sa "*blacklisted*\n";
+      Printf.fprintf sa "children nodes: %d\n" (List.length !chr);
+      List.iter (fun (h,_) -> Printf.fprintf sa "%s\n" (hashval_hexstring h)) !chr)
+    blkheadernode;
+  Printf.fprintf sa "=========\norphanblkheaders:\n";
+  Hashtbl.iter
+    (fun h (k,bh) ->
+      Printf.fprintf sa "- orphan blk %s waiting for %s\n" (hashval_hexstring k) (match h with Some(h) -> hashval_hexstring h | None -> "[genesis?]");
+      let sb = Buffer.create 100 in
+      seosbf (seo_blockheader seosb bh (sb,None));
+      Printf.fprintf sa "%s\n" (string_hexstring (Buffer.contents sb)))
+    orphanblkheaders;
+  Printf.fprintf sa "=========\nearlyblocktreenodes:\n";
+  List.iter
+    (fun (futuretm,BlocktreeNode(_,rs,pbh,tr,sr,lr,((csm3,csm2,csm1,csm0),(fsm3,fsm2,fsm1,fsm0),tar),tm,cs,blkh,vs,bl,chr)) ->
+      Printf.fprintf sa "future timestamp: %Ld\n" futuretm;
+      Printf.fprintf sa "recentstakers:\n";
+      List.iter (fun k -> Printf.fprintf sa "%s\n" (hashval_hexstring k)) !rs;
+      Printf.fprintf sa "prevblockhash: %s\n" (match pbh with Some(h) -> hashval_hexstring h | None -> "[genesis]");
+      Printf.fprintf sa "theory tree root: %s\n" (match tr with Some(h) -> hashval_hexstring h | None -> "[empty]");
+      Printf.fprintf sa "sig tree root: %s\n" (match sr with Some(h) -> hashval_hexstring h | None -> "[empty]");
+      Printf.fprintf sa "ledger tree root: %s\n" (hashval_hexstring lr);
+      Printf.fprintf sa "targetinfo:\ncsm %Lx %Lx %Lx %Lx\nfsm %Lx %Lx %Lx %Lx\ntar %s\n" csm3 csm2 csm1 csm0 fsm3 fsm2 fsm1 fsm0 (string_of_big_int tar);
+      Printf.fprintf sa "timestamp: %Ld\n" tm;
+      Printf.fprintf sa "cumulative stake: %s\n" (string_of_big_int cs);
+      Printf.fprintf sa "block height: %Ld\n" blkh;
+      Printf.fprintf sa "validation status: %s\n"
+	(match !vs with Waiting(tm) -> "Waiting " ^ string_of_float tm | ValidBlock -> "Valid" | InvalidBlock -> "Invalid");
+      if !bl then Printf.fprintf sa "*blacklisted*\n";
+      Printf.fprintf sa "children nodes: %d\n" (List.length !chr);
+      List.iter (fun (h,_) -> Printf.fprintf sa "%s\n" (hashval_hexstring h)) !chr)
+    !earlyblocktreenodes;
+  Printf.fprintf sa "=========\ntovalidatelist:\n";
+  List.iter
+    (fun (vs,f) ->
+      Printf.fprintf sa "validation status: %s\n"
+	(match !vs with Waiting(tm) -> "Waiting " ^ string_of_float tm | ValidBlock -> "Valid" | InvalidBlock -> "Invalid")
+    )
+    !tovalidatelist

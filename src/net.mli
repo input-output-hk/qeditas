@@ -50,6 +50,7 @@ type msgtype =
   | NewHeader
 
 val int_of_msgtype : msgtype -> int
+val string_of_msgtype : msgtype -> string
 
 val openlistener : string -> int -> int -> Unix.file_descr
 

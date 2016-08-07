@@ -46,3 +46,5 @@ val publish_stx : hashval -> stx -> unit
 val publish_block : hashval -> block -> unit
 
 val send_inv : int -> out_channel -> connstate -> unit
+
+val dumpblocktreestate : out_channel -> unit
