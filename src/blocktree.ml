@@ -66,6 +66,10 @@ let node_blockheight n =
   let BlocktreeNode(_,_,_,_,_,_,_,_,_,blkh,_,_,_) = n in
   blkh
 
+let node_validationstatus n =
+  let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,vs,_,_) = n in
+  !vs
+
 let node_children_ref n =
   let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,_,_,chr) = n in
   chr
@@ -430,6 +434,10 @@ let rec find_best_validated_block_from fromnode bestcumulstk =
     end
   else
     bestcumulstk
+
+let find_best_validated_block () =
+  bestnode := !lastcheckpointnode;
+  ignore (find_best_validated_block_from !lastcheckpointnode zero_big_int)
 
 let publish_stx txh stx1 =
   let (tx1,txsigs1) = stx1 in
