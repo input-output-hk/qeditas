@@ -233,6 +233,13 @@ let stakingthread () =
       let sleeplen = !sleepuntil -. (Unix.time()) in
       if sleeplen > 1.0 then Unix.sleep (int_of_float sleeplen);
       let best = !bestnode in
+      begin
+	match node_validationstatus best with
+	| InvalidBlock -> find_best_validated_block()
+	| Waiting(tm) ->
+	    if tm +. 15.0 < Unix.time() then find_best_validated_block()
+	| _ -> ()
+      end;
       try
 	let pbhh = node_prevblockhash best in
 	let blkh = node_blockheight best in
@@ -477,11 +484,12 @@ let stakingthread () =
 		  children_ref := (bhdnewh,newnode)::!children_ref;
 		  (*** missing: code to broadcast to peers ***)
 		in
-		if pbhh = node_prevblockhash !bestnode then (*** if the bestnode has changed, don't publish it unless the cumulative stake is higher ***)
-		  publish_new_block()
-		else if csnew > node_cumulstk !bestnode then
-		  (Printf.fprintf !log "best != bestnode, but this block better cs\n"; flush stdout;
-		  publish_new_block())
+		if node_validationstatus !bestnode = ValidBlock then (*** Don't publish a successor unless the previous block has been fully validated ***)
+		  if pbhh = node_prevblockhash !bestnode then (*** if the bestnode has changed, don't publish it unless the cumulative stake is higher ***)
+		    publish_new_block()
+		  else if csnew > node_cumulstk !bestnode then
+		    (Printf.fprintf !log "best != bestnode, but this block better cs\n"; flush stdout;
+		     publish_new_block())
 	      end
 	| NoStakeUpTo(tm) ->
 	    let ftm = Int64.add (Int64.of_float (Unix.time())) 36000L in (* reduce to 3600 *)
