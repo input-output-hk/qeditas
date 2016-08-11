@@ -356,20 +356,8 @@ let sei_blockdelta i c =
 let seo_block o b c = seo_prod seo_blockheader seo_blockdelta o b c
 let sei_block i c = sei_prod sei_blockheader sei_blockdelta i c
 
-(*** a partial representation of the block delta using hashvals in place of stxs ***)
-type blockdeltah = addr_preasset list * poforfeit option * cgraft * hashval list
-
-let seo_blockdeltah o bd c =
-  seo_prod4 (seo_list seo_addr_preasset) (seo_option seo_poforfeit) seo_cgraft (seo_list seo_hashval)
-    o bd c
-
-let sei_blockdeltah i c =
-  sei_prod4 (sei_list sei_addr_preasset) (sei_option sei_poforfeit) sei_cgraft (sei_list sei_hashval)
-    i c
-
 module DbBlockHeader = Dbbasic (struct type t = blockheader let basedir = "blockheader" let seival = sei_blockheader seic let seoval = seo_blockheader seoc end)
 module DbBlockDelta = Dbbasic (struct type t = blockdelta let basedir = "blockdelta" let seival = sei_blockdelta seic let seoval = seo_blockdelta seoc end)
-module DbBlockDeltaH = Dbbasic (struct type t = blockdeltah let basedir = "blockdeltah" let seival = sei_blockdeltah seic let seoval = seo_blockdeltah seoc end)
 
 let get_blockheader h = 
   try
@@ -384,16 +372,6 @@ let get_blockdelta h =
   with Not_found -> (*** request it and fail ***)
 (*** missing code to ask peers for data ***)
     raise GettingRemoteData
-
-let get_blockdeltah h = 
-  try
-    DbBlockDeltaH.dbget h
-  with Not_found -> (*** request it and fail ***)
-(*** missing code to ask peers for data ***)
-    raise GettingRemoteData
-
-let blockdelta_blockdeltah bd =
-  (bd.stakeoutput,bd.forfeiture,bd.prevledgergraft,List.map (fun (tau,_) -> hashtx tau) bd.blockdelta_stxl)
 
 (*** multiply stake by 1.25 ***)
 let incrstake s =

@@ -333,7 +333,7 @@ type connstate = {
     mutable protvers : int32;
     mutable useragent : string;
     mutable addrfrom : string;
-    mutable locked : bool;
+    mutable banned : bool;
     mutable lastmsgtm : float;
     mutable pending : (hashval * (bool * float * float * (msgtype * string -> unit))) list;
     mutable sentinv : (int * hashval) list;
@@ -554,7 +554,8 @@ let connlistener (s,sin,sout,gcs) =
 	    let tm = Unix.time() in
 	    cs.lastmsgtm <- tm;
 	    if Hashtbl.mem knownpeers cs.addrfrom then Hashtbl.replace knownpeers cs.addrfrom (Int64.of_float tm);
-	    handle_msg replyto mt sin sout cs mh m
+	    handle_msg replyto mt sin sout cs mh m;
+	    if cs.banned then raise (ProtocolViolation("banned"))
 	| None -> raise End_of_file (*** connection died; this probably shouldn't happen, as we should have left this thread when it died ***)
       with
       | Unix.Unix_error(c,x,y) -> (*** close connection ***)
@@ -645,7 +646,7 @@ let initialize_conn_accept ra s =
       set_binary_mode_in sin true;
       set_binary_mode_out sout true;
       let tm = Unix.time() in
-      let cs = { conntime = tm; realaddr = ra; connmutex = Mutex.create(); sendqueue = Queue.create(); sendqueuenonempty = Condition.create(); handshakestep = 1; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = 0L; first_full_height = 0L; last_height = 0L } in
+      let cs = { conntime = tm; realaddr = ra; connmutex = Mutex.create(); sendqueue = Queue.create(); sendqueuenonempty = Condition.create(); handshakestep = 1; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; banned = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = 0L; first_full_height = 0L; last_height = 0L } in
       let sgcs = (s,sin,sout,ref (Some(cs))) in
       let clth = Thread.create connlistener sgcs in
       let csth = Thread.create connsender sgcs in
@@ -678,7 +679,7 @@ let initialize_conn_2 n s sin sout =
        ((vers,srvs,Int64.of_float tm,n,myaddr(),!this_nodes_nonce),
 	(Version.useragent,fhh,ffh,lh,relay,lastchkpt))
        (vm,None));
-  let cs = { conntime = tm; realaddr = n; connmutex = Mutex.create(); sendqueue = Queue.create(); sendqueuenonempty = Condition.create(); handshakestep = 2; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; locked = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
+  let cs = { conntime = tm; realaddr = n; connmutex = Mutex.create(); sendqueue = Queue.create(); sendqueuenonempty = Condition.create(); handshakestep = 2; peertimeskew = 0; protvers = Version.protocolversion; useragent = ""; addrfrom = ""; banned = false; lastmsgtm = tm; pending = []; sentinv = []; rinv = []; invreq = []; first_header_height = fhh; first_full_height = ffh; last_height = lh } in
   queue_msg cs Version (Buffer.contents vm);
   let sgcs = (s,sin,sout,ref (Some(cs))) in
   let clth = Thread.create connlistener sgcs in
@@ -788,13 +789,34 @@ let broadcast_requestdata mt h =
     (fun (lth,sth,(fd,sin,sout,gcs)) ->
        match !gcs with
        | Some(cs) ->
-         if not (List.mem (i,h) cs.invreq) then
-           begin
-             queue_msg cs mt ms;
-             cs.invreq <- (i,h)::cs.invreq
-           end
+           if not (List.mem (i,h) cs.invreq) && (List.mem (i,h) cs.rinv || (i >= 26 && i <= 31)) then
+             begin
+               queue_msg cs mt ms;
+               cs.invreq <- (i,h)::cs.invreq
+             end
        | None -> ())
     !netconns
+
+let find_and_send_requestdata mt h =
+  let i = int_of_msgtype mt in
+  let msb = Buffer.create 20 in
+  seosbf (seo_hashval seosb h (msb,None));
+  let ms = Buffer.contents msb in
+  try
+    List.iter
+      (fun (lth,sth,(fd,sin,sout,gcs)) ->
+	match !gcs with
+	| Some(cs) ->
+            if not cs.banned & not (List.mem (i,h) cs.invreq) && List.mem (i,h) cs.rinv then
+              begin
+		let mh = queue_msg cs mt ms in
+		cs.invreq <- (i,h)::cs.invreq;
+		raise Exit
+              end
+	| None -> ())
+      !netconns;
+    raise Not_found
+  with Exit -> ()
 
 let broadcast_new_header h =
   List.iter

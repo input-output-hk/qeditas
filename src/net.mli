@@ -65,7 +65,7 @@ type connstate = {
     mutable protvers : int32;
     mutable useragent : string;
     mutable addrfrom : string;
-    mutable locked : bool;
+    mutable banned : bool;
     mutable lastmsgtm : float;
     mutable pending : (hashval * (bool * float * float * (msgtype * string -> unit))) list;
     mutable sentinv : (int * hashval) list;
@@ -112,6 +112,7 @@ val network_time : unit -> int64 * int
 val rec_msg : int64 -> in_channel -> hashval option * hashval * msgtype * string
 val queue_msg : connstate -> msgtype -> string -> hashval
 val queue_reply : connstate -> hashval -> msgtype -> string -> hashval
+val find_and_send_requestdata : msgtype -> hashval -> unit
 val broadcast_requestdata : msgtype -> hashval -> unit
 val broadcast_new_header : hashval -> unit
 val broadcast_inv : (int * int64 * hashval) list -> unit

@@ -236,7 +236,7 @@ let stakingthread () =
       begin
 	match node_validationstatus best with
 	| InvalidBlock -> find_best_validated_block()
-	| Waiting(tm) ->
+	| Waiting(tm,_) ->
 	    if tm +. 15.0 < Unix.time() then find_best_validated_block()
 	| _ -> ()
       end;
@@ -244,7 +244,7 @@ let stakingthread () =
 	let pbhh = node_prevblockhash best in
 	let blkh = node_blockheight best in
         match Hashtbl.find nextstakechances pbhh with
-	| NextStake(tm,alpha,aid,bday,obl,v,cs) ->
+	| NextStake(tm,alpha,aid,bday,obl,v,csnew) ->
 	    let nw = Unix.time() in
 	    if tm > Int64.of_float (nw +. 10.0) then
 	      begin (*** wait for a minute and then reevaluate; would be better to sleep until time to publish or until a new best block is found **)
@@ -463,26 +463,21 @@ let stakingthread () =
 		      else
 			(Printf.fprintf !log "Not a valid successor block\n"; flush !log; !exitfn 1; raise Not_found)
 		end;
-		let csnew = cumul_stake cs tar bhdnew.deltatime in
 		let nw = Unix.time() in
 		let tmtopub = Int64.sub tm (Int64.of_float nw) in
 		if tmtopub > 1L then Unix.sleep (Int64.to_int tmtopub);
 		let publish_new_block () =
-		  DbBlockHeader.dbput bhdnewh (bhdnew,bhsnew);
-		  DbBlockDelta.dbput bhdnewh bdnew;
-		  add_to_headers_file (hashval_hexstring bhdnewh);
-		  broadcast_new_header bhdnewh;
+		  publish_block blkh bhdnewh ((bhdnew,bhsnew),bdnew);
 		  let newnode =
 		    BlocktreeNode(Some(best),ref [],Some(bhdnewh),newthtroot,newsigtroot,ctree_hashroot !dync,bhdnew.tinfo,tm,csnew,Int64.add 1L blkh,ref ValidBlock,ref false,ref [])
 		  in
-		  Printf.fprintf !log "block at height %Ld: %s, deltm = %ld, timestamp %Ld, cumul stake %s\n" blkh (hashval_hexstring bhdnewh) bhdnew.deltatime tm (string_of_big_int cs); 
+		  Printf.fprintf !log "block at height %Ld: %s, deltm = %ld, timestamp %Ld, cumul stake %s\n" blkh (hashval_hexstring bhdnewh) bhdnew.deltatime tm (string_of_big_int csnew); 
 		  record_recent_staker alpha newnode 6;
 		  Hashtbl.add blkheadernode (Some(bhdnewh)) newnode;
 		  bestnode := newnode;
 		  netblkh := node_blockheight !bestnode;
 		  let children_ref = node_children_ref best in
 		  children_ref := (bhdnewh,newnode)::!children_ref;
-		  (*** missing: code to broadcast to peers ***)
 		in
 		if node_validationstatus !bestnode = ValidBlock then (*** Don't publish a successor unless the previous block has been fully validated ***)
 		  if pbhh = node_prevblockhash !bestnode then (*** if the bestnode has changed, don't publish it unless the cumulative stake is higher ***)
@@ -587,7 +582,7 @@ let do_command l =
 		| None -> Printf.fprintf sa "[Dead Connection]\n";
 		| Some(cs) ->
 		    Printf.fprintf sa "-----------\nConnection: %s %f\n" cs.realaddr cs.conntime;
-		    Printf.fprintf sa "peertimeskew %d\nprotvers %ld\nuseragent %s\naddrfrom %s\nlocked %s\nlastmsgtm %f\nfirst_header_height %Ld\nfirst_full_height %Ld\nlast_height %Ld\n" cs.peertimeskew cs.protvers cs.useragent cs.addrfrom (if cs.locked then "true" else "false") cs.lastmsgtm cs.first_header_height cs.first_full_height cs.last_height;
+		    Printf.fprintf sa "peertimeskew %d\nprotvers %ld\nuseragent %s\naddrfrom %s\nbanned %s\nlastmsgtm %f\nfirst_header_height %Ld\nfirst_full_height %Ld\nlast_height %Ld\n" cs.peertimeskew cs.protvers cs.useragent cs.addrfrom (if cs.banned then "true" else "false") cs.lastmsgtm cs.first_header_height cs.first_full_height cs.last_height;
 		    Printf.fprintf sa "- pending %d:\n" (List.length cs.pending);
 		    List.iter
 		      (fun (h,(b,tm1,tm2,f)) ->
