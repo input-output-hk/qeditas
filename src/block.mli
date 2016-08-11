@@ -86,14 +86,6 @@ val sei_blockdelta : (int -> 'a -> int * 'a) -> 'a -> blockdelta * 'a
 val seo_block : (int -> int -> 'a -> 'a) -> block -> 'a -> 'a
 val sei_block : (int -> 'a -> int * 'a) -> 'a -> block * 'a
 
-(*** a partial representation of the block delta using hashvals in place of stxs ***)
-type blockdeltah = addr_preasset list * poforfeit option * cgraft * hashval list
-
-val seo_blockdeltah : (int -> int -> 'a -> 'a) -> blockdeltah -> 'a -> 'a
-val sei_blockdeltah : (int -> 'a -> int * 'a) -> 'a -> blockdeltah * 'a
-
-val blockdelta_blockdeltah : blockdelta -> blockdeltah
-
 module DbBlockHeader :
     sig
       val dbget : Hash.hashval -> blockheader
@@ -110,17 +102,8 @@ module DbBlockDelta :
       val dbdelete : Hash.hashval -> unit
     end
 
-module DbBlockDeltaH :
-    sig
-      val dbget : Hash.hashval -> blockdeltah
-      val dbexists : Hash.hashval -> bool
-      val dbput : Hash.hashval -> blockdeltah -> unit
-      val dbdelete : Hash.hashval -> unit
-    end
-
 val get_blockheader : hashval -> blockheader
 val get_blockdelta : hashval -> blockdelta
-val get_blockdeltah : hashval -> blockdeltah
 
 val coinstake : block -> tx
 
