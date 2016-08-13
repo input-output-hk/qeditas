@@ -24,7 +24,7 @@ let maximum_age = 16384L
 let maximum_age_sqr = sqr512 maximum_age
 let reward_maturation = 512L (*** rewards become stakable after 512 blocks ***)
 let unlocked_maturation = 512L
-let locked_maturation = 8L
+let locked_maturation = 512L
 let close_to_unlocked = 32L
 
 (*** make reward locktime start at a very big number of 16384
