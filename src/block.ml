@@ -22,6 +22,8 @@ type stakemod = int64 * int64 * int64 * int64
 let genesiscurrentstakemod : stakemod ref = ref (0L,0L,0L,0L)
 let genesisfuturestakemod : stakemod ref = ref (0L,0L,0L,0L)
 
+let stakemod_string (x3,x2,x1,x0) = (Int64.to_string x3) ^ " " ^ (Int64.to_string x2) ^ " " ^ (Int64.to_string x1) ^ " " ^ (Int64.to_string x0)
+
 let set_genesis_stakemods x =
   let (x4,x3,x2,x1,x0) = hexstring_hashval x in
   sha256init();
@@ -137,6 +139,8 @@ let hitval tm h sm =
 
 (*** current stake modifier, future stake modifier, target (big_int, but assumed to be at most 256 bits ***)
 type targetinfo = stakemod * stakemod * big_int
+
+let targetinfo_string (csm,fsm,tar) = stakemod_string csm ^ ";" ^ stakemod_string fsm ^ ";" ^ string_of_big_int tar
 
 let eq_tinfo (x,y,z) (u,v,w) =
   x = u && y = v && eq_big_int z w
@@ -532,25 +536,12 @@ let hash_blockheaderdata bh =
 		   (hashpair (hashint64 bh.timestamp) (hashint32 bh.deltatime)))))))
     1028l
 
-let valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v) =
-  begin
-    match bhs.blocksignatendorsement with
-    | None -> verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) bhd.stakeaddr bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
-    | Some(beta,recid,fcomp,esg) -> (*** signature via endorsement ***)
-	begin
-	  (verifybitcoinmessage bhd.stakeaddr recid fcomp esg ("endorse " ^ (addr_qedaddrstr (hashval_p2pkh_addr beta)))
-	     &&
-	   verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) beta bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp)
-	|| (!Config.testnet (*** allow fake endorsements in testnet ***)
-	      &&
-	    verifybitcoinmessage (-629004799l, -157083340l, -103691444l, 1197709645l, 224718539l) recid fcomp esg ("fakeendorsement " ^ (addr_qedaddrstr (hashval_p2pkh_addr beta)) ^ " (" ^ (addr_qedaddrstr (hashval_p2pkh_addr bhd.stakeaddr)) ^ ")")
-	     &&
-	   verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) beta bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp)
-	end
-  end
-    &&
+let valid_blockheader_allbutsignat blkh tinfo bhd (aid,bday,obl,u) =
   bhd.stakeassetid = aid
     &&
+  match u with
+  | Currency(v) ->
+    begin
   check_hit blkh tinfo bhd bday obl v
     &&
   bhd.deltatime > 0l
@@ -574,16 +565,52 @@ let valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v) =
 	  | _ -> false
 	end
   end
+    end
+  | _ -> false
 
-let valid_blockheader blkh tinfo (bhd,bhs) =
+let valid_blockheader_signat (bhd,bhs) (aid,bday,obl,v) =
+  begin
+    match bhs.blocksignatendorsement with
+    | None -> verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) bhd.stakeaddr bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp
+    | Some(beta,recid,fcomp,esg) -> (*** signature via endorsement ***)
+	begin
+	  (verifybitcoinmessage bhd.stakeaddr recid fcomp esg ("endorse " ^ (addr_qedaddrstr (hashval_p2pkh_addr beta)))
+	     &&
+	   verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) beta bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp)
+	|| (!Config.testnet (*** allow fake endorsements in testnet ***)
+	      &&
+	    verifybitcoinmessage (-629004799l, -157083340l, -103691444l, 1197709645l, 224718539l) recid fcomp esg ("fakeendorsement " ^ (addr_qedaddrstr (hashval_p2pkh_addr beta)) ^ " (" ^ (addr_qedaddrstr (hashval_p2pkh_addr bhd.stakeaddr)) ^ ")")
+	     &&
+	   verify_p2pkhaddr_signat (hashval_big_int (hash_blockheaderdata bhd)) beta bhs.blocksignat bhs.blocksignatrecid bhs.blocksignatfcomp)
+	end
+  end
+
+let valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v) =
+  valid_blockheader_signat (bhd,bhs) (aid,bday,obl,v)
+    &&
+  valid_blockheader_allbutsignat blkh tinfo bhd (aid,bday,obl,v)
+
+exception HeaderNoStakedAsset
+exception HeaderStakedAssetNotMin
+
+let blockheader_stakeasset bhd =
   let bl = addr_bitseq (p2pkhaddr_addr bhd.stakeaddr) in
   match ctree_lookup_asset false false bhd.stakeassetid bhd.prevledger bl with
-  | Some(aid,bday,obl,Currency(v)) -> (*** stake belongs to staker ***)
+  | Some(a) ->
+      let (aid,_,_,_) = a in
       if minimal_asset_supporting_ctree bhd.prevledger bl aid 50 then (*** ensure that the ctree contains no extra information; this is a condition to prevent headers from being large by including unnecessary information; also only allow the first 50 assets held at an address to be used for staking ***)
-	valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v)
+	a
       else
-	false
-  | _ -> false
+	raise HeaderStakedAssetNotMin
+  | _ -> 
+      raise HeaderNoStakedAsset
+	
+let valid_blockheader blkh tinfo (bhd,bhs) =
+  try
+    valid_blockheader_a blkh tinfo (bhd,bhs) (blockheader_stakeasset bhd)
+  with
+  | HeaderStakedAssetNotMin -> false
+  | HeaderNoStakedAsset -> false
 
 let ctree_of_block (b:block) =
   let ((bhd,bhs),bd) = b in
@@ -607,7 +634,7 @@ let tx_of_block b =
 
 let txl_of_block b =
   let (_,bd) = b in
-  coinstake b::List.map (fun (tx,_) -> tx) bd.blockdelta_stxl
+  (coinstake b,List.map (fun (tx,_) -> tx) bd.blockdelta_stxl)
 
 let rec check_bhl pbh bhl oth =
   if pbh = Some(oth) then (*** if this happens, then it's not a genuine fork; one of the lists is a sublist of the other ***)
@@ -656,17 +683,17 @@ let check_poforfeit blkh ((bhd1,bhs1),(bhd2,bhs2),bhl1,bhl2,v,fal) tr =
 let latesttht : ttree option ref = ref None
 let latestsigt : stree option ref = ref None
 
-let valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs =
+let valid_block_a tht sigt blkh tinfo b ((aid,bday,obl,u) as a) stkaddr =
   let ((bhd,bhs),bd) = b in
   (*** The header is valid. ***)
-  valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,v)
+  valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,u)
     &&
   tx_outputs_valid bd.stakeoutput
     &&
    (*** ensure that if the stake has an explicit obligation (e.g., it is borrowed for staking), then the obligation isn't changed; otherwise the staker could steal the borrowed stake; unchanged copy should be first output ***)
    begin
-     match ctree_lookup_asset false false bhd.stakeassetid bhd.prevledger stkaddrbs with
-     | Some(_,_,Some(beta,n,r),Currency(v)) -> (*** stake may be on loan for staking ***)
+     match a with
+     | (_,_,Some(beta,n,r),Currency(v)) -> (*** stake may be on loan for staking ***)
 	 begin
 	   match bd.stakeoutput with
 	   | (alpha2,(Some(beta2,n2,r2),Currency(v2)))::remouts -> (*** the first output must recreate the loaned asset. It's a reward iff it was already a reward. The remaining outputs are marked as rewards and are subject to forfeiture. ***)
@@ -689,7 +716,7 @@ let valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs =
 	   | _ ->
 	       false
 	 end
-     | _ -> (*** stake has the default obligation ***)
+     | (_,_,None,Currency(v)) -> (*** stake has the default obligation ***)
 	 begin (*** the first output is optionally the stake with the default obligation (not a reward, immediately spendable) with all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for at least reward_locktime many blocks ***)
 	   match bd.stakeoutput with
 	   | (alpha2,(_,Currency(v2)))::remouts -> (*** allow the staker to choose the new obligation for the staked asset [Feb 2016] ***)
@@ -709,6 +736,7 @@ let valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs =
 		 false
 	       with Not_found -> true
 	 end
+     | _ -> false (*** this means the staked asset isn't currency, which is not allowed ***)
    end
     &&
   let tr = ctree_of_block b in (*** let tr be the ctree of the block, used often below ***)
@@ -857,7 +885,8 @@ let valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs =
       The root of the transformed ctree is the newledgerroot in the header.
    ***)
   begin
-    match txl_octree_trans blkh (txl_of_block b) (Some(tr)) with
+    let (cstk,txl) = txl_of_block b in (*** the coinstake tx is performed last, i.e., after the txs in the block. ***)
+    match tx_octree_trans blkh cstk (txl_octree_trans blkh txl (Some(tr))) with
     | Some(tr2) ->
 	bhd.newledgerroot = ctree_hashroot tr2
     | None -> false
@@ -882,11 +911,11 @@ let valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs =
 let valid_block tht sigt blkh tinfo (b:block) =
   let ((bhd,_),_) = b in
   let stkaddr = p2pkhaddr_addr bhd.stakeaddr in
-  let stkaddrbs = addr_bitseq stkaddr in
-  match ctree_lookup_asset false false bhd.stakeassetid bhd.prevledger stkaddrbs with
-  | Some(aid,bday,obl,Currency(v)) -> (*** stake belongs to staker ***)
-      valid_block_a tht sigt blkh tinfo b (aid,bday,obl,v) stkaddr stkaddrbs
-  | _ -> false
+  try
+    valid_block_a tht sigt blkh tinfo b (blockheader_stakeasset bhd) stkaddr
+  with
+  | HeaderStakedAssetNotMin -> false
+  | HeaderNoStakedAsset -> false
 
 type blockchain = block * block list
 type blockheaderchain = blockheader * blockheader list

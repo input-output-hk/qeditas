@@ -365,6 +365,7 @@ let importwatchbtcaddr a =
 let printassets_in_ledger ledgerroot =
   let ctr = Ctre.CHash(ledgerroot) in
   let warned = ref false in
+  let waitprinted = ref false in
   let al1 = ref [] in
   let tot1 = ref 0L in
   let al2 = ref [] in
@@ -373,9 +374,11 @@ let printassets_in_ledger ledgerroot =
   let tot3 = ref 0L in
   let al4 = ref [] in
   let tot4 = ref 0L in
+  let numtrys = ref 11 in
   let handler f =
     try
-      for i = 1 to 20 do
+      if !numtrys > 1 then decr numtrys;
+      for i = 1 to !numtrys do
 	try
 	  f();
 	  raise Exit
@@ -392,7 +395,7 @@ let printassets_in_ledger ledgerroot =
 	    end
 	  else
 	    begin
-	      Printf.printf "Some data is being requested from remote nodes...please wait...\n"; flush stdout;
+	      if not !waitprinted then (Printf.printf "Some data is being requested from remote nodes...please wait a minute or two...\n"; flush stdout; waitprinted := true);
 	      Unix.sleep 2;
 	    end
       done;
@@ -434,7 +437,7 @@ let printassets_in_ledger ledgerroot =
       match x with
       | (Some(hl),_) ->
 	  Printf.printf "%s:\n" z;
-	  Ctre.print_hlist_gen (Ctre.nehlist_hlist hl) (sumcurr tot1)
+	  Ctre.print_hlist_gen stdout (Ctre.nehlist_hlist hl) (sumcurr tot1)
       | (None,_) ->
 	  Printf.printf "%s: empty\n" z;
       | _ ->
@@ -447,7 +450,7 @@ let printassets_in_ledger ledgerroot =
       match x with
       | (Some(hl),_) ->
 	  Printf.printf "%s:\n" z;
-	  Ctre.print_hlist_gen (Ctre.nehlist_hlist hl) (sumcurr tot2)
+	  Ctre.print_hlist_gen stdout (Ctre.nehlist_hlist hl) (sumcurr tot2)
       | (None,_) ->
 	  Printf.printf "%s: empty\n" z;
       | _ ->
@@ -460,7 +463,7 @@ let printassets_in_ledger ledgerroot =
       match x with
       | (Some(hl),_) ->
 	  Printf.printf "%s:\n" (addr_qedaddrstr alpha2);
-	  Ctre.print_hlist_gen (Ctre.nehlist_hlist hl) (sumcurr tot3)
+	  Ctre.print_hlist_gen stdout (Ctre.nehlist_hlist hl) (sumcurr tot3)
       | (None,_) ->
 	  Printf.printf "%s: empty\n" (addr_qedaddrstr alpha2);
       | _ ->
@@ -473,7 +476,7 @@ let printassets_in_ledger ledgerroot =
       match x with
       | (Some(hl),_) ->
 	  Printf.printf "%s:\n" (addr_qedaddrstr alpha);
-	  Ctre.print_hlist_gen (Ctre.nehlist_hlist hl) (sumcurr tot4)
+	  Ctre.print_hlist_gen stdout (Ctre.nehlist_hlist hl) (sumcurr tot4)
       | (None,_) ->
 	  Printf.printf "%s: empty\n" (addr_qedaddrstr alpha);
       | _ ->

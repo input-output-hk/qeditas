@@ -13,6 +13,8 @@ open Ctregraft
 
 type stakemod = int64 * int64 * int64 * int64
 
+val stakemod_string : stakemod -> string
+
 val seo_stakemod : (int -> int -> 'a -> 'a) -> stakemod -> 'a -> 'a
 val sei_stakemod :(int -> 'a -> int * 'a) -> 'a -> stakemod * 'a
 
@@ -28,6 +30,8 @@ val stakemod_lastbit : stakemod -> bool
 val stakemod_firstbit : stakemod -> bool
 
 type targetinfo = stakemod * stakemod * big_int
+
+val targetinfo_string : targetinfo -> string
 
 val seo_targetinfo : (int -> int -> 'a -> 'a) -> targetinfo -> 'a -> 'a
 val sei_targetinfo : (int -> 'a -> int * 'a) -> 'a -> targetinfo * 'a
@@ -121,11 +125,18 @@ val check_hit : int64 -> targetinfo -> blockheaderdata -> int64 -> obligation ->
 
 val hash_blockheaderdata : blockheaderdata -> hashval
 
+exception HeaderNoStakedAsset
+exception HeaderStakedAssetNotMin
+val blockheader_stakeasset : blockheaderdata -> asset
+
+val valid_blockheader_allbutsignat : int64 -> targetinfo -> blockheaderdata -> asset -> bool
+val valid_blockheader_signat : blockheader -> asset -> bool
+
 val valid_blockheader : int64 -> targetinfo -> blockheader -> bool
 
 val ctree_of_block : block -> ctree
 
-val txl_of_block : block -> tx list
+val txl_of_block : block -> tx * tx list
 
 val retarget : big_int -> int32 -> big_int
 val cumul_stake : big_int -> big_int -> int32 -> big_int

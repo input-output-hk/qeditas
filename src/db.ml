@@ -318,6 +318,18 @@ module type dbtype = functor (M:sig type t val basedir : string val seival : (se
 
 module Dbbasic : dbtype = functor (M:sig type t val basedir : string val seival : (seict -> t * seict) val seoval : (t -> seoct -> seoct) end) ->
   struct
+    let mutexdb : Mutex.t = Mutex.create()
+
+    let withlock f =
+      try
+	Mutex.lock mutexdb;
+	let r = f() in
+	Mutex.unlock mutexdb;
+	r
+      with e ->
+	Mutex.unlock mutexdb;
+	raise e
+
     let cache1 : (hashval,M.t) Hashtbl.t ref = ref (Hashtbl.create max_in_cache)
     let cache2 : (hashval,M.t) Hashtbl.t ref = ref (Hashtbl.create max_in_cache)
 
@@ -347,11 +359,13 @@ module Dbbasic : dbtype = functor (M:sig type t val basedir : string val seival 
 	  end
 	else
 	  begin
-	    let (di,_) = dbfind M.basedir k in
+	    let (di,_) = withlock (fun () -> dbfind M.basedir k) in
 	    try
-	      find_in_deleted di k;
+	      withlock (fun () -> find_in_deleted di k);
 	      raise Exit
-	    with Not_found -> true
+	    with
+	    | Not_found ->
+		true
 	  end
       with
       | Exit -> false
@@ -363,67 +377,82 @@ module Dbbasic : dbtype = functor (M:sig type t val basedir : string val seival 
       with Not_found ->
 	try
 	  let v = Hashtbl.find !cache2 k in
-	  add_to_cache (k,v);
+	  withlock (fun () -> add_to_cache (k,v));
 	  v
 	with Not_found ->
-	  let (di,p) = dbfind M.basedir k in
+	  let (di,p) = withlock (fun () -> dbfind M.basedir k) in
 	  try
-	    find_in_deleted di k;
+	    withlock (fun () -> find_in_deleted di k);
 	    raise Exit
 	  with
 	  | Exit -> raise Not_found
 	  | Not_found ->
-	    let datf = Filename.concat di "data" in
-	    if Sys.file_exists datf then
-	      let c = open_in_bin datf in
-	      let l = in_channel_length c in
-	      try
-		if p >= l then
-		  begin
-		    close_in c;
-		    raise (Failure ("Corrupted data file " ^ datf))
-		  end;
-		seek_in c p;
-		let (v,_) = M.seival (c,None) in
-		close_in c;
-		add_to_cache (k,v);
-		v
-	      with exc ->
-		close_in c;
-		raise exc
-	    else
-	      raise Not_found
+	      let datf = Filename.concat di "data" in
+	      withlock
+		(fun () ->
+		  if Sys.file_exists datf then
+		    let c = open_in_bin datf in
+		    let l = in_channel_length c in
+		    try
+		      if p >= l then
+			begin
+			  close_in c;
+			  raise (Failure ("Corrupted data file " ^ datf))
+			end;
+		      seek_in c p;
+		      let (v,_) = M.seival (c,None) in
+		      close_in c;
+		      add_to_cache (k,v);
+		      v
+		    with exc ->
+		      close_in c;
+		      raise exc
+		  else
+		    raise Not_found)
 
     let dbput k v =
       try
-	let (di,p) = dbfind M.basedir k in
-	try
-	  find_in_deleted di k;
-	  undelete di k
-	with Not_found -> () (*** otherwise, it's already there, do nothing ***)
+	withlock
+	  (fun () ->
+	    let (di,p) = dbfind M.basedir k in
+	    try
+	      find_in_deleted di k;
+	      undelete di k
+	    with Not_found -> () (*** otherwise, it's already there, do nothing ***)
+	  )
       with Not_found ->
-	let (d',p) = dbfind_next_space M.basedir k in
-	let indl = load_index d' in
+	let (d',p) = withlock (fun () -> dbfind_next_space M.basedir k) in
+	let indl = withlock (fun () -> load_index d') in
 	let indl2 = List.merge (fun (h',p') (k',q') -> compare h' k') (List.rev indl) [(k,p)] in
-(*	let ch = open_out_bin 0b110110000 (Filename.concat d' "index") in *)
-	let ch = open_out_bin (Filename.concat d' "index") in
-	List.iter
-	  (fun (h,q) ->
-	    let c = seo_hashval seoc h (ch,None) in
-	    let c = seo_int32 seoc (Int32.of_int q) c in
-	    seocf c)
-	  indl2;
-	close_out ch;
-	let ch = open_out_gen [Open_append;Open_creat;Open_binary] 0b110110000 (Filename.concat d' "data") in
-	let c = M.seoval v (ch,None) in
-	seocf c;
-	close_out ch
+	withlock
+	  (fun () ->
+	    let ch = open_out_bin (Filename.concat d' "index") in
+	    List.iter
+	      (fun (h,q) ->
+		let c = seo_hashval seoc h (ch,None) in
+		let c = seo_int32 seoc (Int32.of_int q) c in
+		seocf c)
+	      indl2;
+	    close_out ch;
+	    let ch = open_out_gen [Open_append;Open_creat;Open_binary] 0b110110000 (Filename.concat d' "data") in
+	    let c = M.seoval v (ch,None) in
+	    seocf c;
+	    close_out ch);
+	begin (* while testing, double check things *)
+	  let indl = load_index d' in
+	  if not (indl = List.sort (fun (k',q') (h',p') -> compare h' k') indl) then Printf.printf "After inserting %s into %s index is no longer sorted.\n" (hashval_hexstring k) M.basedir;
+	  try
+	    let u = dbget k in
+	    if not ((String.sub M.basedir (String.length M.basedir - 6) 6) = "header") then if not (u = v) then Printf.printf "%s db failure %s; not equal\n" M.basedir (hashval_hexstring k)
+	  with Not_found ->
+	    Printf.printf "%s; db failure %s; not found\n" M.basedir (hashval_hexstring k)
+	end
 
     let dbdelete k =
       try
-	let (di,p) = dbfind M.basedir k in
+	let (di,p) = withlock (fun () -> dbfind M.basedir k) in
 	try
-	  find_in_deleted di k (*** if has already been deleted, do nothing ***)
+	  withlock (fun () -> find_in_deleted di k); (*** if has already been deleted, do nothing ***)
 	with Not_found ->
 	  let ddel = Filename.concat di "deleted" in
 	  let ch = open_out_gen [Open_append;Open_creat;Open_binary] 0b110110000 ddel in
@@ -439,8 +468,9 @@ module Dbbasic : dbtype = functor (M:sig type t val basedir : string val seival 
 	      Sys.remove (Filename.concat di "data")
 	    end
 	  else if count_deleted di > defrag_limit then
-	    defrag di M.seival M.seoval
-      with Not_found -> () (*** not an entry, do nothing ***)
+	    withlock (fun () -> defrag di M.seival M.seoval);
+      with
+      | Not_found -> () (*** not an entry, do nothing ***)
 
   end
 

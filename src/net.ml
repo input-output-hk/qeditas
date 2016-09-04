@@ -98,6 +98,23 @@ let int_of_msgtype mt =
   | NewHeader -> 34
   | GetHeaders -> 35
 
+let inv_of_msgtype mt =
+  try
+    int_of_msgtype
+      (match mt with
+      | GetTx -> Tx
+      | GetSTx -> STx
+      | GetTxSignatures -> TxSignatures
+      | GetBlock -> Block
+      | GetHeader -> Headers
+      | GetHeaders -> Headers
+      | GetBlockdelta -> Blockdelta
+      | GetCTreeElement -> CTreeElement
+      | GetHConsElement -> HConsElement
+      | GetAsset -> Asset
+      | _ -> raise Not_found)
+  with Not_found -> (-1)
+
 let string_of_msgtype mt =
   match mt with
   | Version -> "Version"
@@ -418,7 +435,9 @@ let rec_msg blkh c =
       Buffer.add_char sb (Char.chr by)
     done;
     let ms = Buffer.contents sb in
+    Printf.fprintf !log "Got msg %s\n" (string_of_msgtype mt);
     if not (mh = hash160 ms) then raise IllformedMsg;
+    Printf.fprintf !log "msg hash correct\n";
     (replyto,mh,mt,ms)
   with
   | _ -> (*** consider it an IllformedMsg no matter what the exception raised was ***)
@@ -537,7 +556,9 @@ let handle_msg replyto mt sin sout cs mh m =
       else
       try
 	let f = Hashtbl.find msgtype_handler mt in
-	f(sin,sout,cs,m)
+	try
+	  f(sin,sout,cs,m)
+	with e -> Printf.fprintf !log "Call to handler for message type %s raised %s\n" (string_of_msgtype mt) (Printexc.to_string e)
       with Not_found ->
 	match mt with
 	| Version -> raise (ProtocolViolation "Version message after handshake")
@@ -554,7 +575,9 @@ let connlistener (s,sin,sout,gcs) =
 	    let tm = Unix.time() in
 	    cs.lastmsgtm <- tm;
 	    if Hashtbl.mem knownpeers cs.addrfrom then Hashtbl.replace knownpeers cs.addrfrom (Int64.of_float tm);
+	    Printf.fprintf !log "about to call handle_msg with msg %s %s\n" (string_of_msgtype mt) (hashval_hexstring mh);
 	    handle_msg replyto mt sin sout cs mh m;
+	    Printf.fprintf !log "handle_msg returned normally %s %s\n" (string_of_msgtype mt) (hashval_hexstring mh);
 	    if cs.banned then raise (ProtocolViolation("banned"))
 	| None -> raise End_of_file (*** connection died; this probably shouldn't happen, as we should have left this thread when it died ***)
       with
@@ -789,7 +812,7 @@ let broadcast_requestdata mt h =
     (fun (lth,sth,(fd,sin,sout,gcs)) ->
        match !gcs with
        | Some(cs) ->
-           if not (List.mem (i,h) cs.invreq) && (List.mem (i,h) cs.rinv || (i >= 26 && i <= 31)) then
+           if not (List.mem (i,h) cs.invreq) && (List.mem (inv_of_msgtype mt,h) cs.rinv || (i >= 26 && i <= 31)) then
              begin
                queue_msg cs mt ms;
                cs.invreq <- (i,h)::cs.invreq
@@ -807,7 +830,7 @@ let find_and_send_requestdata mt h =
       (fun (lth,sth,(fd,sin,sout,gcs)) ->
 	match !gcs with
 	| Some(cs) ->
-            if not cs.banned & not (List.mem (i,h) cs.invreq) && List.mem (i,h) cs.rinv then
+            if not cs.banned && not (List.mem (i,h) cs.invreq) && List.mem (inv_of_msgtype mt,h) cs.rinv then
               begin
 		let mh = queue_msg cs mt ms in
 		cs.invreq <- (i,h)::cs.invreq;
