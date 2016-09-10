@@ -120,7 +120,7 @@ bin/htree.cmx: src/htree.ml bin/htree.cmi bin/hash.cmx
 	$(OCAMLOPT) -I bin -o bin/htree.cmx -c src/htree.ml
 
 bin/db.cmx: src/db.ml bin/db.cmi bin/ser.cmx bin/hash.cmx bin/config.cmx bin/net.cmx
-	$(OCAMLOPT) -I bin -o bin/db.cmx -c src/db.ml
+	$(OCAMLOPT) -I bin -I +threads -o bin/db.cmx -c src/db.ml
 
 bin/mathdata.cmx: src/mathdata.ml bin/mathdata.cmi bin/htree.cmx bin/hash.cmx bin/ser.cmx
 	$(OCAMLOPT) -I bin -o bin/mathdata.cmx -c src/mathdata.ml
@@ -144,7 +144,7 @@ bin/net.cmx: src/net.ml bin/net.cmi bin/ser.cmx bin/hash.cmx bin/version.cmx bin
 	$(OCAMLOPT) -I bin -I +threads -o bin/net.cmx -c src/net.ml
 
 bin/blocktree.cmx: src/blocktree.ml bin/blocktree.cmi bin/ser.cmx bin/hash.cmx bin/version.cmx bin/utils.cmx bin/db.cmx bin/assets.cmx bin/signat.cmx bin/tx.cmx bin/ctre.cmx bin/block.cmx bin/net.cmx
-	$(OCAMLOPT) -I bin -o bin/blocktree.cmx -c src/blocktree.ml
+	$(OCAMLOPT) -I bin -I +threads -o bin/blocktree.cmx -c src/blocktree.ml
 
 bin/setconfig.cmx: src/setconfig.ml bin/setconfig.cmi bin/config.cmx
 	$(OCAMLOPT) -I bin -o bin/setconfig.cmx -c src/setconfig.ml
@@ -195,7 +195,7 @@ bin/htree.cmo: src/htree.ml bin/htree.cmi bin/hash.cmo
 	$(OCAMLC) -I bin -o bin/htree.cmo -c src/htree.ml
 
 bin/db.cmo: src/db.ml bin/db.cmi bin/ser.cmo bin/hash.cmo bin/config.cmo bin/net.cmo
-	$(OCAMLC) -I bin -o bin/db.cmo -c src/db.ml
+	$(OCAMLC) -I bin -I +threads -o bin/db.cmo -c src/db.ml
 
 bin/mathdata.cmo: src/mathdata.ml bin/mathdata.cmi bin/htree.cmo bin/hash.cmo bin/ser.cmo
 	$(OCAMLC) -I bin -o bin/mathdata.cmo -c src/mathdata.ml
@@ -219,7 +219,7 @@ bin/net.cmo: src/net.ml bin/net.cmi bin/ser.cmo bin/hash.cmo bin/version.cmo bin
 	$(OCAMLC) -I bin -I +threads -o bin/net.cmo -c src/net.ml
 
 bin/blocktree.cmo: src/blocktree.ml bin/blocktree.cmi bin/ser.cmo bin/hash.cmo bin/version.cmo bin/utils.cmo bin/db.cmo bin/assets.cmo bin/signat.cmo bin/tx.cmo bin/ctre.cmo bin/block.cmo bin/net.cmo
-	$(OCAMLC) -I bin -o bin/blocktree.cmo -c src/blocktree.ml
+	$(OCAMLC) -I bin -I +threads -o bin/blocktree.cmo -c src/blocktree.ml
 
 bin/setconfig.cmo: src/setconfig.ml bin/setconfig.cmi bin/config.cmo
 	$(OCAMLC) -I bin -o bin/setconfig.cmo -c src/setconfig.ml

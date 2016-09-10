@@ -38,14 +38,14 @@ ocamlc -I bin -o bin/ripemd160.cmo -c src/ripemd160.ml
 ocamlc -I bin -o bin/hash.cmo -c src/hash.ml
 ocamlc -I bin -o bin/htree.cmo -c src/htree.ml
 ocamlc -I bin -I +threads -o bin/net.cmo -c src/net.ml
-ocamlc -I bin -o bin/db.cmo -c src/db.ml
+ocamlc -I bin -I +threads -o bin/db.cmo -c src/db.ml
 ocamlc -I bin -o bin/mathdata.cmo -c src/mathdata.ml
 ocamlc -I bin -o bin/assets.cmo -c src/assets.ml
 ocamlc -I bin -o bin/tx.cmo -c src/tx.ml
 ocamlc -I bin -o bin/ctre.cmo -c src/ctre.ml
 ocamlc -I bin -o bin/ctregraft.cmo -c src/ctregraft.ml
 ocamlc -I bin -o bin/block.cmo -c src/block.ml
-ocamlc -I bin -o bin/blocktree.cmo -c src/blocktree.ml
+ocamlc -I bin -I +threads -o bin/blocktree.cmo -c src/blocktree.ml
 ocamlc -I bin -o bin/setconfig.cmo -c src/setconfig.ml
 ocamlc -I bin -o bin/commands.cmo -c src/commands.ml
 ocamlc -I bin -I +threads -o bin/qeditas.cmo -c src/qeditas.ml
