@@ -263,44 +263,43 @@ let rec validate_block_of_node newnode thyroot sigroot tinf blkhght h blkdel cs 
   if known_thytree_p thyroot && known_sigtree_p sigroot then (*** these should both be known if the parent block has been validated ***)
     let BlocktreeNode(_,_,_,tr2,sr2,_,tinf2,_,newcumulstake,blkhght2,vs,_,chlr) = newnode in
     Printf.fprintf !log "About to check if block %s at height %Ld is valid\n" (hashval_hexstring h) blkhght;
-    if valid_block (lookup_thytree thyroot) (lookup_sigtree sigroot) blkhght tinf blk then (*** temporary: don't check the block while testing basic networking ***)
-      begin (*** if valid_block succeeds, then latesttht and latestsigt will be set to the transformed theory tree and signature tree ***)
-	vs := ValidBlock;
-	Hashtbl.remove tovalidate h;
-	DbBlockDelta.dbput h blkdel;
-	let BlocktreeNode(_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
-	if gt_big_int newcumulstake bestcumulstk then
+    begin
+      match valid_block (lookup_thytree thyroot) (lookup_sigtree sigroot) blkhght tinf blk with
+      | Some(tht2,sigt2) ->
+	  vs := ValidBlock;
+	  Hashtbl.remove tovalidate h;
+	  DbBlockDelta.dbput h blkdel;
+	  let BlocktreeNode(_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
+	  if gt_big_int newcumulstake bestcumulstk then
+	    begin
+	      bestnode := newnode;
+	      netblkh := node_blockheight !bestnode
+	    end;
+	  add_thytree blkhd.newtheoryroot tht2;
+	  add_sigtree blkhd.newsignaroot sigt2;
+	  broadcast_inv [(int_of_msgtype Blockdelta,blkhght,h)];
+	  (*** construct a transformed tree consisting of elements ***)
 	  begin
-	    bestnode := newnode;
-	    netblkh := node_blockheight !bestnode
+	    let prevc = load_expanded_ctree (ctree_of_block blk) in
+	    let (cstk,txl) = txl_of_block blk in (*** the coinstake tx is performed last, i.e., after the txs in the block. ***)
+	    match tx_octree_trans blkhght cstk (txl_octree_trans blkhght txl (Some(prevc))) with
+	    | Some(newc) -> ignore (save_ctree_elements newc)
+	    | None -> raise (Failure("transformed tree was empty, although block seemed to be valid"))
 	  end;
-	add_thytree blkhd.newtheoryroot !latesttht;
-	add_sigtree blkhd.newsignaroot !latestsigt;
-	broadcast_inv [(int_of_msgtype Blockdelta,blkhght,h)];
-	(*** construct a transformed tree consisting of elements ***)
-	begin
-	  let prevc = load_expanded_ctree (ctree_of_block blk) in
-	  let (cstk,txl) = txl_of_block blk in (*** the coinstake tx is performed last, i.e., after the txs in the block. ***)
-	  match tx_octree_trans blkhght cstk (txl_octree_trans blkhght txl (Some(prevc))) with
-	  | Some(newc) -> ignore (save_ctree_elements newc)
-	  | None -> raise (Failure("transformed tree was empty, although block seemed to be valid"))
-	end;
-	List.iter
-	  (fun (h,n) ->
-	    let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,vs,_,_) = n in
-	    match !vs with
-	    | Waiting(_,Some(blkdel,cs)) -> validate_block_of_node n tr2 sr2 tinf2 blkhght2 h blkdel cs
-	    | _ -> ())
-	  !chlr
-      end
-    else
-      begin (*** We can't mark it as invalid because the peer may be misbehaving and sending a blockdelta that does not correspond to the header. In this case, ban the peer, drop the connection, and request it from someone else. ***)
-	Printf.fprintf !log "Block delta for %s was not valid.\n" (hashval_hexstring h);
-	let tm = Unix.time() in
-	cs.banned <- true;
-	Hashtbl.add bannedpeers cs.addrfrom ();
-	vs := Waiting(tm,None)
-      end
+	  List.iter
+	    (fun (h,n) ->
+	      let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,vs,_,_) = n in
+	      match !vs with
+	      | Waiting(_,Some(blkdel,cs)) -> validate_block_of_node n tr2 sr2 tinf2 blkhght2 h blkdel cs
+	      | _ -> ())
+	    !chlr
+      | None -> (*** We can't mark it as invalid because the peer may be misbehaving and sending a blockdelta that does not correspond to the header. In this case, ban the peer, drop the connection, and request it from someone else. ***)
+	  Printf.fprintf !log "Block delta for %s was not valid.\n" (hashval_hexstring h);
+	  let tm = Unix.time() in
+	  cs.banned <- true;
+	  Hashtbl.add bannedpeers cs.addrfrom ();
+	  vs := Waiting(tm,None)
+    end
   else
     raise (Failure("parent was validated but thyroot and/or sigroot is not known"));;
 
@@ -359,17 +358,18 @@ and process_new_header_ab h hh blkh1 blkhd1 a initialization knownvalid =
 		  let blkdel = DbBlockDelta.dbget h in
 		  let blk = (blkh1,blkdel) in
 		  if known_thytree_p thyroot && known_sigtree_p sigroot then (*** these should both be known if the parent block has been validated ***)
-		    if valid_block (lookup_thytree thyroot) (lookup_sigtree sigroot) blkhght currtinfo blk then
-		      validated := ValidBlock
-		    else
-		      begin (*** should not have happened, delete it from the database and request it again. ***)
-			DbBlockDelta.dbdelete h;
-			Hashtbl.add tovalidate h ();
-			try
-			  find_and_send_requestdata GetBlockdelta h
-			with Not_found ->
-			  Printf.fprintf !log "No source for block delta of %s; must wait until it is explicitly requested\n" hh
-		      end
+		    begin
+		      match valid_block (lookup_thytree thyroot) (lookup_sigtree sigroot) blkhght currtinfo blk with
+		      | Some(_,_) ->
+			  validated := ValidBlock
+		      | None -> (*** should not have happened, delete it from the database and request it again. ***)
+			  DbBlockDelta.dbdelete h;
+			  Hashtbl.add tovalidate h ();
+			  try
+			    find_and_send_requestdata GetBlockdelta h
+			  with Not_found ->
+			    Printf.fprintf !log "No source for block delta of %s; must wait until it is explicitly requested\n" hh
+		    end
 		  else
 		    raise (Failure "unknown thyroot or sigroot while trying to validate block")
 		with Not_found ->

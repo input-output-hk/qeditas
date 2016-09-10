@@ -680,233 +680,236 @@ let check_poforfeit blkh ((bhd1,bhs1),(bhd2,bhs2),bhl1,bhl2,v,fal) tr =
     else
       false
 
-let latesttht : ttree option ref = ref None
-let latestsigt : stree option ref = ref None
-
 let valid_block_a tht sigt blkh tinfo b ((aid,bday,obl,u) as a) stkaddr =
   let ((bhd,bhs),bd) = b in
   (*** The header is valid. ***)
-  valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,u)
-    &&
-  tx_outputs_valid bd.stakeoutput
-    &&
-   (*** ensure that if the stake has an explicit obligation (e.g., it is borrowed for staking), then the obligation isn't changed; otherwise the staker could steal the borrowed stake; unchanged copy should be first output ***)
-   begin
-     match a with
-     | (_,_,Some(beta,n,r),Currency(v)) -> (*** stake may be on loan for staking ***)
-	 begin
-	   match bd.stakeoutput with
-	   | (alpha2,(Some(beta2,n2,r2),Currency(v2)))::remouts -> (*** the first output must recreate the loaned asset. It's a reward iff it was already a reward. The remaining outputs are marked as rewards and are subject to forfeiture. ***)
-               r2 = r
-		 &&
-	       alpha2 = stkaddr
-		 &&
-	       beta2 = beta
-		 &&
-	       n2 = n
-		 &&
-	       v2 = v
-		 &&
-	       begin
-		 try (*** all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for at least reward_locktime many blocks ***)
-		   ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh (reward_locktime blkh) -> false | _ -> true) remouts);
-		   false
-		 with Not_found -> true
-	       end
-	   | _ ->
-	       false
-	 end
-     | (_,_,None,Currency(v)) -> (*** stake has the default obligation ***)
-	 begin (*** the first output is optionally the stake with the default obligation (not a reward, immediately spendable) with all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for at least reward_locktime many blocks ***)
-	   match bd.stakeoutput with
-	   | (alpha2,(_,Currency(v2)))::remouts -> (*** allow the staker to choose the new obligation for the staked asset [Feb 2016] ***)
-	       begin
-		 alpha2 = stkaddr
-		   &&
-		 v2 = v
-		   &&
-		 try
-		   ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh (reward_locktime blkh) -> false | _ -> true) remouts);
-		   false
-		 with Not_found -> true
-	       end
-	   | _ ->
-	       try
-		 ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh (reward_locktime blkh) -> false | _ -> true) bd.stakeoutput);
-		 false
-	       with Not_found -> true
-	 end
-     | _ -> false (*** this means the staked asset isn't currency, which is not allowed ***)
-   end
-    &&
-  let tr = ctree_of_block b in (*** let tr be the ctree of the block, used often below ***)
-  begin
-    try
-      let z = ctree_supports_tx false false tht sigt blkh (coinstake b) tr in (*** the ctree must support the tx without the need to expand hashes using the database or requesting from peers ***)
-      z >= rewfn blkh
-    with NotSupported -> false
-  end
-    &&
-  (*** There are no duplicate transactions. (Comparing the signatures would be an error since they contain abstract values.) ***)
-  no_dups (List.map (fun (tau,_) -> tau) bd.blockdelta_stxl)
-    &&
-  (*** The cgraft is valid. ***)
-  cgraft_valid bd.prevledgergraft
-    &&
-  let stakein = (stkaddr,bhd.stakeassetid) in
-  (*** Each transaction in the delta has supported elaborated assets and is appropriately signed. ***)
-  (*** Also, each transaction in the delta is valid and supported without a reward. ***)
-  (*** Also, no transaction has the stake asset as an input. ***)
-  (*** None of the outputs say they are rewards. ***)
-  begin
-    try
-      List.fold_left
-	(fun sgvb stau ->
-	  match stau with
-	  | ((inpl,outpl) as tau,_) ->
-	      let norew =
-		begin
+  if (valid_blockheader_a blkh tinfo (bhd,bhs) (aid,bday,obl,u)
+	&&
+      tx_outputs_valid bd.stakeoutput
+	&&
+      (*** ensure that if the stake has an explicit obligation (e.g., it is borrowed for staking), then the obligation isn't changed; otherwise the staker could steal the borrowed stake; unchanged copy should be first output ***)
+      begin
+	match a with
+	| (_,_,Some(beta,n,r),Currency(v)) -> (*** stake may be on loan for staking ***)
+	    begin
+	      match bd.stakeoutput with
+	      | (alpha2,(Some(beta2,n2,r2),Currency(v2)))::remouts -> (*** the first output must recreate the loaned asset. It's a reward iff it was already a reward. The remaining outputs are marked as rewards and are subject to forfeiture. ***)
+		  r2 = r
+		    &&
+		  alpha2 = stkaddr
+		    &&
+		  beta2 = beta
+		    &&
+		  n2 = n
+		    &&
+		  v2 = v
+		    &&
+		  begin
+		    try (*** all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for at least reward_locktime many blocks ***)
+		      ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh (reward_locktime blkh) -> false | _ -> true) remouts);
+		      false
+		    with Not_found -> true
+		  end
+	      | _ ->
+		  false
+	    end
+	| (_,_,None,Currency(v)) -> (*** stake has the default obligation ***)
+	    begin (*** the first output is optionally the stake with the default obligation (not a reward, immediately spendable) with all other outputs must be marked as rewards and are subject to forfeiture; they also must acknowledge they cannot be spent for at least reward_locktime many blocks ***)
+	      match bd.stakeoutput with
+	      | (alpha2,(_,Currency(v2)))::remouts -> (*** allow the staker to choose the new obligation for the staked asset [Feb 2016] ***)
+		  begin
+		    alpha2 = stkaddr
+		      &&
+		    v2 = v
+		      &&
+		    try
+		      ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh (reward_locktime blkh) -> false | _ -> true) remouts);
+		      false
+		    with Not_found -> true
+		  end
+	      | _ ->
 		  try
-		    ignore (List.find 
-			      (fun (a,(obl,v)) ->
-				match obl with
-				| Some(_,_,r) when r -> true
-				| _ -> false)
-			      outpl);
+		    ignore (List.find (fun (alpha3,(obl,v)) -> not (alpha3 = stkaddr) || match obl with Some(_,n,r) when r && n >= Int64.add blkh (reward_locktime blkh) -> false | _ -> true) bd.stakeoutput);
 		    false
 		  with Not_found -> true
-		end
-	      in
-	      let aal = ctree_lookup_input_assets false false inpl tr in
-	      let al = List.map (fun (_,a) -> a) aal in
-	      norew
-		&& sgvb
-		&& not (List.mem stakein inpl)
-		&& tx_signatures_valid blkh al stau
-		&& tx_valid tau
-		&& ctree_supports_tx_2 false false tht sigt blkh tau aal al tr <= 0L
-	)
-	true
-	bd.blockdelta_stxl
-    with NotSupported -> false
-  end
-    &&
-  (*** No distinct transactions try to spend the same asset. ***)
-  (*** Also, ownership is not created for the same address alpha by two txs in the block. ***)
-  begin
-    try
-      let stxlr = ref bd.blockdelta_stxl in
-      while not (!stxlr = []) do
-	match !stxlr with
-	| ((inpl1,outpl1),_)::stxr ->
-	    let hl1 = List.map (fun (_,h) -> h) inpl1 in
-	    let oo1 = ref [] in
-	    let op1 = ref [] in
-	    List.iter
-	      (fun (alpha1,(obl1,u1)) ->
-		match u1 with
-		| OwnsObj(_,_) -> oo1 := alpha1::!oo1
-		| OwnsProp(_,_) -> op1 := alpha1::!op1
-		| _ -> ())
-	      outpl1;
-	    stxlr := stxr;
-	    List.iter
-	      (fun ((inpl2,outpl2),_) ->
-		List.iter
-		  (fun (_,h) ->
-		    if List.mem h hl1 then
-		      raise NotSupported (*** This is a minor abuse of this exception. There could be a separate exception for this case. ***)
-		  ) inpl2;
-		List.iter
-		  (fun (alpha2,(obl2,u2)) ->
-		    match u2 with
-		    | OwnsObj(_,_) ->
-			if List.mem alpha2 !oo1 then raise NotSupported
-		    | OwnsProp(_,_) ->
-			if List.mem alpha2 !op1 then raise NotSupported
-		    | _ -> ()
-		  )
-		  outpl2
+	    end
+	| _ -> false (*** this means the staked asset isn't currency, which is not allowed ***)
+      end)
+  then
+    let tr = ctree_of_block b in (*** let tr be the ctree of the block, used often below ***)
+    if ((try let z = ctree_supports_tx false false tht sigt blkh (coinstake b) tr in (*** the ctree must support the tx without the need to expand hashes using the database or requesting from peers ***)
+    z >= rewfn blkh
+    with NotSupported -> false)
+	  &&
+	(*** There are no duplicate transactions. (Comparing the signatures would be an error since they contain abstract values.) ***)
+	no_dups (List.map (fun (tau,_) -> tau) bd.blockdelta_stxl)
+	  &&
+	(*** The cgraft is valid. ***)
+	cgraft_valid bd.prevledgergraft
+	  &&
+	let stakein = (stkaddr,bhd.stakeassetid) in
+	(*** Each transaction in the delta has supported elaborated assets and is appropriately signed. ***)
+	(*** Also, each transaction in the delta is valid and supported without a reward. ***)
+	(*** Also, no transaction has the stake asset as an input. ***)
+	(*** None of the outputs say they are rewards. ***)
+	begin
+	  try
+	    List.fold_left
+	      (fun sgvb stau ->
+		match stau with
+		| ((inpl,outpl) as tau,_) ->
+		    let norew =
+		      begin
+			try
+			  ignore (List.find 
+				    (fun (a,(obl,v)) ->
+				      match obl with
+				      | Some(_,_,r) when r -> true
+				      | _ -> false)
+				    outpl);
+			  false
+			with Not_found -> true
+		      end
+		    in
+		    let aal = ctree_lookup_input_assets false false inpl tr in
+		    let al = List.map (fun (_,a) -> a) aal in
+		    norew
+		      && sgvb
+		      && not (List.mem stakein inpl)
+		      && tx_signatures_valid blkh al stau
+		      && tx_valid tau
+		      && ctree_supports_tx_2 false false tht sigt blkh tau aal al tr <= 0L
 	      )
-	      stxr
-	| [] -> ()
-      done;
-      true
-    with NotSupported -> false
-  end
-    &&
-  (*** Ownership is not created for the same address alpha by the coinstake and a tx in the block. ***)
-  begin
-    try
-      List.iter
-	(fun (alpha,(obl,u)) ->
-	  match u with
-	  | OwnsObj(_,_) ->
-	      List.iter
-		(fun ((_,outpl2),_) ->
+	      true
+	      bd.blockdelta_stxl
+	  with NotSupported -> false
+	end
+	  &&
+	(*** No distinct transactions try to spend the same asset. ***)
+	(*** Also, ownership is not created for the same address alpha by two txs in the block. ***)
+	begin
+	  try
+	    let stxlr = ref bd.blockdelta_stxl in
+	    while not (!stxlr = []) do
+	      match !stxlr with
+	      | ((inpl1,outpl1),_)::stxr ->
+		  let hl1 = List.map (fun (_,h) -> h) inpl1 in
+		  let oo1 = ref [] in
+		  let op1 = ref [] in
 		  List.iter
-		    (fun (alpha2,(obl2,u2)) ->
-		      if alpha = alpha2 then
-			match u2 with
-			| OwnsObj(_,_) -> raise NotSupported
-			| _ -> ())
-		    outpl2)
-		bd.blockdelta_stxl
-	  | OwnsProp(_,_) ->
-	      List.iter
-		(fun ((_,outpl2),_) ->
+		    (fun (alpha1,(obl1,u1)) ->
+		      match u1 with
+		      | OwnsObj(_,_) -> oo1 := alpha1::!oo1
+		      | OwnsProp(_,_) -> op1 := alpha1::!op1
+		      | _ -> ())
+		    outpl1;
+		  stxlr := stxr;
 		  List.iter
-		    (fun (alpha2,(obl2,u2)) ->
-		      if alpha = alpha2 then
-			match u2 with
-			| OwnsProp(_,_) -> raise NotSupported
-			| _ -> ())
-		    outpl2)
-		bd.blockdelta_stxl
-	  | _ -> ()
-	)
-	bd.stakeoutput;
-      true
-    with NotSupported -> false
-  end
-    &&
-   let (forfeitval,forfok) =
-     begin
-     match bd.forfeiture with
-     | None -> (0L,true)
-     | Some(bh1,bh2,bhl1,bhl2,v,fal) ->
-	 let forfok = check_poforfeit blkh (bh1,bh2,bhl1,bhl2,v,fal) tr in
-  	 (v,forfok)
-     end
-   in
-   forfok
-     &&
-  (***
-      The root of the transformed ctree is the newledgerroot in the header.
-   ***)
-  begin
-    let (cstk,txl) = txl_of_block b in (*** the coinstake tx is performed last, i.e., after the txs in the block. ***)
-    match tx_octree_trans blkh cstk (txl_octree_trans blkh txl (Some(tr))) with
-    | Some(tr2) ->
-	bhd.newledgerroot = ctree_hashroot tr2
-    | None -> false
-  end
-     &&
-  (*** The total inputs and outputs match up with the declared fee. ***)
-  let tau = tx_of_block b in (*** let tau be the combined tx of the block ***)
-  let (inpl,outpl) = tau in
-  let aal = ctree_lookup_input_assets false false inpl tr in
-  let al = List.map (fun (_,a) -> a) aal in
-  (*** Originally I added totalfees to the out_cost, but this was wrong since the totalfees are in the stake output which is already counted in out_cost. I don't really need totalfees to be explicit. ***)
-  out_cost outpl = Int64.add (asset_value_sum blkh al) (Int64.add (rewfn blkh) forfeitval)
-    &&
-  let newtht = txout_update_ottree outpl tht in
-  latesttht := newtht;
-  bhd.newtheoryroot = ottree_hashroot newtht
-    &&
-  let newsigt = txout_update_ostree outpl sigt in
-  latestsigt := newsigt;
-  bhd.newsignaroot = ostree_hashroot newsigt
+		    (fun ((inpl2,outpl2),_) ->
+		      List.iter
+			(fun (_,h) ->
+			  if List.mem h hl1 then
+			    raise NotSupported (*** This is a minor abuse of this exception. There could be a separate exception for this case. ***)
+			) inpl2;
+		      List.iter
+			(fun (alpha2,(obl2,u2)) ->
+			  match u2 with
+			  | OwnsObj(_,_) ->
+			      if List.mem alpha2 !oo1 then raise NotSupported
+			  | OwnsProp(_,_) ->
+			      if List.mem alpha2 !op1 then raise NotSupported
+			  | _ -> ()
+			)
+			outpl2
+		    )
+		    stxr
+	      | [] -> ()
+	    done;
+	    true
+	  with NotSupported -> false
+	end
+	  &&
+	(*** Ownership is not created for the same address alpha by the coinstake and a tx in the block. ***)
+	begin
+	  try
+	    List.iter
+	      (fun (alpha,(obl,u)) ->
+		match u with
+		| OwnsObj(_,_) ->
+		    List.iter
+		      (fun ((_,outpl2),_) ->
+			List.iter
+			  (fun (alpha2,(obl2,u2)) ->
+			    if alpha = alpha2 then
+			      match u2 with
+			      | OwnsObj(_,_) -> raise NotSupported
+			      | _ -> ())
+			  outpl2)
+		      bd.blockdelta_stxl
+		| OwnsProp(_,_) ->
+		    List.iter
+		      (fun ((_,outpl2),_) ->
+			List.iter
+			  (fun (alpha2,(obl2,u2)) ->
+			    if alpha = alpha2 then
+			      match u2 with
+			      | OwnsProp(_,_) -> raise NotSupported
+			      | _ -> ())
+			  outpl2)
+		      bd.blockdelta_stxl
+		| _ -> ()
+	      )
+	      bd.stakeoutput;
+	    true
+	  with NotSupported -> false
+	end)
+    then
+      let (forfeitval,forfok) =
+	begin
+	  match bd.forfeiture with
+	  | None -> (0L,true)
+	  | Some(bh1,bh2,bhl1,bhl2,v,fal) ->
+	      let forfok = check_poforfeit blkh (bh1,bh2,bhl1,bhl2,v,fal) tr in
+  	      (v,forfok)
+	end
+      in
+      if (forfok
+	    &&
+	  (***
+	      The root of the transformed ctree is the newledgerroot in the header.
+	   ***)
+	  begin
+	    let (cstk,txl) = txl_of_block b in (*** the coinstake tx is performed last, i.e., after the txs in the block. ***)
+	    match tx_octree_trans blkh cstk (txl_octree_trans blkh txl (Some(tr))) with
+	    | Some(tr2) ->
+		bhd.newledgerroot = ctree_hashroot tr2
+	    | None -> false
+	  end)
+      then
+	(*** The total inputs and outputs match up with the declared fee. ***)
+	let tau = tx_of_block b in (*** let tau be the combined tx of the block ***)
+	let (inpl,outpl) = tau in
+	let aal = ctree_lookup_input_assets false false inpl tr in
+	let al = List.map (fun (_,a) -> a) aal in
+	(*** Originally I added totalfees to the out_cost, but this was wrong since the totalfees are in the stake output which is already counted in out_cost. I don't really need totalfees to be explicit. ***)
+	if out_cost outpl = Int64.add (asset_value_sum blkh al) (Int64.add (rewfn blkh) forfeitval) then
+	  let newtht = txout_update_ottree outpl tht in
+	  let newsigt = txout_update_ostree outpl sigt in
+	  if bhd.newtheoryroot = ottree_hashroot newtht
+	      &&
+	    bhd.newsignaroot = ostree_hashroot newsigt
+	  then
+	    Some(newtht,newsigt)
+	  else
+	    None
+	else
+	  None
+      else
+	None
+    else
+      None
+  else
+    None
 
 let valid_block tht sigt blkh tinfo (b:block) =
   let ((bhd,_),_) = b in
@@ -914,8 +917,8 @@ let valid_block tht sigt blkh tinfo (b:block) =
   try
     valid_block_a tht sigt blkh tinfo b (blockheader_stakeasset bhd) stkaddr
   with
-  | HeaderStakedAssetNotMin -> false
-  | HeaderNoStakedAsset -> false
+  | HeaderStakedAssetNotMin -> None
+  | HeaderNoStakedAsset -> None
 
 type blockchain = block * block list
 type blockheaderchain = blockheader * blockheader list
@@ -970,21 +973,26 @@ let rec valid_blockchain_aux blkh bl =
       if blkh > 1L then
 	let (pbhd,_) = pbh in
 	let (tht,sigt) = valid_blockchain_aux (Int64.sub blkh 1L) ((pbh,pbd)::br) in
-	if blockheader_succ pbh bh && valid_block tht sigt blkh pbhd.tinfo (bh,bd) then
-	  (txout_update_ottree (tx_outputs (tx_of_block (bh,bd))) tht,
-	   txout_update_ostree (tx_outputs (tx_of_block (bh,bd))) sigt)
+	if blockheader_succ pbh bh then
+	  begin
+	    match valid_block tht sigt blkh pbhd.tinfo (bh,bd) with
+	    | Some(tht2,sigt2) -> (tht2,sigt2)
+	    | None -> raise NotSupported
+	  end
 	else
 	  raise NotSupported
       else
 	raise NotSupported
   | [(bh,bd)] ->
       let (bhd,bhs) = bh in
-      if blkh = 1L && valid_block None None blkh (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bh,bd)
-	  && bhd.prevblockhash = None
+      if blkh = 1L && bhd.prevblockhash = None
 	  && blockheader_succ_a !genesisledgerroot !Config.genesistimestamp (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) bh
       then
-	(txout_update_ottree (tx_outputs (tx_of_block (bh,bd))) None,
-	 txout_update_ostree (tx_outputs (tx_of_block (bh,bd))) None)
+	begin
+	  match valid_block None None blkh (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) (bh,bd) with
+	  | Some(tht2,sigt2) -> (tht2,sigt2)
+	  | None -> raise NotSupported
+	end
       else
 	raise NotSupported
   | [] -> raise NotSupported

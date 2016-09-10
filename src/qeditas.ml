@@ -527,7 +527,7 @@ let stakingthread () =
 		    (Printf.fprintf !log "New block header is valid\n"; flush !log)
 		  else
 		    (Printf.fprintf !log "New block header is not valid\n"; flush !log; let datadir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in dumpstate (Filename.concat datadir "stakedinvalidblockheaderstate"); Hashtbl.remove nextstakechances pbhh; raise StakingProblemPause);
-		  if valid_block None None blkh (csm0,fsm0,tar0) (bhnew,bdnew) then
+		  if not ((valid_block None None blkh (csm0,fsm0,tar0) (bhnew,bdnew)) = None) then
 		    (Printf.fprintf !log "New block is valid\n"; flush stdout)
 		  else
 		    (Printf.fprintf !log "New block is not valid\n"; flush !log; let datadir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in dumpstate (Filename.concat datadir "stakedinvalidblockstate"); Hashtbl.remove nextstakechances pbhh; raise StakingProblemPause);
