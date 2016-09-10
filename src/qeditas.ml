@@ -862,8 +862,17 @@ let initialize () =
 	exit 1;
       end;
     lock datadir;
+    Printf.printf "Initializing the database..."; flush stdout;
     let dbdir = Filename.concat datadir "db" in
     dbconfig dbdir; (*** configure the database ***)
+    DbAsset.dbinit();
+    DbTx.dbinit();
+    DbTxSignatures.dbinit();
+    DbHConsElt.dbinit();
+    DbCTreeElt.dbinit();
+    DbBlockHeader.dbinit();
+    DbBlockDelta.dbinit();
+    Printf.printf "Initialized.\n"; flush stdout;
     openlog(); (*** Don't open the log until the config vars are set, so if we know whether or not it's testnet. ***)
     if !Config.seed = "" && !Config.lastcheckpoint = "" then
       begin

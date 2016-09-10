@@ -92,6 +92,7 @@ val sei_block : (int -> 'a -> int * 'a) -> 'a -> block * 'a
 
 module DbBlockHeader :
     sig
+      val dbinit : unit -> unit
       val dbget : Hash.hashval -> blockheader
       val dbexists : Hash.hashval -> bool
       val dbput : Hash.hashval -> blockheader -> unit
@@ -100,6 +101,7 @@ module DbBlockHeader :
 
 module DbBlockDelta :
     sig
+      val dbinit : unit -> unit
       val dbget : Hash.hashval -> blockdelta
       val dbexists : Hash.hashval -> bool
       val dbput : Hash.hashval -> blockdelta -> unit

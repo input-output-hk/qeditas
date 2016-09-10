@@ -676,7 +676,7 @@ let ensure_dir_exists d =
 exception FoundHashval of hashval
 
 module DbHConsElt =
-  Dbbasic
+  Dbbasic2
     (struct
       type t = hashval * hashval option
       let basedir = "hconselt"
@@ -805,7 +805,7 @@ let nehlist_lookup_neg_prop_owner exp req hl =
   | None -> false
 
 module DbCTreeElt =
-  Dbbasic
+  Dbbasic2
     (struct
       type t = ctree
       let basedir = "ctreeelt"

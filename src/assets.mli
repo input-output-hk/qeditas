@@ -1,4 +1,4 @@
-(* Copyright (c) 2015 The Qeditas developers *)
+(* Copyright (c) 2015-2016 The Qeditas developers *)
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
@@ -88,6 +88,7 @@ val sei_addr_asset : (int -> 'a -> int * 'a) -> 'a -> addr_asset * 'a
 
 module DbAsset :
     sig
+      val dbinit : unit -> unit
       val dbget : Hash.hashval -> asset
       val dbexists : Hash.hashval -> bool
       val dbput : Hash.hashval -> asset -> unit

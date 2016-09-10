@@ -1,4 +1,4 @@
-(* Copyright (c) 2015 The Qeditas developers *)
+(* Copyright (c) 2015-2016 The Qeditas developers *)
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
@@ -272,7 +272,7 @@ let sei_txsigs i c = sei_prod (sei_list (sei_option sei_gensignat_or_ref)) (sei_
 let seo_stx o g c = seo_prod seo_tx seo_txsigs o g c
 let sei_stx i c = sei_prod sei_tx sei_txsigs i c
 
-module DbTx = Dbbasic (struct type t = tx let basedir = "tx" let seival = sei_tx seic let seoval = seo_tx seoc end)
+module DbTx = Dbbasic2 (struct type t = tx let basedir = "tx" let seival = sei_tx seic let seoval = seo_tx seoc end)
 
-module DbTxSignatures = Dbbasic (struct type t = gensignat_or_ref option list * gensignat_or_ref option list let basedir = "txsigs" let seival = sei_txsigs seic let seoval = seo_txsigs seoc end);;
+module DbTxSignatures = Dbbasic2 (struct type t = gensignat_or_ref option list * gensignat_or_ref option list let basedir = "txsigs" let seival = sei_txsigs seic let seoval = seo_txsigs seoc end);;
 

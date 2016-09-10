@@ -1,4 +1,4 @@
-(* Copyright (c) 2015 The Qeditas developers *)
+(* Copyright (c) 2015-2016 The Qeditas developers *)
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
@@ -43,6 +43,7 @@ val sei_stx : (int -> 'a -> int * 'a) -> 'a -> stx * 'a
 
 module DbTx :
     sig
+      val dbinit : unit -> unit
       val dbget : Hash.hashval -> tx
       val dbexists : Hash.hashval -> bool
       val dbput : Hash.hashval -> tx -> unit
@@ -51,6 +52,7 @@ module DbTx :
 
 module DbTxSignatures :
     sig
+      val dbinit : unit -> unit
       val dbget : Hash.hashval -> gensignat_or_ref option list * gensignat_or_ref option list
       val dbexists : Hash.hashval -> bool
       val dbput : Hash.hashval -> gensignat_or_ref option list * gensignat_or_ref option list -> unit

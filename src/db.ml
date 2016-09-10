@@ -45,6 +45,29 @@ let load_index d =
   else
     []
 
+let load_index_to_hashtable ht d =
+  let dind = Filename.concat d "index" in
+  if Sys.file_exists dind then
+    let ch = open_in_bin dind in
+    let c = ref (ch,None) in
+    begin
+      try
+	while true do
+	  let (h,c2) = sei_hashval seic !c in
+	  let (p,c2) = sei_int32 seic !c in
+	  Hashtbl.add ht h (d,Int32.to_int p);
+	  c := c2
+	done
+      with
+      | End_of_file ->
+	  close_in ch
+      | exc ->
+	  close_in ch;
+	  raise exc
+    end
+  else
+    ()
+
 let count_index d =
   let dind = Filename.concat d "index" in
   if Sys.file_exists dind then
@@ -157,6 +180,28 @@ let load_deleted d =
     end
   else
     []
+
+let load_deleted_to_hashtable ht d =
+  let ddel = Filename.concat d "deleted" in
+  if Sys.file_exists ddel then
+    let ch = open_in_bin ddel in
+    let c = ref (ch,None) in
+    begin
+      try
+	while true do
+	  let (h,c2) = sei_hashval seic !c in
+	  Hashtbl.add ht h ();
+	  c := c2
+	done
+      with
+      | End_of_file ->
+	  close_in ch
+      | exc ->
+	  close_in ch;
+	  raise exc
+    end
+  else
+    ()
 
 let undelete d k =
   let dl = load_deleted d in
@@ -310,13 +355,14 @@ let defrag d seival seoval =
 
 module type dbtype = functor (M:sig type t val basedir : string val seival : (seict -> t * seict) val seoval : (t -> seoct -> seoct) end) ->
   sig
+    val dbinit : unit -> unit
     val dbget : hashval -> M.t
     val dbexists : hashval -> bool
     val dbput : hashval -> M.t -> unit
     val dbdelete : hashval -> unit
   end
 
-module Dbbasic : dbtype = functor (M:sig type t val basedir : string val seival : (seict -> t * seict) val seoval : (t -> seoct -> seoct) end) ->
+module Dbbasic2 : dbtype = functor (M:sig type t val basedir : string val seival : (seict -> t * seict) val seoval : (t -> seoct -> seoct) end) ->
   struct
     let mutexdb : Mutex.t = Mutex.create()
 
@@ -330,150 +376,96 @@ module Dbbasic : dbtype = functor (M:sig type t val basedir : string val seival 
 	Mutex.unlock mutexdb;
 	raise e
 
-    let cache1 : (hashval,M.t) Hashtbl.t ref = ref (Hashtbl.create max_in_cache)
-    let cache2 : (hashval,M.t) Hashtbl.t ref = ref (Hashtbl.create max_in_cache)
+    let indextable : (hashval,(string * int)) Hashtbl.t = Hashtbl.create 10000
+    let deletedtable : (hashval,unit) Hashtbl.t = Hashtbl.create 100
 
-    let add_to_cache (k,v) =
-      if Hashtbl.length !cache1 < max_in_cache then
-	Hashtbl.add !cache1 k v
-      else
-	let h = !cache2 in
-	cache2 := !cache1;
-	Hashtbl.clear h;
-	Hashtbl.add h k v;
-	cache1 := h
+    let rec dbinit_a d =
+      if Sys.file_exists d && Sys.is_directory d then
+	begin
+	  List.iter
+	    (fun h ->
+	      dbinit_a (Filename.concat d h))
+	    ["00";"01";"02";"03";"04";"05";"06";"07";"08";"09";"0a";"0b";"0c";"0d";"0e";"0f";"10";"11";"12";"13";"14";"15";"16";"17";"18";"19";"1a";"1b";"1c";"1d";"1e";"1f";"20";"21";"22";"23";"24";"25";"26";"27";"28";"29";"2a";"2b";"2c";"2d";"2e";"2f";"30";"31";"32";"33";"34";"35";"36";"37";"38";"39";"3a";"3b";"3c";"3d";"3e";"3f";"40";"41";"42";"43";"44";"45";"46";"47";"48";"49";"4a";"4b";"4c";"4d";"4e";"4f";"50";"51";"52";"53";"54";"55";"56";"57";"58";"59";"5a";"5b";"5c";"5d";"5e";"5f";"60";"61";"62";"63";"64";"65";"66";"67";"68";"69";"6a";"6b";"6c";"6d";"6e";"6f";"70";"71";"72";"73";"74";"75";"76";"77";"78";"79";"7a";"7b";"7c";"7d";"7e";"7f";"80";"81";"82";"83";"84";"85";"86";"87";"88";"89";"8a";"8b";"8c";"8d";"8e";"8f";"90";"91";"92";"93";"94";"95";"96";"97";"98";"99";"9a";"9b";"9c";"9d";"9e";"9f";"a0";"a1";"a2";"a3";"a4";"a5";"a6";"a7";"a8";"a9";"aa";"ab";"ac";"ad";"ae";"af";"b0";"b1";"b2";"b3";"b4";"b5";"b6";"b7";"b8";"b9";"ba";"bb";"bc";"bd";"be";"bf";"c0";"c1";"c2";"c3";"c4";"c5";"c6";"c7";"c8";"c9";"ca";"cb";"cc";"cd";"ce";"cf";"d0";"d1";"d2";"d3";"d4";"d5";"d6";"d7";"d8";"d9";"da";"db";"dc";"dd";"de";"df";"e0";"e1";"e2";"e3";"e4";"e5";"e6";"e7";"e8";"e9";"ea";"eb";"ec";"ed";"ee";"ef";"f0";"f1";"f2";"f3";"f4";"f5";"f6";"f7";"f8";"f9";"fa";"fb";"fc";"fd";"fe";"ff"];
+	  load_index_to_hashtable indextable d;
+	  load_deleted_to_hashtable deletedtable d
+	end
 
-    let del_from_cache k =
-      Hashtbl.remove !cache1 k;
-      Hashtbl.remove !cache2 k
+    let dbinit () =
+      dbinit_a (Filename.concat !dbdir M.basedir)
 
     let dbexists k =
-      try
-	if Hashtbl.mem !cache1 k then
-	  true
-	else if Hashtbl.mem !cache2 k then
-	  begin
-	    let v = Hashtbl.find !cache2 k in
-	    add_to_cache (k,v);
-	    true
-	  end
-	else
-	  begin
-	    let (di,_) = withlock (fun () -> dbfind M.basedir k) in
-	    try
-	      withlock (fun () -> find_in_deleted di k);
-	      raise Exit
-	    with
-	    | Not_found ->
-		true
-	  end
-      with
-      | Exit -> false
-      | Not_found -> false
+      Hashtbl.mem indextable k && not (Hashtbl.mem deletedtable k)
 
     let dbget k =
-      try
-	Hashtbl.find !cache1 k
-      with Not_found ->
-	try
-	  let v = Hashtbl.find !cache2 k in
-	  withlock (fun () -> add_to_cache (k,v));
-	  v
-	with Not_found ->
-	  let (di,p) = withlock (fun () -> dbfind M.basedir k) in
-	  try
-	    withlock (fun () -> find_in_deleted di k);
-	    raise Exit
-	  with
-	  | Exit -> raise Not_found
-	  | Not_found ->
-	      let datf = Filename.concat di "data" in
-	      withlock
-		(fun () ->
-		  if Sys.file_exists datf then
-		    let c = open_in_bin datf in
-		    let l = in_channel_length c in
-		    try
-		      if p >= l then
-			begin
-			  close_in c;
-			  raise (Failure ("Corrupted data file " ^ datf))
-			end;
-		      seek_in c p;
-		      let (v,_) = M.seival (c,None) in
-		      close_in c;
-		      add_to_cache (k,v);
-		      v
-		    with exc ->
-		      close_in c;
-		      raise exc
-		  else
-		    raise Not_found)
+      let (di,p) = Hashtbl.find indextable k in
+      if Hashtbl.mem deletedtable k then
+	raise Not_found
+      else
+	let datf = Filename.concat di "data" in
+	withlock
+	  (fun () ->
+	    if Sys.file_exists datf then
+	      let c = open_in_bin datf in
+	      let l = in_channel_length c in
+	      try
+		if p >= l then
+		  begin
+		    close_in c;
+		    raise (Failure ("Corrupted data file " ^ datf))
+		  end;
+		seek_in c p;
+		let (v,_) = M.seival (c,None) in
+		close_in c;
+		v
+	      with exc ->
+		close_in c;
+		raise exc
+	    else
+	      raise Not_found)
 
     let dbput k v =
       try
-	withlock
-	  (fun () ->
-	    let (di,p) = dbfind M.basedir k in
-	    try
-	      find_in_deleted di k;
-	      undelete di k
-	    with Not_found -> () (*** otherwise, it's already there, do nothing ***)
-	  )
+	let (di,p) = Hashtbl.find indextable k in
+	if Hashtbl.mem deletedtable k then
+	  begin
+	    Hashtbl.remove deletedtable k;
+	    withlock (fun () -> undelete di k)
+	  end
+	else
+	  () (*** it's already there, do nothing ***)
       with Not_found ->
 	let (d',p) = withlock (fun () -> dbfind_next_space M.basedir k) in
-	let indl = withlock (fun () -> load_index d') in
-	let indl2 = List.merge (fun (h',p') (k',q') -> compare h' k') (List.rev indl) [(k,p)] in
 	withlock
 	  (fun () ->
-	    let ch = open_out_bin (Filename.concat d' "index") in
-	    List.iter
-	      (fun (h,q) ->
-		let c = seo_hashval seoc h (ch,None) in
-		let c = seo_int32 seoc (Int32.of_int q) c in
-		seocf c)
-	      indl2;
+	    let ch = open_out_gen [Open_append;Open_creat;Open_binary] 0b110110000 (Filename.concat d' "index") in
+	    let c = seo_hashval seoc k (ch,None) in
+	    let c = seo_int32 seoc (Int32.of_int p) c in
+	    seocf c;
 	    close_out ch;
 	    let ch = open_out_gen [Open_append;Open_creat;Open_binary] 0b110110000 (Filename.concat d' "data") in
 	    let c = M.seoval v (ch,None) in
 	    seocf c;
-	    close_out ch);
-	begin (* while testing, double check things *)
-	  let indl = load_index d' in
-	  if not (indl = List.sort (fun (k',q') (h',p') -> compare h' k') indl) then Printf.printf "After inserting %s into %s index is no longer sorted.\n" (hashval_hexstring k) M.basedir;
-	  try
-	    let u = dbget k in
-	    if not ((String.sub M.basedir (String.length M.basedir - 6) 6) = "header") then if not (u = v) then Printf.printf "%s db failure %s; not equal\n" M.basedir (hashval_hexstring k)
-	  with Not_found ->
-	    Printf.printf "%s; db failure %s; not found\n" M.basedir (hashval_hexstring k)
-	end
+	    close_out ch;
+	    Hashtbl.add indextable k (d',p)
+	  )
 
     let dbdelete k =
       try
-	let (di,p) = withlock (fun () -> dbfind M.basedir k) in
-	try
-	  withlock (fun () -> find_in_deleted di k); (*** if has already been deleted, do nothing ***)
-	with Not_found ->
+	let (di,p) = Hashtbl.find indextable k in
+	if Hashtbl.mem deletedtable k then
+	  () (*** if has already been deleted, do nothing ***)
+	else
 	  let ddel = Filename.concat di "deleted" in
 	  let ch = open_out_gen [Open_append;Open_creat;Open_binary] 0b110110000 ddel in
 	  let c = seo_hashval seoc k (ch,None) in
 	  seocf c;
 	  close_out ch;
-	  del_from_cache k;
-	  let nd = count_deleted di in
-	  if nd = count_index di then (*** easy case: all entries in the dir have been deleted; a common case would likely be when a dir has 1 entry and it gets deleted ***)
-	    begin
-	      Sys.remove ddel;
-	      Sys.remove (Filename.concat di "index");
-	      Sys.remove (Filename.concat di "data")
-	    end
-	  else if count_deleted di > defrag_limit then
-	    withlock (fun () -> defrag di M.seival M.seoval);
+	  Hashtbl.add deletedtable k ()
       with
       | Not_found -> () (*** not an entry, do nothing ***)
 
   end
 
-module DbBlacklist = Dbbasic (struct type t = bool let basedir = "blacklist" let seival = sei_bool seic let seoval = seo_bool seoc end)
+module DbBlacklist = Dbbasic2 (struct type t = bool let basedir = "blacklist" let seival = sei_bool seic let seoval = seo_bool seoc end)
 
-module DbArchived = Dbbasic (struct type t = bool let basedir = "archived" let seival = sei_bool seic let seoval = seo_bool seoc end)
+module DbArchived = Dbbasic2 (struct type t = bool let basedir = "archived" let seival = sei_bool seic let seoval = seo_bool seoc end)

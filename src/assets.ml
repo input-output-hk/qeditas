@@ -1,4 +1,4 @@
-(* Copyright (c) 2015 The Qeditas developers *)
+(* Copyright (c) 2015-2016 The Qeditas developers *)
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
@@ -386,7 +386,7 @@ let sei_addr_preasset i c = sei_prod sei_addr (sei_prod sei_obligation sei_preas
 let seo_addr_asset o a c = seo_prod seo_addr seo_asset o a c
 let sei_addr_asset i c = sei_prod sei_addr sei_asset i c
 
-module DbAsset = Dbbasic (struct type t = asset let basedir = "asset" let seival = sei_asset seic let seoval = seo_asset seoc end)
+module DbAsset = Dbbasic2 (struct type t = asset let basedir = "asset" let seival = sei_asset seic let seoval = seo_asset seoc end)
 
 let get_asset h =
   try

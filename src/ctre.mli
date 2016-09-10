@@ -43,6 +43,7 @@ exception InsufficientInformation
 
 module DbHConsElt :
     sig
+      val dbinit : unit -> unit
       val dbget : Hash.hashval -> hashval * hashval option
       val dbexists : Hash.hashval -> bool
       val dbput : Hash.hashval -> hashval * hashval option -> unit
@@ -51,6 +52,7 @@ module DbHConsElt :
 
 module DbCTreeElt :
     sig
+      val dbinit : unit -> unit
       val dbget : Hash.hashval -> ctree
       val dbexists : Hash.hashval -> bool
       val dbput : Hash.hashval -> ctree -> unit

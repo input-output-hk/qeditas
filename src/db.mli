@@ -5,13 +5,14 @@ val dbconfig : string -> unit
 
 module type dbtype = functor (M:sig type t val basedir : string val seival : (seict -> t * seict) val seoval : (t -> seoct -> seoct) end) ->
   sig
+    val dbinit : unit -> unit
     val dbget : hashval -> M.t
     val dbexists : hashval -> bool
     val dbput : hashval -> M.t -> unit
     val dbdelete : hashval -> unit
   end
 
-module Dbbasic : dbtype
+module Dbbasic2 : dbtype
 
 module DbBlacklist :
   sig
