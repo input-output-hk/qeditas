@@ -22,3 +22,6 @@ val big_int_md256 : big_int -> md256
 
 val seo_md256 : (int -> int -> 'a -> 'a) -> md256 -> 'a -> 'a
 val sei_md256 : (int -> 'a -> int * 'a) -> 'a -> md256 * 'a
+
+val strong_rand_256 : unit -> big_int
+val rand_256 : unit -> big_int

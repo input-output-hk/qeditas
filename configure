@@ -74,6 +74,7 @@ if [ $RANDOMSEED ]; then
 else
     echo let randomseed = ref None >> src/config.ml
 fi
+echo let checkpointskey = ref None >> src/config.ml
 if [ $BYTECODE ]; then
     if [ $INSTALLDIR ]; then
 	echo "bytecode cannot be installed"

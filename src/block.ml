@@ -360,7 +360,7 @@ let sei_blockdelta i c =
 let seo_block o b c = seo_prod seo_blockheader seo_blockdelta o b c
 let sei_block i c = sei_prod sei_blockheader sei_blockdelta i c
 
-module DbBlockHeader = Dbbasic2 (struct type t = blockheader let basedir = "blockheader" let seival = sei_blockheader seic let seoval = seo_blockheader seoc end)
+module DbBlockHeader = Dbbasic2keyiter (struct type t = blockheader let basedir = "blockheader" let seival = sei_blockheader seic let seoval = seo_blockheader seoc end)
 module DbBlockDelta = Dbbasic2 (struct type t = blockdelta let basedir = "blockdelta" let seival = sei_blockdelta seic let seoval = seo_blockdelta seoc end)
 
 let get_blockheader h = 

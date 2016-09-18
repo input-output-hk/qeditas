@@ -26,3 +26,43 @@ let era blkh =
 (*** the max block size is 500K during era 1 and doubles with each era, with a final max block size of 512M. ***)
 let maxblockdeltasize blkh = 250000 lsl (era blkh)
 
+let random_initialized : bool ref = ref false;;
+
+(*** generate 512 random bits and then use sha256 on them each time we need a new random number ***)
+let initialize_random_seed () =
+  match !Config.randomseed with
+  | Some(s) ->
+      let l = String.length s in
+      let a = Array.make l 0 in
+      for i = 0 to l-1 do
+	a.(i) <- Char.code s.[i]
+      done;
+      Random.full_init a;
+      random_initialized := true
+  | None ->
+      if Sys.file_exists "/dev/random" then
+	let r = open_in_bin "/dev/random" in
+	let a = Array.make 32 0 in
+	Printf.printf "Computing random seed, this may take a while.\n"; flush stdout;
+	for i = 0 to 31 do
+	  a.(i) <- input_byte r
+	done;
+	Random.full_init a;
+	random_initialized := true
+      else
+	begin
+	  raise (Failure("Since /dev/random is not on your system (Windows?), you must give some random seed with -randomseed\nMake sure the seed is really random or serious problems could result.\n"))
+	end
+	  
+let rand_bit () =
+  if not !random_initialized then initialize_random_seed();
+  Random.bool()
+
+let rand_int32 () =
+  if not !random_initialized then initialize_random_seed();
+  Int32.logor (Int32.shift_left (Random.int32 65536l) 16) (Random.int32 65536l)
+
+let rand_int64 () =
+  if not !random_initialized then initialize_random_seed();
+  Int64.logor (Int64.shift_left (Random.int64 4294967296L) 32) (Random.int64 4294967296L)
+

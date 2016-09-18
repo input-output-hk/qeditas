@@ -10,6 +10,10 @@ open Tx
 open Ctre
 open Block
 
+val checkpointsprivkeyk : big_int option ref
+val checkpointspubkeyx : big_int
+val checkpointspubkeyy : big_int
+
 val stxpool : (hashval,stx) Hashtbl.t
 
 type validationstatus = Waiting of float * (blockdelta * connstate) option | ValidBlock | InvalidBlock
@@ -20,6 +24,7 @@ val genesisblocktreenode : blocktree ref
 val lastcheckpointnode : blocktree ref
 val blkheadernode : (hashval option,blocktree) Hashtbl.t
 val bestnode : blocktree ref
+val update_bestnode : blocktree -> unit
 val initblocktree : unit -> unit
 val node_recent_stakers : blocktree -> hashval list
 val node_prevblockhash : blocktree -> hashval option
@@ -33,11 +38,10 @@ val node_blockheight : blocktree -> int64
 val node_validationstatus : blocktree -> validationstatus
 val node_children_ref : blocktree -> (hashval * blocktree) list ref
 val eq_node : blocktree -> blocktree -> bool
-val find_best_validated_block_from : blocktree -> big_int -> big_int
+val find_best_validated_block_from : blocktree -> blocktree -> big_int -> blocktree * big_int
 val find_best_validated_block : unit -> unit
 val is_recent_staker : hashval -> blocktree -> int -> bool
 val record_recent_staker : hashval -> blocktree -> int -> unit
-val add_to_headers_file : string -> unit
 
 val print_best_node : unit -> unit
 

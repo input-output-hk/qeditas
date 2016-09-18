@@ -2,6 +2,7 @@
 (* Distributed under the MIT software license, see the accompanying
    file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
 
+open Utils
 open Ser
 open Hashaux
 open Big_int
@@ -288,3 +289,26 @@ let sei_md256 i c =
   let (h6,c) = sei_int32 i c in
   let (h7,c) = sei_int32 i c in
   ((h0,h1,h2,h3,h4,h5,h6,h7),c)
+
+let strong_rand_256 () =
+  if Sys.file_exists "/dev/random" then
+    begin
+      let dr = open_in_bin "/dev/random" in
+      let (n,_) = sei_md256 seic (dr,None) in
+      close_in dr;
+      md256_big_int n
+    end
+  else
+    raise (Failure "Cannot generate cryptographically strong random numbers")
+
+let rand_256 () =
+  if not !random_initialized then initialize_random_seed();
+  let m0 = rand_int32() in
+  let m1 = rand_int32() in
+  let m2 = rand_int32() in
+  let m3 = rand_int32() in
+  let m4 = rand_int32() in
+  let m5 = rand_int32() in
+  let m6 = rand_int32() in
+  let m7 = rand_int32() in
+  md256_big_int (m0,m1,m2,m3,m4,m5,m6,m7)

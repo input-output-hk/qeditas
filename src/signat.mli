@@ -17,6 +17,7 @@ val signat_big_int : big_int -> big_int -> big_int -> signat
 val signat_hashval : hashval -> big_int -> big_int -> signat
 
 val verify_signed_big_int : big_int -> pt -> signat -> bool
+val verify_signed_hashval : hashval -> pt -> signat -> bool
 val verify_p2pkhaddr_signat : big_int -> p2pkhaddr -> signat -> int -> bool -> bool
 
 val verifybitcoinmessage : p2pkhaddr -> int -> bool -> signat -> string -> bool

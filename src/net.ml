@@ -47,6 +47,7 @@ type msgtype =
   | Checkpoint
   | AntiCheckpoint
   | NewHeader
+  | GetCheckpoint
 
 let msgtype_of_int i =
   try
@@ -55,7 +56,7 @@ let msgtype_of_int i =
        GetBlock;GetBlockdelta;GetBlockdeltah;GetHeader;STx;Tx;TxSignatures;Block;
        Headers;Blockdelta;Blockdeltah;GetAddr;Mempool;Alert;Ping;Pong;Reject;
        GetCTreeElement;GetHConsElement;GetAsset;CTreeElement;HConsElement;Asset;
-       Checkpoint;AntiCheckpoint;NewHeader;GetHeaders]
+       Checkpoint;AntiCheckpoint;NewHeader;GetHeaders;GetCheckpoint]
       i
   with Failure("nth") -> raise Not_found
 
@@ -97,6 +98,7 @@ let int_of_msgtype mt =
   | AntiCheckpoint -> 33
   | NewHeader -> 34
   | GetHeaders -> 35
+  | GetCheckpoint -> 36
 
 let inv_of_msgtype mt =
   try
@@ -153,6 +155,7 @@ let string_of_msgtype mt =
   | Checkpoint -> "Checkpoint"
   | AntiCheckpoint -> "AntiCheckpoint"
   | NewHeader -> "NewHeader"
+  | GetCheckpoint -> "GetCheckpoint"
 
 let myaddr () =
   match !Config.ip with
@@ -860,9 +863,12 @@ let broadcast_inv tosend =
       c := seo_prod3 seo_int8 seo_int64 seo_hashval seosb (i,blkh,h) !c)
     tosend;
   let invmsgstr = Buffer.contents invmsg in
+  Printf.fprintf !log "broadcast_inv Created invmsgstr %s\n" (string_hexstring invmsgstr);
   List.iter
     (fun (lth,sth,(fd,sin,sout,gcs)) ->
       match !gcs with
-      | Some(cs) -> ignore (queue_msg cs Inv invmsgstr)
+      | Some(cs) ->
+	  Printf.fprintf !log "broadcast_inv sending to %s\n" cs.addrfrom;
+	  ignore (queue_msg cs Inv invmsgstr)
       | None -> ())
     !netconns

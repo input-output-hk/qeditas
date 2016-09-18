@@ -6,6 +6,7 @@ open Big_int
 open Config
 open Hashaux
 open Ser
+open Sha256
 open Hash
 open Net
 open Cryptocurr
@@ -658,12 +659,6 @@ let createsplitlocktx ledgerroot alpha beta gamma aid i lkh fee =
 	  Printf.printf "Asset %s is %s fraenks, which is not greater the fee of %s\n" (hashval_hexstring aid) (fraenks_of_cants v) (fraenks_of_cants v); flush stdout
 	end
   | _ -> Printf.printf "Asset %s is not currency.\n" (hashval_hexstring aid); flush stdout
-
-let rand_256() =
-  let dr = open_in_bin "/dev/random" in
-  let (n,_) = Sha256.sei_md256 seic (dr,None) in
-  close_in dr;
-  Sha256.md256_big_int n
 
 (*** first see if private key for beta is in the wallet; if not check if an endorsement is in the wallet; if not fail ***)
 let signtx_p2pkh beta taue =

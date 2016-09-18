@@ -17,3 +17,4 @@ val prompt : string ref
 val genesistimestamp : int64 ref
 val seed : string ref
 val randomseed : string option ref
+val checkpointskey : string option ref

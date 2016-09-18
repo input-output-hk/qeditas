@@ -6,6 +6,7 @@ open Big_int
 open Utils
 open Ser
 open Hashaux
+open Sha256
 open Hash
 open Net
 open Db
@@ -14,6 +15,12 @@ open Signat
 open Tx
 open Ctre
 open Block
+
+let checkpointsprivkeyk = ref None
+let checkpointspubkeyx = big_int_of_string "63717203732691002966627493523478395510925637964138185199101530429614494608215"
+let checkpointspubkeyy = big_int_of_string "14551538993109352432558649646564074001010059416911525032428212764782058901234"
+
+let checkpoints : (hashval,int64 * signat) Hashtbl.t = Hashtbl.create 1000;;
 
 let stxpool : (hashval,stx) Hashtbl.t = Hashtbl.create 1000;;
 let published_stx : (hashval,unit) Hashtbl.t = Hashtbl.create 1000;;
@@ -196,17 +203,42 @@ let process_new_tx h hh =
       Printf.fprintf !log "exception %s\n" (Printexc.to_string e); flush !log;
       ()
 
+let rec prev_nth_node i n =
+  if i <= 0 then
+    Some(n)
+  else
+    let BlocktreeNode(par,_,_,_,_,_,_,_,_,_,_,_,_) = n in
+    match par with
+    | None -> None
+    | Some(p) -> prev_nth_node (i-1) p
+
+let update_bestnode n =
+  Printf.fprintf !log "New best blockheader %s\n" (match node_prevblockhash n with Some(h) -> hashval_hexstring h | None -> "(genesis)"); flush !log;
+  bestnode := n;
+  netblkh := node_blockheight n;
+  match !checkpointsprivkeyk with
+  | None -> ()
+  | Some(k) ->
+      match prev_nth_node 36 n with
+      | None -> () ; (** no block is deep enough to be a checkpoint **)
+      | Some(p) ->
+	  match node_prevblockhash p with
+	  | None -> () (** genesis block is the default checkpoint; ignore **)
+	  | Some(h) ->
+	      Printf.fprintf !log "Creating new checkpoint %Ld %s\n" (node_blockheight p) (hashval_hexstring h);
+	      lastcheckpointnode := p;
+	      let pblkh = node_blockheight p in
+	      let r = rand_256() in
+	      let sg : signat = signat_hashval h k r in
+	      Hashtbl.add checkpoints h (pblkh,sg);
+	      broadcast_inv [(int_of_msgtype Checkpoint,pblkh,h)]
+
 let rec processdelayednodes tm btnl =
   match btnl with
   | (tm2,n2)::btnr when tm2 <= tm ->
     let BlocktreeNode(_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
     let BlocktreeNode(_,_,pbh,_,_,_,_,_,newcumulstk,_,_,_,_) = n2 in
-    if gt_big_int newcumulstk bestcumulstk then
-      begin
-        Printf.fprintf !log "New best blockheader %s\n" (match pbh with Some(h) -> hashval_hexstring h | None -> "(genesis)"); flush !log;
-        bestnode := n2;
-	netblkh := node_blockheight !bestnode;
-      end;
+    if gt_big_int newcumulstk bestcumulstk then update_bestnode n2;
     processdelayednodes tm btnr
   | _ -> btnl
 
@@ -219,16 +251,6 @@ let rec processblockvalidation vl =
       match !v with
       | Waiting(_,_) -> (v,f)::vr2
       | _ -> vr2
-
-let headersfilemutex : Mutex.t = Mutex.create()
-
-let add_to_headers_file h =
-  let fn = Filename.concat (datadir()) "headers" in
-  Mutex.lock headersfilemutex;
-  let f = open_out_gen [Open_append;Open_creat] 0o664 fn in
-  output_string f (h ^ "\n");
-  close_out f;
-  Mutex.unlock headersfilemutex
 
 let rec is_recent_staker stkaddr n i =
   if i > 0 then
@@ -270,11 +292,7 @@ let rec validate_block_of_node newnode thyroot sigroot tinf blkhght h blkdel cs 
 	  Hashtbl.remove tovalidate h;
 	  DbBlockDelta.dbput h blkdel;
 	  let BlocktreeNode(_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
-	  if gt_big_int newcumulstake bestcumulstk then
-	    begin
-	      bestnode := newnode;
-	      netblkh := node_blockheight !bestnode
-	    end;
+	  if gt_big_int newcumulstake bestcumulstk then update_bestnode newnode;
 	  add_thytree blkhd.newtheoryroot tht2;
 	  add_sigtree blkhd.newsignaroot sigt2;
 	  broadcast_inv [(int_of_msgtype Blockdelta,blkhght,h)];
@@ -341,17 +359,17 @@ and process_new_header_ab h hh blkh1 blkhd1 a initialization knownvalid =
 	    blockheader_succ_a ledgerroot tmstamp currtinfo blkh1
 	  then
 	    begin
-	      Printf.fprintf !log "bhsa %s %Ld %s %b" (hashval_hexstring ledgerroot) tmstamp (targetinfo_string currtinfo) (blockheader_succ_a ledgerroot tmstamp currtinfo blkh1);
+	      Printf.fprintf !log "bhsa %s %Ld %s %b\n" (hashval_hexstring ledgerroot) tmstamp (targetinfo_string currtinfo) (blockheader_succ_a ledgerroot tmstamp currtinfo blkh1);
 	      if not (DbBlockHeader.dbexists h) then DbBlockHeader.dbput h blkh1;
-              Hashtbl.add blkheaders h ();
+	      Hashtbl.add blkheaders h ();
 	      broadcast_inv [(int_of_msgtype Headers,blkhght,h)];
-              let (csm1,fsm1,tar1) = currtinfo in
-              let newcumulstake = cumul_stake prevcumulstk tar1 blkhd1.deltatime in
+	      let (csm1,fsm1,tar1) = currtinfo in
+	      let newcumulstake = cumul_stake prevcumulstk tar1 blkhd1.deltatime in
 	      let validated = ref (if knownvalid then ValidBlock else Waiting(Unix.time(),None)) in
-              let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],Some(h),blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,blkhd1.tinfo,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
+	      let newnode = BlocktreeNode(Some(prevnode),ref [blkhd1.stakeaddr],Some(h),blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,blkhd1.tinfo,blkhd1.timestamp,newcumulstake,Int64.add blkhght 1L,validated,ref false,ref []) in
 	      (*** add it as a leaf, indicate that we want the block delta to validate it, and check if it's the best ***)
 	      Hashtbl.add blkheadernode (Some(h)) newnode;
-              succl := (h,newnode)::!succl;
+	      succl := (h,newnode)::!succl;
 	      record_recent_staker blkhd1.stakeaddr prevnode 6;
 	      begin
 		try
@@ -379,27 +397,21 @@ and process_new_header_ab h hh blkh1 blkhd1 a initialization knownvalid =
 		  with Not_found ->
 		    Printf.fprintf !log "No source for block delta of %s\n" hh
 	      end;
-              if not initialization then add_to_headers_file hh;
-              if Int64.of_float (Unix.time()) < tmstamp then (*** delay it ***)
+	      if Int64.of_float (Unix.time()) < tmstamp then (*** delay it ***)
 		earlyblocktreenodes := insertnewdelayed (tmstamp,newnode) !earlyblocktreenodes
-              else
+	      else
 		let BlocktreeNode(_,_,_,_,_,_,_,_,bestcumulstk,_,_,_,_) = !bestnode in
-		if gt_big_int newcumulstake bestcumulstk then
-		  begin
-                    Printf.fprintf !log "New best blockheader %s\n" hh; flush !log;
-                    bestnode := newnode;
-		    netblkh := node_blockheight !bestnode
-		  end;
+		if gt_big_int newcumulstake bestcumulstk then update_bestnode newnode;
 		List.iter
 		  (fun (h,blkh1) -> let (blkhd1,_) = blkh1 in process_new_header_a h (hashval_hexstring h) blkh1 blkhd1 initialization knownvalid)
 		  (Hashtbl.find_all orphanblkheaders (Some(h)));
 		Hashtbl.remove orphanblkheaders (Some(h))
 	    end
 	  else
-            begin (*** if it's wrong, delete it and blacklist it so it won't look new in the future [note: signature is assumed to have been checked to be valid by now] ***)
+	    begin (*** if it's wrong, delete it and blacklist it so it won't look new in the future [note: signature is assumed to have been checked to be valid by now] ***)
 	      Printf.fprintf !log "Header %s was invalid, deleting and blacklisting it.\n" hh;
-	      Printf.fprintf !log "vbh %Ld %s %b" blkhght (targetinfo_string currtinfo) (valid_blockheader blkhght currtinfo blkh1);
-	      Printf.fprintf !log "bhsa %s %Ld %s %b" (hashval_hexstring ledgerroot) tmstamp (targetinfo_string currtinfo) (blockheader_succ_a ledgerroot tmstamp currtinfo blkh1);
+	      Printf.fprintf !log "vbh %Ld %s %b\n" blkhght (targetinfo_string currtinfo) (valid_blockheader blkhght currtinfo blkh1);
+	      Printf.fprintf !log "bhsa %s %Ld %s %b\n" (hashval_hexstring ledgerroot) tmstamp (targetinfo_string currtinfo) (blockheader_succ_a ledgerroot tmstamp currtinfo blkh1);
               let newnode = BlocktreeNode(Some(prevnode),ref [],Some(h),blkhd1.newtheoryroot,blkhd1.newsignaroot,blkhd1.newledgerroot,blkhd1.tinfo,blkhd1.timestamp,zero_big_int,Int64.add blkhght 1L,ref InvalidBlock,ref true,ref []) in (*** dummy node just to remember it is blacklisted ***)
 	      Hashtbl.add blkheadernode (Some(h)) newnode;
               DbBlacklist.dbput h true;
@@ -438,58 +450,47 @@ and process_new_header h hh initialization knownvalid =
   if not (Hashtbl.mem blkheaders h) then
     process_new_header_b h hh initialization knownvalid
 
-let init_headers_a fn knownvalid =
-  if Sys.file_exists fn then
-    let f = open_in fn in
-    begin
-      try
-        while true do
-          let h = input_line f in
-	  Printf.printf "processing header %s\n" h; flush stdout;
-          process_new_header (hexstring_hashval h) h true knownvalid
-        done
-      with End_of_file -> close_in f
-    end
-  else
-    ()
-
 let init_headers () =
-  init_headers_a (Filename.concat (datadir()) "headers") false
+  DbBlockHeader.dbkeyiter
+    (fun h ->
+      let hs = hashval_hexstring h in
+      Printf.printf "processing header %s\n" hs; flush stdout;
+      process_new_header h hs true false)
 
 let initblocktree () =
   genesisblocktreenode := BlocktreeNode(None,ref [],None,None,None,!genesisledgerroot,(!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget),!Config.genesistimestamp,zero_big_int,1L,ref ValidBlock,ref false,ref []);
   lastcheckpointnode := !genesisblocktreenode;
-  bestnode := !genesisblocktreenode;
-  netblkh := node_blockheight !bestnode;
+  update_bestnode !genesisblocktreenode;
   Hashtbl.add blkheadernode None !genesisblocktreenode;
   init_headers()
 
-let rec find_best_validated_block_from fromnode bestcumulstk =
+let rec find_best_validated_block_from fromnode bestn bestcumulstk =
   let BlocktreeNode(_,_,_,_,_,_,_,_,cumulstk,_,validatedp,blklistp,succl) = fromnode in
   if not !blklistp && !validatedp = ValidBlock then
     begin
-      let newbestcumulstk = ref
-	(if gt_big_int cumulstk bestcumulstk then
-	  begin
-	    bestnode := fromnode;
-	    netblkh := node_blockheight !bestnode;
-	    cumulstk
-	  end
-	else
-	  bestcumulstk)
-      in
+      let newbestn = ref (if gt_big_int cumulstk bestcumulstk then fromnode else bestn) in
+      let newbestcumulstk = ref (node_cumulstk !newbestn) in
       List.iter
 	(fun (_,childnode) ->
-	  newbestcumulstk := find_best_validated_block_from childnode !newbestcumulstk)
+	  let (bn,bcs) = find_best_validated_block_from childnode !newbestn !newbestcumulstk in
+	  newbestn := bn;
+	  newbestcumulstk := bcs)
 	!succl;
-      !newbestcumulstk
+      (!newbestn,!newbestcumulstk)
     end
   else
-    bestcumulstk
+    (bestn,bestcumulstk)
 
 let find_best_validated_block () =
-  bestnode := !lastcheckpointnode;
-  ignore (find_best_validated_block_from !lastcheckpointnode zero_big_int)
+  let (bn,bcs) = find_best_validated_block_from !lastcheckpointnode !lastcheckpointnode (node_cumulstk !lastcheckpointnode) in
+  update_bestnode bn
+
+let rec blacklist_from h n =
+  let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,_,blklstd,chl) = n in
+  blklstd := true;
+  DbBlacklist.dbput h true;
+  DbBlockHeader.dbdelete h;
+  List.iter (fun (k,c) -> blacklist_from k c) !chl
 
 let publish_stx txh stx1 =
   let (tx1,txsigs1) = stx1 in
@@ -503,8 +504,7 @@ let publish_block blkh bhh (bh,bd) =
   Printf.fprintf !log "publishing block %s\n" (hashval_hexstring bhh); flush !log;
   DbBlockHeader.dbput bhh bh;
   DbBlockDelta.dbput bhh bd;
-  broadcast_inv [(int_of_msgtype Headers,blkh,bhh);(int_of_msgtype Blockdelta,blkh,bhh)];
-  add_to_headers_file (hashval_hexstring bhh);;
+  broadcast_inv [(int_of_msgtype Headers,blkh,bhh);(int_of_msgtype Blockdelta,blkh,bhh)];;
 
 Hashtbl.add msgtype_handler GetHeader
   (fun (sin,sout,cs,ms) ->
@@ -680,6 +680,27 @@ Hashtbl.add msgtype_handler Inv
 	      seosbf (seo_hashval seosb h (s,None));
 	      ignore (queue_msg cs GetTx (Buffer.contents s))
 	    end
+	end
+      else if i = int_of_msgtype Checkpoint then
+	begin (*** only request if we need it ***)
+	  try
+	    let lcp = !lastcheckpointnode in
+	    let BlocktreeNode(par,_,_,_,_,_,_,_,_,lcpblkh,_,_,_) = lcp in
+	    if lcpblkh < blkh then
+	      raise Exit
+	    else
+	      let lcpp = prev_nth_node (Int64.to_int (Int64.sub lcpblkh blkh)) lcp in
+	      match lcpp with
+	      | None -> raise Exit
+	      | Some(lcppn) ->
+		match node_prevblockhash lcppn with
+		| None -> raise Exit
+		| Some(lcppnh) -> if not (lcppnh = h) then raise Exit
+	  with Exit -> (*** if Exit was raised, then we need the checkpoint ***)
+	    cs.invreq <- (int_of_msgtype GetCheckpoint,h)::cs.invreq;
+            let s = Buffer.create 1000 in
+	    seosbf (seo_hashval seosb h (s,None));
+	    ignore (queue_msg cs GetCheckpoint (Buffer.contents s))
 	end
     done;
     req_header_batches sout cs 0 !hl []);;
@@ -932,4 +953,77 @@ let dumpblocktreestate sa =
   Hashtbl.iter
     (fun h () ->
       Printf.fprintf sa "%s\n" (hashval_hexstring h))
-    tovalidate
+    tovalidate;;
+
+Hashtbl.add msgtype_handler GetCheckpoint
+    (fun (sin,sout,cs,ms) ->
+      Printf.fprintf !log "Processing GetCheckpoint\n";
+      let (h,_) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      Printf.fprintf !log "Processing GetCheckpoint %s\n" (hashval_hexstring h);
+      let i = int_of_msgtype GetCheckpoint in
+      if not (List.mem (i,h) cs.sentinv) then (*** don't resend ***)
+	try
+	  let (chblkh,chsg) = Hashtbl.find checkpoints h in
+	  let sb = Buffer.create 100 in
+	  seosbf (seo_signat seosb chsg (seo_int64 seosb chblkh (seo_hashval seosb h (sb,None))));
+	  let ser = Buffer.contents sb in
+	  Printf.fprintf !log "Sending Checkpoint %s\n" (hashval_hexstring h);
+	  ignore (queue_msg cs Checkpoint ser);
+	  cs.sentinv <- (i,h)::cs.sentinv
+	with Not_found ->
+	  Printf.fprintf !log "Unknown Checkpoint %s (Bad Peer or Did I Advertize False Inventory?)\n" (hashval_hexstring h);
+	  ());;
+
+Hashtbl.add msgtype_handler Checkpoint
+    (fun (sin,sout,cs,ms) ->
+      Printf.fprintf !log "Processing Checkpoint\n";
+      let (h,r) = sei_hashval seis (ms,String.length ms,None,0,0) in
+      let (blkh,r) = sei_int64 seis r in
+      Printf.fprintf !log "Processing Checkpoint %Ld %s\n" blkh (hashval_hexstring h);
+      let (sg,_) = sei_signat seis r in
+      if Signat.verify_signed_hashval h (Some(checkpointspubkeyx,checkpointspubkeyy)) sg then
+	begin
+	  Hashtbl.add checkpoints h (blkh,sg);
+	  if DbBlacklist.dbexists h then
+	    begin
+	      Printf.fprintf !log "Checkpoint %s was blacklisted; removing the blacklist.\n" (hashval_hexstring h);
+	      DbBlacklist.dbdelete h
+	    end;
+	  try
+	    let n = Hashtbl.find blkheadernode (Some(h)) in
+	    let BlocktreeNode(par,_,_,_,_,_,_,_,_,_,vs,blklstd,_) = n in
+	    begin
+	      match par with
+	      | None -> ()
+	      | Some(p) ->
+		  let BlocktreeNode(_,_,_,_,_,_,_,_,_,_,_,_,chl) = p in
+		  List.iter
+		    (fun (k,c) ->
+		      if not (k = h) then blacklist_from k c
+		      )
+		    !chl
+	    end;
+	    if !blklstd then blklstd := false;
+	    if not (!vs = ValidBlock) then vs := ValidBlock;
+	    lastcheckpointnode := n;
+	    find_best_validated_block();
+	    broadcast_inv [(int_of_msgtype Checkpoint,node_blockheight n,h)]
+	  with Not_found ->
+	    try
+	      let bh = DbBlockHeader.dbget h in
+	      let (bhd,bhs) = bh in
+	      let fnode = BlocktreeNode(None,ref [],Some(h),bhd.newtheoryroot,bhd.newsignaroot,bhd.newledgerroot,bhd.tinfo,bhd.timestamp,zero_big_int,blkh,ref ValidBlock,ref false,ref []) in (*** just drop the cumul stake back to zero because I don't know it here ***)
+	      Hashtbl.add blkheadernode (Some(h)) fnode;
+	      Hashtbl.remove orphanblkheaders (Some(h));
+	      lastcheckpointnode := fnode;
+	      update_bestnode fnode
+	    with Not_found ->
+	      Printf.fprintf !log "Unknown header %s, trying to request it.\n" (hashval_hexstring h);
+	      try
+		find_and_send_requestdata Headers h
+	      with Not_found ->
+		Printf.fprintf !log "No peer willing to send header was found %s\n" (hashval_hexstring h)
+	end
+      else
+	Printf.fprintf !log "Bad signature on checkpoint\n%s\n" (string_hexstring ms));;
+

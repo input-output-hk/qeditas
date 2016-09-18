@@ -97,6 +97,7 @@ module DbBlockHeader :
       val dbexists : Hash.hashval -> bool
       val dbput : Hash.hashval -> blockheader -> unit
       val dbdelete : Hash.hashval -> unit
+      val dbkeyiter : (Hash.hashval -> unit) -> unit
     end
 
 module DbBlockDelta :

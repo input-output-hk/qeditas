@@ -5,6 +5,7 @@
 open Big_int;;
 open Utils;;
 open Ser;;
+open Sha256;;
 open Hash;;
 open Net;;
 open Db;;
@@ -224,71 +225,6 @@ let compute_staking_chances n fromtm totm =
   | Exit -> ()
   | exn ->
       Printf.fprintf stdout "Unexpected Exception in Staking Loop: %s\n" (Printexc.to_string exn); flush stdout
-
-
-let random_initialized : bool ref = ref false;;
-
-(*** generate 512 random bits and then use sha256 on them each time we need a new random number ***)
-let initialize_random_seed () =
-  match !Config.randomseed with
-  | Some(s) ->
-      let l = String.length s in
-      let a = Array.make l 0 in
-      for i = 0 to l-1 do
-	a.(i) <- Char.code s.[i]
-      done;
-      Random.full_init a;
-      random_initialized := true
-  | None ->
-      if Sys.file_exists "/dev/random" then
-	let r = open_in_bin "/dev/random" in
-	let a = Array.make 32 0 in
-	Printf.printf "Computing random seed, this may take a while.\n"; flush stdout;
-	for i = 0 to 31 do
-	  a.(i) <- input_byte r
-	done;
-	Random.full_init a;
-	random_initialized := true
-      else
-	begin
-	  Printf.printf "Since /dev/random is not on your system (Windows?), you must give some random seed with -randomseed\nMake sure the seed is really random or serious problems could result.\n";
-	  !exitfn 1
-	end
-	  
-let strong_rand_256 () =
-  if Sys.file_exists "/dev/random" then
-    begin
-      let dr = open_in_bin "/dev/random" in
-      let (n,_) = Sha256.sei_md256 seic (dr,None) in
-      close_in dr;
-      Sha256.md256_big_int n
-    end
-  else
-    raise (Failure "Cannot generate cryptographically strong random numbers")
-
-let rand_bit () =
-  if not !random_initialized then initialize_random_seed();
-  Random.bool()
-
-let rand_int32 () =
-  if not !random_initialized then initialize_random_seed();
-  Int32.logor (Int32.shift_left (Random.int32 65536l) 16) (Random.int32 65536l)
-
-let rand_int64 () =
-  if not !random_initialized then initialize_random_seed();
-  Int64.logor (Int64.shift_left (Random.int64 4294967296L) 32) (Random.int64 4294967296L)
-
-let rand_256 () =
-  if not !random_initialized then initialize_random_seed();
-  let m0 = rand_int32() in
-  let m1 = rand_int32() in
-  let m2 = rand_int32() in
-  let m3 = rand_int32() in
-  let m4 = rand_int32() in
-  let m5 = rand_int32() in
-  let m6 = rand_int32() in
-  let m7 = rand_int32() in
-  Sha256.md256_big_int (m0,m1,m2,m3,m4,m5,m6,m7)
 
 exception StakingProblemPause
 
@@ -563,7 +499,7 @@ let stakingthread () =
 		  Printf.fprintf !log "block at height %Ld: %s, deltm = %ld, timestamp %Ld, cumul stake %s\n" blkh (hashval_hexstring bhdnewh) bhdnew.deltatime tm (string_of_big_int csnew); 
 		  record_recent_staker alpha newnode 6;
 		  Hashtbl.add blkheadernode (Some(bhdnewh)) newnode;
-		  bestnode := newnode;
+		  update_bestnode newnode;
 		  netblkh := node_blockheight newnode;
 		  let children_ref = node_children_ref best in
 		  children_ref := (bhdnewh,newnode)::!children_ref;
@@ -854,6 +790,20 @@ let initialize () =
     process_config_file();
     process_config_args(); (*** settings on the command line shadow those in the config file ***)
     if not !Config.testnet then (Printf.printf "Qeditas can only be run on testnet for now. Please give the -testnet command line argument.\n"; exit 1);
+    begin
+      match !Config.checkpointskey with
+	None -> ()
+      | Some(w) ->
+	  let (k,b) = privkey_from_wif w in
+	  match smulp k Secp256k1._g with
+	  | Some(x,y) ->
+	      if not b && eq_big_int x checkpointspubkeyx && eq_big_int y checkpointspubkeyy then
+		checkpointsprivkeyk := Some(k)
+	      else
+		raise (Failure "Incorrect testnet checkpointskey given")
+	  | None ->
+	      raise (Failure "Incorrect testnet checkpointskey given")
+    end;
     let datadir = if !Config.testnet then (Filename.concat !Config.datadir "testnet") else !Config.datadir in
     if Sys.file_exists (Filename.concat datadir ".lock") then
       begin
