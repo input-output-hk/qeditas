@@ -12,7 +12,6 @@ val socks : int option ref
 val socksport : int ref
 val maxconns : int ref
 val lastcheckpoint : string ref
-val currledgerroot : string ref
 val prompt : string ref
 val genesistimestamp : int64 ref
 val seed : string ref

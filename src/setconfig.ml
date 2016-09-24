@@ -5,7 +5,6 @@
 let stringconfigvars = [
 ("seed",fun x -> Config.seed := x);
 ("lastcheckpoint",fun x -> Config.lastcheckpoint := x);
-("currledgerroot",fun x -> Config.currledgerroot := x);
 ("prompt",fun x -> Config.prompt := x)
 ];;
 let boolconfigvars = [

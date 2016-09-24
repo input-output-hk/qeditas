@@ -57,7 +57,6 @@ echo let socks = ref None >> src/config.ml
 echo let socksport = ref 9050 >> src/config.ml
 echo let maxconns = ref 20 >> src/config.ml
 echo let lastcheckpoint = ref \"\" >> src/config.ml
-echo let currledgerroot = ref \"fc25150b4880e27235d4878637d32f0ffe2280e6\" >> src/config.ml
 echo let prompt = ref \"\> \" >> src/config.ml
 if [ $GENESISTIME ]; then
     echo let genesistimestamp = ref ${GENESISTIME}L >> src/config.ml
