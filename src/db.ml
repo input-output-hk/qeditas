@@ -19,32 +19,6 @@ let dbconfig dir =
       Unix.mkdir dir 0b111111000
     end
 
-let load_index d =
-  let dind = Filename.concat d "index" in
-  if Sys.file_exists dind then
-    let ch = open_in_bin dind in
-    let c = ref (ch,None) in
-    let r = ref [] in
-    begin
-      try
-	while true do
-	  let (h,c2) = sei_hashval seic !c in
-	  let (p,c2) = sei_int32 seic !c in
-	  r := (h,Int32.to_int p)::!r;
-	  c := c2
-	done;
-	[]
-      with
-      | End_of_file ->
-	  close_in ch;
-	  !r
-      | exc ->
-	  close_in ch;
-	  raise exc
-    end
-  else
-    []
-
 let load_index_to_hashtable ht d =
   let dind = Filename.concat d "index" in
   if Sys.file_exists dind then
@@ -77,84 +51,6 @@ let count_index d =
     i
   else
     0
-
-let find_in_index d k =
-  let dind = Filename.concat d "index" in
-  if Sys.file_exists dind then
-    let ch = open_in_bin dind in
-    let l = in_channel_length ch in
-    let b = ref 0 in
-    let e = ref (l / 24) in
-    let r = ref None in
-    begin
-      try
-	while !r = None do
-	  if !b < !e then
-	    let m = !b + (!e - !b) / 2 in
-	    begin
-	      seek_in ch (m*24);
-	      let (h,c2) = sei_hashval seic (ch,None) in
-	      let chk = compare h k in
-	      if chk = 0 then
-		let (p,c2) = sei_int32 seic c2 in r := Some(Int32.to_int p)
-	      else if chk > 0 then
-		e := m
-	      else
-		b := m+1
-	    end
-	  else
-	    raise End_of_file
-	done;
-	close_in ch;
-	match !r with
-	| Some(p) -> p
-	| None -> raise Not_found
-      with
-      | End_of_file ->
-	  close_in ch;
-	  raise Not_found
-      | exc ->
-	  close_in ch;
-	  raise exc
-    end
-  else
-    raise Not_found
-
-let count_deleted d =
-  let ddel = Filename.concat d "deleted" in
-  if Sys.file_exists ddel then
-    let ch = open_in_bin ddel in
-    let i = (in_channel_length ch) / 20 in
-    close_in ch;
-    i
-  else
-    0
-
-let find_in_deleted d k =
-  let ddel = Filename.concat d "deleted" in
-  if Sys.file_exists ddel then
-    let ch = open_in_bin ddel in
-    let c = ref (ch,None) in
-    let r = ref false in
-    begin
-      try
-	while not !r do
-	  let (h,c2) = sei_hashval seic !c in
-	  if h = k then r := true;
-	  c := c2
-	done;
-	close_in ch;
-	()
-      with
-      | End_of_file ->
-	  close_in ch;
-	  raise Not_found
-      | exc ->
-	  close_in ch;
-	  raise exc
-    end
-  else
-    raise Not_found
 
 let load_deleted d =
   let ddel = Filename.concat d "deleted" in
@@ -219,31 +115,6 @@ let undelete d k =
     close_out chd;
     raise exc
 
-let rec dbfind_a d i k kh =
-  try
-    let p = find_in_index d k in
-    (d,p)
-  with Not_found ->
-    if i < 20 then
-      let dk' = Filename.concat d (String.sub kh i 2) in
-      try
-	if Sys.is_directory dk' then
-	  dbfind_a dk' (i+2) k kh
-	else
-	  raise Not_found
-      with _ -> raise Not_found
-    else
-      raise Not_found
-
-let dbfind d k =
-  let fd = Filename.concat !dbdir d in
-  try
-    if Sys.is_directory fd then
-      dbfind_a fd 0 k (hashval_hexstring k)
-    else
-      raise (Failure (fd ^ " is a file not a directory"))
-  with _ -> raise Not_found
-
 let file_length f =
   if Sys.file_exists f then
     let ch = open_in_bin f in
@@ -288,70 +159,6 @@ let dbfind_next_space d k =
       Unix.mkdir fd 0b111111000;
       (fd,0)
     end
-
-let defrag d seival seoval =
-  let ind = ref (load_index d) in
-  let indf = Filename.concat d "index" in
-  let datf = Filename.concat d "data" in
-  let del = load_deleted d in
-  let chd = open_in_bin datf in
-  let l = in_channel_length chd in
-  let dat =
-    ref (List.map
-	   (fun (k,p) ->
-	     if List.mem k del then
-	       None
-	     else if p < l then
-	       begin
-		 seek_in chd p;
-		 let (v,_) = seival (chd,None) in
-		 Some(v)
-	       end
-	     else
-	       begin
-		 close_in chd;
-		 raise (Failure ("Corrupted data file " ^ datf))
-	       end)
-	   !ind)
-  in
-  close_in chd;
-  Sys.remove (Filename.concat d "deleted");
-  let chd = open_out_gen [Open_wronly;Open_trunc;Open_binary] 0b110110000 datf in
-  let newind = ref [] in
-  try
-    while not (!ind = []) do
-      match (!ind,!dat) with
-      | ((k,_)::ir,Some(v)::dr) ->
-	  ind := ir;
-	  dat := dr;
-	  if not (List.mem k del) then
-	    let p = pos_out chd in
-	    newind := List.merge (fun (h',p') (k',q') -> compare h' k') !newind [(k,p)];
-	    let cd2 = seoval v (chd,None) in
-	    seocf cd2;
-      | ((k,_)::ir,None::dr) ->
-	  ind := ir;
-	  dat := dr
-      | _ ->
-	  raise (Failure ("impossible"))
-    done;
-    let chi = open_out_gen [Open_wronly;Open_trunc;Open_binary] 0b110110000 indf in
-    begin
-      try
-	List.iter (fun (k,p) ->
-	  let ci2 = seo_hashval seoc k (chi,None) in
-	  let ci2 = seo_int32 seoc (Int32.of_int p) ci2 in
-	  seocf ci2)
-	  !newind;
-	close_out chi;
-	close_out chd
-      with exc ->
-	close_out chi;
-	raise exc
-    end
-  with exc ->
-    close_out chd;
-    raise exc
 
 module type dbtype = functor (M:sig type t val basedir : string val seival : (seict -> t * seict) val seoval : (t -> seoct -> seoct) end) ->
   sig
