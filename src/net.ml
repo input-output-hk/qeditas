@@ -114,6 +114,7 @@ let inv_of_msgtype mt =
       | GetCTreeElement -> CTreeElement
       | GetHConsElement -> HConsElement
       | GetAsset -> Asset
+      | GetCheckpoint -> Checkpoint
       | _ -> raise Not_found)
   with Not_found -> (-1)
 
