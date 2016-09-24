@@ -28,7 +28,6 @@ let maxblockdeltasize blkh = 250000 lsl (era blkh)
 
 let random_initialized : bool ref = ref false;;
 
-(*** generate 512 random bits and then use sha256 on them each time we need a new random number ***)
 let initialize_random_seed () =
   match !Config.randomseed with
   | Some(s) ->
