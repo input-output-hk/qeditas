@@ -11,6 +11,7 @@ tree in order to form an approximation with more information.
 in the {\dir{src/unittests}}
 directory in the {\branch{testing}} branch.
 These unit tests give a number of examples demonstrating how the functions described below should behave.
+The {\branch{testing}} branch is, however, out of date with the code in the {\branch{dev}} and {\branch{master}} branches.
 
 \section{Compact Ledger Trees}
 
@@ -255,7 +256,7 @@ ${\constr{NehConsH}}(h,{\constr{HNil}})$ if $k$ is not ${\val{None}}$.
 
 The module {\module{DbHConsElt}} implements a database for storing hcons elements
 (see Chapter~\ref{chap:db}).
-At the moment, this uses the basic file storage implementation {\module{Dbbasic}}.
+At the moment, this uses the basic file storage implementation {\module{Dbbasic2}}.
 
 The function {\func{save\_hlist\_elements}} takes an arbitrary hlist
 and splits it into elements, saving the corresponding assets in the
@@ -306,7 +307,7 @@ that computes an approximation that is elemental at a given level.
 
 The module {\module{DbCTreeElt}} implements a database for storing compact tree elements
 (see Chapter~\ref{chap:db}).
-At the moment, this uses the basic file storage implementation {\module{Dbbasic}}.
+At the moment, this uses the basic file storage implementation {\module{Dbbasic2}}.
 
 The function ${\func{save\_ctree\_elements}}$
 takes a compact tree and factors it into elements which are saved into

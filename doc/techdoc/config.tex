@@ -4,8 +4,6 @@ The \file{configure} script creates an OCaml file \file{config.ml}
 setting default values for the variables exposed in the interface \file{config.mli}:
 \begin{itemize}
 \item \var{datadir} : the location of the main directory containing the local Qeditas configuration file, wallet file, and other data (usually \dir{.qeditas} in the user's home directory)
-\item \var{ctreedatadir} : the location of the directory where abbreviations for compact (ledger) trees are stored (usually the \dir{ctrees} subdirectory of \var{datadir})
-\item \var{chaindatadir} : the location of the directory where abbreviations for (compact) ledger trees are stored (usually the \dir{chain} subdirectory of \var{datadir})\footnote{At the moment, this is probably unused.}
 \item \var{testnet} : set to true if Qeditas is running on the testnet instead of the mainnet
 \item \var{staking} : set to true if Qeditas should stake
 \item \var{ip} : optionally the IP address to listen for incoming connections
@@ -15,7 +13,19 @@ setting default values for the variables exposed in the interface \file{config.m
 \item \var{maxconns} : the maximum number of connections
 \item \var{seed} : the initial seed which is used to initialized the current stake modifier and future stake modifier.
 \item \var{lastcheckpoint} : the last checkpoint (currently unused)
-\item \var{currledgerroot} : the hashroot of the current ledger tree
+\item \var{randomseed} : an optional string used to seed the OCaml Random module. If {\var{randomseed}} is given it should be cryptographically strong and new each time Qeditas is started. If {\var{randomseed}} is not given, then Random is initialized using data from {\file{/dev/random}}. If {\file{/dev/random}} does not exist (e.g., under MS Windows), {\var{randomseed}} must be given and it is the user's responsibility to ensure {\var{randomseed}} is cryptographically strong and fresh.
+\item \var{checkpointskey} : the private key for signing checkpoints (in Qeditas testnet WIF format). Signed checkpoints are only intended for the testnet, and only until the testnet is sufficiently stable. The corresponding public key is $(x,y)$ where
+$$
+\begin{array}{r}
+x = 6371720373269100296662749352347839551092563796413818519910\\ 1530429614494608215 \\
+y = 1455153899310935243255864964656407400101005941691152503242\\ 8212764782058901234
+\end{array}
+$$
+These values can be found in {\file{blocktree.ml}} as the
+settings for {\var{checkpointspubkeyx}}
+and {\var{checkpointspubkeyy}}.
+If a future version of Qeditas should use a different signing key for checkpoints, simply update {\var{checkpointspubkeyx}}
+and {\var{checkpointspubkeyy}} in {\file{blocktree.ml}} to the new public key values.
 \end{itemize}
 
 The functions exposed in the interface \file{setconfig.mli}

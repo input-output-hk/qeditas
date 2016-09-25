@@ -5,12 +5,13 @@ The {\tt{RIPEMD-160}} code only supports hashing a 256 bit input and is
 assumed to be called on the result of applying {\tt{SHA256}}.
 
 Profiling suggests that the hashing functions are the biggest computational bottleneck
-in Qeditas. Improvements to the code described here could make Qeditas run significantly faster.
+in Qeditas. Improvements to this code could make Qeditas run significantly faster.
 
 {\bf{Note:}} The unit tests for these modules are in {\file{basicunittests.ml}}
 in the {\dir{src/unittests}}
 directory in the {\branch{testing}} branch.
 These unit tests give a number of examples demonstrating how the functions described below should behave.
+The {\branch{testing}} branch is, however, out of date with the code in the {\branch{dev}} and {\branch{master}} branches.
 
 \section{Auxiliary Functions}
 
@@ -47,6 +48,12 @@ The following functions are defined:
 \item {\func{big\_int\_md256}} converts a big integer (assuming it is less than $2^{256}$) to the 256-bit message digest to the corresponding hexadecimal string.
 \item {\serfunc{seo\_md256}} serializes a 256-bit message digest.
 \item {\serfunc{sei\_md256}} deserializes a 256-bit message digest.
+\end{itemize}
+
+In addition, there are two functions for creating 256-bit random values of type \type{big\_int}:
+\begin{itemize}
+\item {\func{strong\_rand\_256}} : reads 256 bits from {\file{/dev/random}}. This function is currently unused.
+\item {\func{rand\_256}} : uses OCaml's Random module after initialized (see \module{utils}) to obtain 8 32-bit integers which are combined into a 256-bit \type{big\_int} value.
 \end{itemize}
 
 \section{Ripemd160}

@@ -1,0 +1,42 @@
+The module \module{utils} (\file{utils.ml} and \file{utils.mli}) defines a few simple functions used by many other modules.
+The current code is for handling the log file, for computing the ``era'' and corresponding maximum block size,
+and for initializing and using OCaml's Random module. More details about each of these follow.
+
+\section{Logging}
+
+Qeditas logs information to a {\file{log}} file which should be in the main directory given by {\var{datadir}} (presumably {\dir{.qeditas}}) or the {\dir{testnet}} subdirectory.
+The function {\func{openlog}} and {\func{closelog}} open and close the log file.
+The relevant out\_channel is the value held in the {\val{log}} ref cell.
+
+(Note: At the moment Qeditas logs an excessive amount of information intended for debugging purposes.)
+
+\section{Eras and Block Size}
+
+The block height determines what ``era'' Qeditas is in, as computed by the {\func{era}} function.
+The era is used to determine the block rewards and the maximum block delta size. (A ``block'' consists of a ``header'' and a ``delta.'')
+The initial era is ``Era 1'' which lasts from blocks 1 through 70000 (when the reward is 25 fraenks
+and the maximum block delta size is 500,000 bytes).
+The next 41 eras (``Era 2'' through ``Era 42'') each last 210000 blocks, at which time the reward halves
+and the maximum block delta size doubles.
+Starting at block 8680001 (in roughly 165 years after block one) the final era (``Era 43'') begins.
+In this final era the block reward is 0 and the maximum block delta size is 512 megabytes.
+
+The code for computing the maximum block delta size ({\func{maxblockdeltasize}}) is included in the \module{utils} module
+because it is needed in the \module{net} module to determine the maximum message size.
+On the other hand, the function for computing the reward ({\func{rewfn}}) is not given until the module \module{block}.
+
+\section{Randomness}
+
+The boolean {\var{random\_initialized}} is set to {\val{false}} until {\func{initialize\_random\_seed}} has been called.
+{\func{initialize\_random\_seed}} is called the first time a random value is requested.\footnote{This way of doing things was so that, in principle, a user could use Qeditas in a way that does not require randomness (e.g., never signing a block or transaction and never generating a private key). In practice a random number is requried by {\func{initialize}} in {\file{qeditas.ml}} to set the node's nonce -- {\var{this\_nodes\_nonce}} in {\module{net}}.}
+
+The function {\func{initialize\_random\_seed}} calls {\func{Random.full\_init}} using some data (or raises an exception).
+The data is either the value of {\var{randomseed}} or 32 bytes from {\file{/dev/random}}.
+If {\var{randomseed}} is not set and {\file{/dev/random}} does not exist, then a Failure exception is raised.
+
+The functions {\func{rand\_bit}}, {\func{rand\_int32}} and {\func{rand\_int64}}
+use OCaml's Random module to obtain a boolean, int32 or int64, respectively.
+A corresponding function {\func{rand\_256}} in the module \module{sha256} generates a 256-bit random number
+using OCaml's Random module. (It is in this later module because it uses code to create a \type{big\_int}
+from 8 int32 values.) There is also a (currently unused) function {\func{strong\_rand\_256}} in the module \module{sha256}
+which obtains the 256-bit random \type{big\_int} using data from {\file{/dev/random}}.

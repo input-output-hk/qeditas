@@ -1,0 +1,237 @@
+The module {\module{blocktree}} ({\file{blocktree.ml}} and {\file{blocktree.mli}})
+contains code related to keep up with the current tree of blocks
+and the current best block.
+Other various information is also included here.
+
+\section{Block Tree}
+
+The main data type in the module {\module{blocktree}} is the type {\type{blocktree}}
+with one constructor {\constr{BlocktreeNode}} (described below).
+Each node can be thought of as between a block and possible successor blocks.
+Enough information is included in the node to determine if a new block (header) is a valid successor block (header).
+The root of the tree is the ``genesis node'' which contains information about
+the initial ledger tree, initial stake modifier and initial target.
+Qeditas has no ``genesis block'' in the traditional sense. The first block would be
+a valid child of the genesis node.
+
+Nodes to the tree are added as headers are received (or staked) even if the corresponding block delta
+has not yet been received.
+In order to distinguish between these cases there is a type {\type{validationstatus}}
+with three constructors: {\constr{Waiting}} (meaning the block delta is being requested from peers),
+{\constr{ValidBlock}} (meaning a delta has been received and checked to be part of a valid block when
+combined with the header)
+or {\constr{InvalidBlock}} (meaning there is no delta making the header part of a valid block, though it is not clear how this could be determined).
+
+The single constructor {\constr{BlocktreeNode}} of the type {\type{blocktree}} takes 13 arguments:\footnote{This probably should be a record type.}
+\begin{itemize}
+\item an optional {\type{blocktree}} giving the parent, which is {\val{None}} for the genesis node (and possibly for some checkpoint nodes).
+\item a reference to a list of hash values, giving a list of addresses which have staked in some child of this node up to six levels deep. This is to be used to identify double-staking which can be punished by proof-of-forfeiture.
+\item an optional hash of the previous block header, which is {\val{None}} for the genesis node.
+\item an optional root of the current theory tree (see {\type{ttree}} in Chapter~\ref{chap:math}).
+\item an optional root of the current signature tree (see {\type{stree}} in Chapter~\ref{chap:math}).
+\item the current ledger hash root.
+\item the current target information (including the current and future stake modifier).
+\item the current time stamp.
+\item the current cumulative stake.
+\item the current block height.
+\item a reference to the current validation status (of type {\type{validationstatus}}).
+\item a reference to a boolean indicating if the block above the node has been blacklisted, so children should not be considered valid.
+\item a reference to a list of children, which gets updated as successor blocks are found.
+\end{itemize}
+There are a variety of functions for obtaining the information above from a node in the tree:
+{\func{node\_recent\_stakers}},
+{\func{node\_prevblockhash}},
+{\func{node\_theoryroot}},
+{\func{node\_signaroot}},
+{\func{node\_ledgerroot}},
+{\func{node\_targetinfo}},
+{\func{node\_timestamp}},
+{\func{node\_cumulstk}},
+{\func{node\_blockheight}},
+{\func{node\_validationstatus}} and
+{\func{node\_children\_ref}}.
+
+The function {\func{eq\_node}} tests if two nodes are equal by simply checking
+if they have the save previous block hash.
+The usual equality operation cannot be used since the target is of type {\type{big\_int}}
+whose values are (often) abstract.
+
+The variable {\var{genesisblocktreenode}} is initialized to be the node with the
+genesis ledger root, genesis target information and genesis time stamp.
+A child of this node corresponds to a block at height $1$.
+
+The hash table {\var{blkheadernode}} associates hash values with their corresponding
+node in the block tree.
+
+The functions {\func{process\_new\_header}},
+{\func{process\_new\_header\_a}},
+{\func{process\_new\_header\_aa}},
+{\func{process\_new\_header\_ab}}
+and {\func{process\_new\_header\_b}}
+are used to check a header is valid and, if so, create
+a node for it and enter the node into the block tree.
+If the previous block hash in the header does not correspond
+to a node in the tree (according to {\var{blkheadernode}}),
+the new header is considered an orphan and put into
+the hash table {\var{orphanblkheaders}}.
+The parent header of an orphan block header are requested using {\func{find\_and\_send\_requestdata}}, if possible.
+When a new header is processed, it may mean previously orphaned headers are no longer orphaned,
+at which point the headers should be removed from {\var{orphanblkheaders}}
+and new nodes in the block tree should be added. (The handling of orphan blocks has not been tested.)
+
+In addition, there is a list {\var{earlyblocktreenodes}} which contains headers which have
+been received but whose time stamps are in the future. These are intended to be delayed until
+the appropriate time arrives (although the code to handle them later does not seem to be written).
+
+The hash table {\var{tovalidate}} is a set of hashes of headers where we are still waiting to validate the corresponding block delta.
+
+\section{Checkpoints}
+
+The checkpoint public key is given in this module
+by {\var{checkpointspubkeyx}}
+and {\var{checkpointspubkeyy}}.
+If the corresponding private key is given on the command line or in the configuration file,
+then {\var{checkpointsprivkeyk}} is set to the corresponding integer.
+(The key is for the uncompressed address, and this fact is hard-wired into the code.)
+
+The value {\var{lastcheckpointnode}} is set to the most recent checkpoint, which is the
+genesis node by default.
+
+The hash table {\var{checkpoints}} associates header hashes with pairs $(h,\sigma)$
+where $h$ is a block height and $\sigma$ is a signature of the hash by the checkpoint key.
+
+\section{Best Node}
+
+The current block chain is determined by finding the ``best node''
+in the block tree, i.e., the node with the highest cumulative stake.
+We sometimes allow the best node to be awaiting validation and sometimes require the best node
+to be fully validated.
+
+The variable {\var{bestnode}} is set to the current best node.
+This gets reset when a new block is staked, if a new header is received
+or if Qeditas gives up waiting for a node to be validated.
+In the last case, we may want to find the best validated node.
+The value of {\var{bestnode}} should never be updated directly,
+but instead should be updated by calling {\func{update\_bestnode}}.
+Given a node $n$, {\func{update\_bestnode}} sets {\var{bestnode}} to $n$,
+sets {\var{netblkh}} to the current block height (technically, the
+height of the next block to be found)
+and, if the private key for signing checkpoints is known, the block which
+is now 36 blocks deep is signed as a checkpoint,
+{\var{lastcheckpointnode}} is updated
+and the checkpoint is broadcast (as inventory) to all peers.
+
+The function {\func{initblocktree}} creates a genesis block tree node
+and initializes the values
+{\var{genesisblocktreenode}},
+{\var{lastcheckpointnode}}
+and {\var{bestnode}} accordingly.
+Then {\func{init\_headers}} is called to traverse all known block headers from
+the block header database {\module{DbBlockHeader}}
+and create corresponding nodes in the block tree.
+
+The function {\func{find\_best\_validated\_block\_from}}
+finds the descendent node with validation status {\constr{ValidBlock}}
+(and which is not blacklisted)
+with the highest cumulative stake.
+The best node and cumulative stake found so far are extra arguments to compare against.
+The function {\func{find\_best\_validated\_block}} calls {\func{find\_best\_validated\_block\_from}}
+starting from the current value of {\var{lastcheckpointnode}}
+and calls {\func{update\_bestnode}} with the result.
+
+The function {\func{print\_best\_node}} gives the hash of the last block header of the current best node (or endicates it is the genesis node if there is no previous header).
+
+The function {\func{record\_recent\_staker}} climbs an indicated number of parents
+from a given node and inserts a given address into the recent stakers of the node.
+This information is then used by {\func{is\_recent\_staker}} to determine if
+an address has staked on some descendent of a node (up to some depth).
+The relevant depth is $6$, but the functions are recursive, so the depth arguments $i$ are generic.
+
+\section{Other Local Data}
+
+The hash table {\var{stxpool}} associates hash values with corresponding signed transactions
+and {\var{published\_stx}} records which of these transactions have been published (broadcast to peers).
+
+The hash table {\var{thytree}} associates hash values with the root of a corresponding theory tree {\type{ttree}}.
+The function {\func{lookup\_thytree}} looks up the theory tree given an optional hash value, where the default value of {\val{None}} returns the empty theory tree {\val{None}}.
+For the moment, Qeditas has only been tested with empty theory trees.
+
+Similarly, there is a hash table {\var{sigtree}} which associates hash values with the root of a corresponding signature tree {\type{stree}}.
+The function {\func{lookup\_sigtree}} looks up the signature tree given an optional hash value, where the default value of {\val{None}} returns the empty signature tree {\val{None}}.
+Again, Qeditas has only been tested with empty signature trees.
+
+\section{Networking Code}
+
+Since the {\module{blocktree}} module has access to the current state of the block chain,
+a function {\func{send\_inv}} is defined to collect the most recent inventory data
+(transactions, block headers and block deltas) to send to new peers.
+The networking code obtains access to the {\func{send\_inv}} function via the reference
+{\var{send\_inv\_fn}} which is set to {\func{send\_inv}} in {\module{blocktree}}.
+
+The functions {\func{publish\_stx}} and {\func{publish\_block}}
+add transactions and blocks to the local database
+and broadcast them as new inventory to peers.
+
+In addition, most of the implemented message handlers for the networking code (see Chapter~\ref{chap:net})
+are given in the {\module{blocktree}} module by associating functions with message types in
+the hash table
+{\var{msgtype\_handler}}.
+Here are the message types handled in {\module{blocktree}}:
+\begin{itemize}
+\item {\constr{Inv}}: The payload of an inventory message should be a 32-bit integer $n$ indicating
+how many inventory items there are followed by $n$ triples $(\tau,h,k)$
+where $\tau$ is a message type (as a byte, indicating the kind of object in the inventory), $h$ is a block height (as a 64-bit integer)
+and $k$ is a hash value (indicating the identifier of the object in the inventory).
+The handler reads these triples and determines whether or not to request the corresponding objects.
+Headers will be requested if they are new and those to be requested are collect into a list to be requested in batches of at most 255 headers (by {\func{req\_header\_batches}}).
+Block deltas are requested if they are new and the corresponding header is waiting to be validated (as indicted by {\var{tovalidate}}).
+If a signed transaction is new, then the corresponding unsigned transaction is requested.
+If the transaction of a signed transaction is known but the signatures are not, the signatures are requested.
+A checkpoint is requested unless it is a known checkpoint or would be an ancestor of the current checkpoint.
+No other inventory is immediately requested.
+All inventory is inserted into the {\field{rinv}} field of the connection state in case
+we need to request something later.
+\item {\constr{GetHeader}}: The payload contains a hash value.
+If the corresponding header has already been sent to the node (as recorded in {\field{sentinv}}),
+then it is not resent. Otherwise, the header is loaded from the database and sent to the peer in a {\constr{Headers}} message. If the header is not in the database, the message is ignored.
+\item {\constr{GetHeaders}}: The payload contains a byte $n$ indicating the number of headers being requested, followed by $n$ hash values.
+The corresponding headers which have not yet been sent are collected and send to the peer in a {\constr{Headers}} message.
+\item {\constr{Headers}}: The payload contains a byte $n$ indicating the number of headers being sent, followed by $n$ hash values and block headers.
+Each header must hash to the given hash value, otherwise this is logged and the connection is marked as banned by setting {\field{banned}} in the {\type{connstate}} to {\val{true}}.
+Each new header is checked to be valid and, if so, processed by {\func{process\_new\_header\_ab}} (which assumes the given header is valid).
+If a received header is not valid, this is logged and the connection is marked as banned by setting {\field{banned}} in the {\type{connstate}} to {\val{true}}.
+\item {\constr{GetBlockdelta}}: The payload contains a hash value identifying a block.
+If the corresponding block delta has not yet been sent to the peer, it is sent in a {\constr{Blockdelta}} message.
+\item {\constr{Blockdelta}}: The payload contains a hash value and a block delta.
+If the hash value is of a block for which the block delta is already known, then
+the handler stops (before deserializing the block delta).
+Otherwise, the node for the corresponding header is found in the block tree.
+If there is no such node in the block tree, the message is ignored.
+Assume there is such a node $n$.
+We check its validation status.
+The case we are interested in is when the validation status is {\constr{Waiting}}
+but there is not yet a candidate {\type{blockdelta}} to validate.
+In this case we find the parent node $p$ of $n$.
+If the parent node is already known to correspond to a valid block (or there is no parent node),
+then the block delta is deserialized
+and the function {\func{validate\_block\_of\_node}} is called to check
+that the new block is valid and update the validation status of the node.
+(Assuming the block is valid, {\func{validate\_block\_of\_node}} also traverses children
+which have block deltas waiting to be validated and tries to validate these.)
+If the parent node has not yet been validated,
+then the block delta is deserialized and stored (along with the connection state of the peer)
+with the {\constr{Waiting}} status. In principle it will be validated after its ancestors
+have been validated.
+\item {\constr{GetTx}}: 
+\item {\constr{Tx}}: 
+\item {\constr{GetTxSignatures}}: 
+\item {\constr{TxSignatures}}: 
+\item {\constr{GetCheckpoint}}: 
+\item {\constr{Checkpoint}}: 
+\end{itemize}
+
+\section{Dumping the State}
+
+The function {\func{dumpblocktreestate}} writes a large amount of information about
+the current block tree state into a channel (presumably of an open text file).
+This is for debugging purposes.

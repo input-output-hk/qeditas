@@ -284,6 +284,13 @@ and $r$ and $b$ are used to recover the public key.
 
 The following functions operate on block headers:
 \begin{itemize}
+\item {\func{blockheader\_stakeasset}} takes block header data ({\type{blockheaderdata}})
+and tries to return the staked asset by looking it up 
+as {\field{stakeid}} at location {\field{stakeaddr}} in the compact tree {\field{prevledger}}.
+This can fail in two ways.
+First, it could be that the staked asset is not found, in which case an exception {\exc{HeaderNoStakedAsset}} is raised.
+Second, it could be that {\field{prevledger}} includes more information than is necessary to give the staked asset,
+in which case an exception {\exc{HeaderStakedAssetNotMin}} is raised.\footnote{The purpose of this condition is to prevent attackers from making unnecessarily large headers. The current implementation seems to be flawed, however, as it would not allow the relevant information from proof-of-storage to be included in {\field{prevledger}}.}
 \item {\func{hash\_blockheaderdata}} hashes the data in the block header. This is to determine
 the hash to be signed in the signature part
 as well as the hash to be used in the {\field{previousblockhash}} field of the next block header.
@@ -299,17 +306,21 @@ from given block header data.
 In order to check if the block is valid the staked asset must be retrieved from
 the previous ledger.
 The staked asset must be a currency asset worth $v$ cants.
-The function {\func{valid\_blockheader\_a}} is called with the extra information given by this asset
-to check the following conditions:
+The auxiliary function {\func{valid\_blockheader\_a}} is called with the extra information given by this asset
+which in turn calls two (exported) functions:
+{\func{valid\_blockheader\_signat}} and
+{\func{valid\_blockheader\_allbutsignat}}.
+{\func{valid\_blockheader\_signat}} verifies the signature 
+in the blockheader to be a valid signature (either directly or via endorsement) of the hash given by {\func{hash\_blockheaderdata}}.
+{\func{valid\_blockheader\_allbutsignat}} checks the following conditions:
 \begin{enumerate}
-\item The signature in the blockheader must be a valid signature (either directly or via endorsement) of the hash given by {\func{hash\_blockheaderdata}}.
 \item The staked asset has the asset id declared in the header.
 \item The delta time is greater than $0$.
 \item The staked asset is a ``hit'' for the current block height.
 \item If proof of storage is included, then the asset id given for the
 object ownership of the term or
 for the document
-is in the given approximation of the previous ledger.
+is in the given approximation of the previous ledger.\footnote{This probably no longer works if proof of storage is included, due to the minimality constraint on {\field{prevledger}}.}
 \end{enumerate}
 \item {\func{blockheader\_succ}} determines if a second block header is a valid successor to a first block header.
 The following conditions must be checked:
@@ -395,19 +406,6 @@ The type {\type{block}} is the product of {\type{blockheader}} and {\type{blockd
 The functions {\serfunc{seo\_block}} and {\serfunc{sei\_block}} serialize
 and deserialize blocks.
 
-In Bitcoin it was noticed that blocks could be transmitted more efficiently
-if all the transactions were not sent with the block, since most nodes know
-about these (uncomfirmed) transactions already.
-To support such an idea in Qeditas, the type {\type{blockdeltah}}
-is given. It is similar to {\type{blockdeltah}} but only lists hashes of transactions
-instead of (signed) transactions themselves.
-As always, the functions {\serfunc{seo\_blockdeltah}} and
-{\serfunc{sei\_blockdeltah}} serialize and deserialize values of type {\type{blockdeltah}}.
-The function {\func{blockdelta\_blockdeltah}} converts a block delta into a
-value of type {\type{blockdeltah}}. (Note that the hashes are of the transactions,
-not the signed transactions. This is intended to avoid transaction malleability issues
-which have plagued Bitcoin.)
-
 \begin{itemize}
 \item {\func{coinstake}} builds the coinstake transaction by
 using the staked asset possibly combined with forfeited rewards as the input
@@ -470,12 +468,9 @@ and (possibly) the number of cants being forfeited.
 \section{Databases for Block Information}
 
 There are three databases for blocks, all using the hash of the block header as the key.
-The module {\module{DbBlockHeader}} is a database for block headers,
-the module {\module{DbBlockDelta}} is a database for block deltas,
-and the module
-{\module{DbBlockDeltaH}} is a database for block deltas that only store the
-transaction ids instead of the full signed transactions.
-At the moment, all of these use the basic file storage implementation {\module{Dbbasic}}.
+The module {\module{DbBlockHeader}} is a database for block headers (implemented using {\module{Dbbasic2keyiter}})
+and
+the module {\module{DbBlockDelta}} is a database for block deltas (implemented using {\module{Dbbasic2}}).
 
 \section{Chains}
 
@@ -490,9 +485,9 @@ and the second component is a list of the previous blocks or block headers
 in reverse order.
 
 The variable {\var{genesisledgerroot}} gives the ledger root of the initial compact tree
-with the initial distribution. The value is (as of June 2016):
+with the initial distribution. The value is (as of September 2016):
 \begin{verbatim}
-66c029f4c29b351785c0480cedc9449b64332dfa
+fc25150b4880e27235d4878637d32f0ffe2280e6
 \end{verbatim}
 
 \begin{itemize}

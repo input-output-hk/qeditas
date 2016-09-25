@@ -1,134 +1,222 @@
-{\bf{Warning:}} The networking code is only partially written and may possibly be rewritten completely.
-The information is this chapter is subject to changes in the near future.
-
-The intention of the {\module{net}} module is to create and handle connections
+The intention of the {\module{net}} module ({\file{net.ml}} and {\file{net.mli}}) is to create and handle connections
 to remote nodes.
-We briefly describe what exists, but the code is unusable in its current form.
-The networking code should be rethought, redesigned and rewritten from scratch.
+Not everything has been implemented, but there is enough implemented
+to form connections between peers and pass messages containing inventory,
+transactions, block headers and block deltas.
 
-\section{State}
+\section{Network Messages}
 
-There are a number of variables to keep up with the state of the system.
-It is not clear these variables belong in this module.
+There are several different message types enumerated by the type {\type{msgtype}}.
+These largely follow the message types of Bitcoin's messages.
 \begin{itemize}
-\item {\var{recentblockheaders}} is a list of recent block headers sorted according to cumulative stake.
-This ensures the head of the list is the recent block header with the most cumulative stake.
-\item {\var{recentledgerroots}} associates ledger roots (hash values) with abbreviations giving where the corresponding {\type{ctre}} has been saved. This is needed to restore the ledger tree into memory when it is needed.
-\item {\var{recentcommitments}} is intended to store what commitments have been made by staking blocks to avoid double signing (signing blocks on two branches stemming from a recent fork).
-\item {\var{recentblockdeltahs}} lists a skeleton form of recent block deltas, where the transactions in the block delta are refered to by their hash.
-\item {\var{recentblockdeltas}} lists recent block deltas.
-\item {\var{recentstxs}} lists recent transactions which may be included in a block.
-\item {\var{waitingblock}} lists block headers which are not considered ``valid,'' but may be valid later (e.g., the time stamp is in the future).
-\item {\var{preconns}} lists connections in the handshake phase before other messages can be exchanged.
-\item {\var{conns}} lists active connections.
-\item {\var{this\_nodes\_nonce}} is a random nonce to prevent nodes from connecting to themselves.
+\item {\constr{Version}}: used (only) in the handshake protocol, which is similar to Bitcoin's handshake.
+\item {\constr{Verack}}: used (only) in the handshake protocol, which is similar to Bitcoin's handshake.
+\item {\constr{Addr}}: intended to be used as in Bitcoin, but is currently unused.
+\item {\constr{Inv}}: inventory message with a list of triples $(m,h,k)$ where $m$ is a message type (as a byte), $h$ is a block height (which is often irrelevant) and $k$ is a hash value (identifying some corresponding data).
+\item {\constr{GetData}}: currently unused
+\item {\constr{MNotFound}}: currently unused
+\item {\constr{GetSTx}}: request a transaction with its signatures (see Chapter~\ref{chap:assetstx}).
+\item {\constr{GetTx}}: request a transaction (see Chapter~\ref{chap:assetstx}).
+\item {\constr{GetTxSignatures}}: request signatures for a transaction (see Chapter~\ref{chap:assetstx}).
+\item {\constr{GetHeader}}: request a block header (see Chapter~\ref{chap:block}).
+\item {\constr{GetHeaders}}: request several block headers (see Chapter~\ref{chap:block}).
+\item {\constr{GetBlock}}: request a block (currently unused, as headers and deltas are requested independently).
+\item {\constr{GetBlockdelta}}: request a block delta (see Chapter~\ref{chap:block}).
+\item {\constr{GetBlockdeltah}} (deprecated)
+\item {\constr{STx}}: a transaction with its signatures (see Chapter~\ref{chap:assetstx}).
+\item {\constr{Tx}}: a transaction (see Chapter~\ref{chap:assetstx}).
+\item {\constr{TxSignatures}}: signatures for a transaction (see Chapter~\ref{chap:assetstx}).
+\item {\constr{Block}}: a block (currently unused, as headers and deltas are sent independently).
+\item {\constr{Headers}}: a block header (see Chapter~\ref{chap:block}).
+\item {\constr{Blockdelta}}: a block delta (see Chapter~\ref{chap:block}).
+\item {\constr{Blockdeltah}} (deprecated)
+\item {\constr{GetAddr}}: currently unused
+\item {\constr{Mempool}}: currently unused
+\item {\constr{Alert}}: currently unused
+\item {\constr{Ping}}: intended to be used to ensure a connection is alive, but currently unused.
+\item {\constr{Pong}}: intended to be used to ensure a connection is alive, but currently unused.
+\item {\constr{Reject}}: currently unused
+\item {\constr{GetCTreeElement}}: request an compact tree element (see Chapter~\ref{chap:ctre}).
+\item {\constr{GetHConsElement}}: request an hcons element (see Chapter~\ref{chap:ctre}).
+\item {\constr{GetAsset}}: request an asset (see Chapter~\ref{chap:assetstx}).
+\item {\constr{CTreeElement}}: an compact tree element (see Chapter~\ref{chap:ctre}).
+\item {\constr{HConsElement}}: an hcons element (see Chapter~\ref{chap:ctre}).
+\item {\constr{Asset}}: an asset (see Chapter~\ref{chap:assetstx}).
+\item {\constr{Checkpoint}}: a checkpoint (see Chapter~\ref{chap:blocktree}).
+\item {\constr{AntiCheckpoint}}: currently unused
+\item {\constr{NewHeader}}: sending a newly staked header (deprecated)
+\item {\constr{GetCheckpoint}}: request a checkpoint (see Chapter~\ref{chap:blocktree}).
+\end{itemize}
+Message types can be converted to integers and strings by {\func{int\_of\_msgtype}}
+and {\func{string\_of\_msgtype}}, respectively.
+{\func{msgtype\_of\_int}} computes the message type of an integer (raising {\exc{Not\_found}}
+if the integer is negative or greater than 36).
+
+The function {\func{inv\_of\_msgtype}} computes {\func{int\_of\_msgtype}} for a converted
+message type. For example, {\constr{GetTx}} is converted to {\constr{Tx}}.
+In general the message type is converted from a request message type to a response message type
+in order to keep up with what inventory a remote peer has advertised
+in relation to what inventory has been requested.
+
+Messages have the following format:
+\begin{itemize}
+\item Four byte magic number: 0x51656454 for testnet, 0x5165644d for mainnet.
+\item Either the byte $0$ or the byte $1$ followed by a 20 byte hash value $h$ indicating that the message is a reply to a specific request (identified by $h$).
+\item A byte indicating the message type (\type{msgtype}).
+\item Four bytes giving the length $l$ of the payload.
+\item 20 bytes giving the hash of the payload.
+\item The payload in $l$ bytes, which must hash (via {\func{hash160}}) to give the correct hash value.
 \end{itemize}
 
-The function {\func{insertnewblockheader}} inserts a new block header into the sorted
-list {\var{recentblockheaders}}.
-This makes the ``valid'' block header with the most cumulative stake at the head of the
-list. The intention is that blocks should be staked on top of this ``best'' block.
-
-\section{Making Connections}
-
-The function {\func{myaddr}} returns the address to optionally listen for connections on.
-This must be specified in the configuration or the node will not listen for connections.
-
-The function {\func{openlistener}} starts a listener socket to wait for incoming connections.
-
-The function {\func{accept\_nohang}} checks if a node is attempting to make a connection
-without waiting for a connection (i.e., with a timeout).
-
-The exception {\exc{EnoughConnections}} is raised if a connection is being rejected
-because there are enough connections already.
-The exception {\exc{RequestRejected}} may be raised if the connection fails, e.g.,
-if the SOCKS4 protocol indicates a rejection.
-
-The functions {\func{connectpeer}} and {\func{connectpeer\_socks4}}
-try to initiate a connection to a listening peer.
-The function {\func{tryconnectpeer}} searches for a known peer to try to connect to.
-The function {\func{getfallbacknodes}} lists fallback nodes to try if no other connection works.
-
-The function {\func{initialize\_conn\_accept}} is called after the listener finds
-a node trying to connect.
-Both put the initial connection onto {\var{preconns}}
-and attempt to perform the initial handshake. Only after the initial handshake
-succeeds does the connection become a legitimate connection listed
-in {\var{conns}}.
-
-The functions
-{\func{addknownpeer}},
-{\func{getknownpeers}},
-{\func{loadknownpeers}} and
-{\func{saveknownpeers}}
-are to keep up with information about peers in the recent past.
-
-The function {\func{extract\_ip\_and\_port}} extracts an ip-address and a port number
-from a string, with a boolean to indicate if the address is ipv6.
-
-The function {\func{sethungsignalhandler}} sets the timeout handler to raise the exception {\exc{Hung}}
-upon timeout. It is not clear why this should be exported.
-
-\section{Messages and Communication}
-
-Messages are elements of type {\type{msg}}.
-The kinds of messages largely follow Bitcoin's messages, except there
-are additional messages:
+Three exceptions are exported from {\module{net}}:
 \begin{itemize}
-\item ${\constr{MCTree}}(v,t)$ is the compact tree $t$ (of type {\type{ctre}}).
-The 32-bit integer $v$ is a ``version number'' which is only included in case it's needed later.
-\item ${\constr{Checkpoint}}(b,h)$ a ``checkpoint'' that the block at height $b$ has hash $h$.
-\item ${\constr{AntiCheckpoint}}(b,h)$ an ``anticheckpoint'' that the block at height $b$ does not have hash $h$.
+\item {\exc{GettingRemoteData}}: indicates some data is being requested from peers and this data is required
+in order to complete the current computation. This exception is not used in {\module{net}} itself, but is raised
+by other code when a request is sent to a peer and the computation will not wait for a reply.
+\item {\exc{RequestRejected}}: indicates that a socks4 connection failed.
+\item {\exc{IllformedMsg}}: indicates a message had a bad format.
 \end{itemize}
 
-The exception {\exc{IllformedMsg}} is raised if something is wrong with the format of a message.
+The internal function {\func{rec\_msg}} reads a message from a channel, given a block height.
+The block height is required to know the maximum allowed length of a message payload
+(computed from {\func{maxblockdeltasize}}).
+Since the current block height changes, there is an exposed reference {\var{netblkh}}
+which is used by connection threads to determine the current block height.
+The value {\var{netblkh}} is updated by code that tracks the current best block (see Chapters~\ref{chap:blocktree} and~\ref{chap:stk}).
+The exception {\exc{IllformedMsg}} is raised
+by {\func{rec\_msg}} unless the message has the correct format.
 
-The function {\func{send\_msg}} sends a message through a channel to another node.
-The function {\func{send\_reply}} sends a message through a channel to another node
-and marks it as a reply to a previous message.
+The internal function {\func{send\_msg}} handles formatting and sending a message.
+In particular, it is given an output channel, the hash of the payload,
+an optional hash indicating what the message is a reply to,
+the message type
+and the message payload as a string (to be interpreted as a sequence of bytes).
 
-The function {\func{input\_byte\_nohang}} listens for a byte with a timeout (returning
-{\val{None}} if no byte is available to be read).
-The function {\func{rec\_msg\_nohang}} tried to receive a message with two timeouts.
-The first timeout indicates how long to wait before a message begins
-and the second timeout indicates how long to try to read a message after
-it begins but until it ends.
+\section{Network Connections}
 
-The recursive {\type{pendingcallback}} type gives a way of specifying
-what should happen if a reply is received.
+Network connections have a state summarized in the record type {\type{connstate}} consisting of the following fields:
+\begin{itemize}
+\item {\field{conntime}}: the time the connection was created.
+\item {\field{realaddr}}: the address of the connecting socket.
+\item {\field{connmutex}}: a ``mutex'' to prevent race conditions when communicating with the peer.
+\item {\field{sendqueue}}: messages on the queue to be sent by the connection sender thread to the peer.
+\item {\field{sendqueuenonempty}}: a condition to wake up the connection sender thread to send a message on the queue.
+\item {\field{handshakestep}}: an integer indicating the current handshake step, which progresses to 5 at which point the handshake protocol has been completed.
+\item {\field{peertimeskew}}: the number of seconds of skew between the peers (computed from the advertised time in the handshake).
+\item {\field{protvers}}: the protocol version advertised by the peer in the handshake.
+\item {\field{useragent}}: the user agent given by the peer in the handshake.
+\item {\field{addrfrom}}: the string giving the address the peer gave in the handshake.
+\item {\field{banned}}: a boolean which becomes true if the connection is banned due to misbehavior.
+\item {\field{lastmsgtm}}: the time of the last message exchanged.
+\item {\field{pending}}: a list of message hashes where the peer is expected to give a response, as well as information about
+how long the node has waited and a function for handling the reply if and when it is received.
+\item {\field{sentinv}}: a list of inventory already sent to the peer
+\item {\field{rinv}}: a list of remote inventory
+\item {\field{invreq}}: a list of requested inventory
+\item {\field{first\_header\_height}}: intended to be the block height at which the peer has headers (currently unused)
+\item {\field{first\_full\_height}}: intended to be the block height at which the peer has block headers and deltas (currently unused)
+\item {\field{last\_height}}: indended to be the latest block height of the peer (currently unused)
+\end{itemize}
 
-The funciton {\func{broadcast\_inv}} broadcasts an inventory message to every connection.
+All current connections are stored in the ref list {\var{netconns}}.
+Each entry of {\var{netconns}}
+has two threads (the ``connection listener'' thread and the ``connection sender'' thread), a file descriptor and its corresponding input and output channels,
+and a reference to an optional connection state ({\type{connstate}}).
+If the reference becomes None, then the connection is considered dead.
 
-The function {\func{handle\_msg}} is intended to handle messages received,
-but most cases are unwritten.
+\section{Network Listener}
 
-The function {\func{try\_requests}} searches through the current connections
-to try to find one from which it can request some data.
+If an ip address to listen for connections is given, the function {\func{openlistener}}
+creates a listener socket waiting for connections.
+This listener socket is sent to the function {\func{netlistener}} in its own thread
+upon startup (see {\file{qeditas.ml}}).
+The variable {\var{netlistenerth}} contains the thread in case it is required later.
 
-The functions {\func{handle\_orphans}} and {\func{handle\_delayed}}
-are intended to look back at orphan block headers and block headers which
-were delayed for some reason (e.g., if the time stamp was too far in the future).
-These were written because in testing sometimes a branch with the most cumulative stake
-would not be communicated because an earlier block header had been delayed or rejected.
+The function {\var{netlistener}} is an infinite loop accepting connections
+and
+removing dead connections (those with no connection state) using {\func{remove\_dead\_conns}}.
+A connection is accepted if there are fewer than {\var{maxconns}} connections on {\var{netconns}}.
+An initial connection state ({\type{connstate}}) is created with {\field{handshakestep}} set to $1$.
+A connection listener thread is created calling {\func{connlistener}}
+and a connection sender thread is created calling {\func{connsender}}.
+The triple of the two threads and (a reference to the optional) connection state is added to {\var{netconns}}.
 
-% {\type{msg}}
+{\func{connsender}} is a loop which 
+sends the messages on {\field{sendqueue}} to the peer
+and then waits for the condition {\field{sendqueuenonempty}}.
+If at any time the connection state of the connection is set to {\val{None}},
+the thread ends.
+Likewise, certain exceptions ({\exc{Unix\_error}}, {\exc{End\_of\_file}}, {\exc{ProtocolViolation}}, {\exc{SelfConnection}})
+result in closing the socket, setting the connection state to {\val{None}} and ending the thread.
+All other exceptions are logged but otherwise ignored.
 
-% internal serialization and deserialization functions {\serfunc{seo\_msg}} and {\serfunc{sei\_msg}}
-The function {\func{send\_initial\_inv}} is called when a connection is established (after the handshake)
-to send the inventory.
+{\func{connlistener}} is a loop which waits for messages (using {\func{rec\_msg}})
+and calls {\func{handle\_msg}} to handle the message.
+If after handling the message {\field{banned}} is {\val{true}}, then the
+exception {\exc{ProtocolViolation}} is raised.
+If at any time the connection state of the connection is set to {\val{None}},
+then the connection is considered dead and {\exc{End\_of\_file}} is raised.
+Certain exceptions ({\exc{Unix\_error}}, {\exc{End\_of\_file}}, {\exc{ProtocolViolation}}, {\exc{SelfConnection}})
+result in closing the socket, setting the connection state to {\val{None}} and ending the thread.
+All other exceptions are logged but otherwise ignored.
 
-\section{Connection State}
+The function {\func{handle\_msg}} behaves differently depending on whether the message is a reply.
+If the message is a reply to a message with hash value $h$, then
+the associated value is looked up on the {\field{pending}} field of the connection state
+(and removed from {\field{pending}}).
+This gives a function $f$ which is called with the message type and message payload.
+If no associated value is on {\field{pending}}, the message is ignored.
 
-The type {\type{connstate}} consists of a number of mutable fields
-which represent the state of a connection.
-This includes whether the node is alive,
-when the last message was received,
-what requests are pending,
-the known inventory of the remote node
-and what inventory has been sent, what inventory has been requested.
+If the message is not a reply, then a distinction is made based on whether or not the
+connection is still in the handshake phase.
+If the connection is in the handshake phase, then the message must be either a
+{\constr{Version}} or {\constr{Verack}} message
+and is handled appropriately, updating the connection state.
+Once the handshake protocol has been completed, {\field{handshakestep}} will be $5$
+and
+the function given by {\var{send\_inv\_fn}} is called to send the initial
+inventory message to the peer.
+(Initially, {\var{send\_inv\_fn}} is set to a trivial function that does nothing,
+but the value is reset to the {\func{send\_inv}} function in {\module{blocktree}}.
+{\func{send\_inv}} in {\module{blocktree}} gathers recent block headers, block deltas and transactions
+to send as inventory.)
 
+If the connection is not in the handshake phase, then
+a function $f$ to handle the message type is looked up in the hash table {\var{msgtype\_handler}}
+and this $f$ is called on the channels, the connection state and the message payload.
+If there is no handler function is found in {\var{msgtype\_handler}},
+then {\exc{Failure}} is raised.
 
+The particular functions associated with message types in {\var{msgtype\_handler}}
+are given in later modules (\module{blocktree}, \module{ctre} and \module{assets}). (The reason is that only in later modules are the types for
+the deserialized data in the message available.)
+In many cases, no handler is given (due to the incomplete nature of the Qeditas implementation)
+meaning the messages will lead to a {\exc{Failure}} exception being raised.
 
+\section{Network Seeker}
 
+The function {\func{netseeker}} is used to start a thread
+which tries to use known knowns or fallback nodes to initiate
+new connections.
+The main code is in {\func{netseeker\_loop}}.
+The thread is stored in {\var{netseekerth}}
+in case it is needed later.
 
+\section{Other Exported Network Functions}
+
+There are a few important functions called by other modules in order to
+communicate with peers.
+
+\begin{itemize}
+\item {\func{network\_time}}: returns the current local time modified by the median skew time of all connected nodes.
+\item {\func{queue\_msg}}: puts a non-reply message onto the {\field{sendqueue}} of a connection.
+\item {\func{queue\_reply}}: puts a reply message onto the {\field{sendqueue}} of a connection.
+\item {\func{find\_and\_send\_requestdata}}: searches through the current peers to find
+one that has some desired data in its inventory (but has not already had the data requested).
+If one is found, the data is requested.
+Otherwise, {\exc{Not\_found}} is raised.
+\item {\func{broadcast\_requestdata}}: request some data from all peers that have
+the data in the inventory and from whom the data has not already been requested.
+\item {\func{broadcast\_inv}}: send an {\constr{Inv}} (inventory) message to all peers.
+\end{itemize}
 

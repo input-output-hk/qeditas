@@ -29,6 +29,7 @@ Obligations and preassets are described below.
 in the {\dir{src/unittests}}
 directory in the {\branch{testing}} branch.
 These unit tests give a number of examples demonstrating how the functions described below should behave.
+The {\branch{testing}} branch is, however, out of date with the code in the {\branch{dev}} and {\branch{master}} branches.
 
 {\bf{Note:}} The Coq module {\coqmod{Assets}} is intended to correspond to {\module{assets}}.
 There are Coq types {\coqtype{preasset}}, {\coqtype{obligation}} and {\coqtype{asset}}
@@ -423,7 +424,7 @@ and signature specifications.
 
 The module {\module{DbAsset}} implements a database for storing assets
 (see Chapter~\ref{chap:db}).
-At the moment, this uses the basic file storage implementation {\module{Dbbasic}}.
+At the moment, this uses the basic file storage implementation {\module{Dbbasic2}}.
 The function {\func{get\_asset}} takes a hash value (an asset id) and
 uses {\func{dbget}} to try to look up the asset from the database.
 If it is not found in the database,
@@ -535,6 +536,7 @@ since the transaction only mentions the asset identifiers.
 in the {\dir{src/unittests}}
 directory in the {\branch{testing}} branch.
 These unit tests give a number of examples demonstrating how the functions described below should behave.
+The {\branch{testing}} branch is, however, out of date with the code in the {\branch{dev}} and {\branch{master}} branches.
 
 {\bf{Note:}} The Coq module {\coqmod{Transactions}} is intended to correspond to {\module{tx}}.
 The Coq types {\coqtype{Tx}} and {\coqtype{sTx}} correspond to the types {\type{tx}} and {\type{stx}} in the OCaml version.
@@ -632,5 +634,5 @@ transaction signatures
 In both cases the key is the transaction id (the hash of the transaction,
 not including the signatures).
 To recover a value of type {\type{stx}} both of the values are required.
-At the moment, both of these use the basic file storage implementation {\module{Dbbasic}}.
+At the moment, both of these use the basic file storage implementation {\module{Dbbasic2}}.
 
