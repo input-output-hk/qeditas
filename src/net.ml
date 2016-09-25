@@ -845,17 +845,6 @@ let find_and_send_requestdata mt h =
     raise Not_found
   with Exit -> ()
 
-let broadcast_new_header h =
-  List.iter
-    (fun (lth,sth,(fd,sin,sout,gcs)) ->
-       match !gcs with
-       | Some(cs) ->
-	   let s = Buffer.create 20 in
-	   seosbf (seo_hashval seosb h (s,None));
-	   ignore (queue_msg cs NewHeader (Buffer.contents s))
-       | None -> ())
-    !netconns
-
 let broadcast_inv tosend =
   let invmsg = Buffer.create 10000 in
   let c = ref (seo_int32 seosb (Int32.of_int (List.length tosend)) (invmsg,None)) in
