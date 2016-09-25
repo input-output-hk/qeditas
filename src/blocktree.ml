@@ -737,7 +737,14 @@ Hashtbl.add msgtype_handler Blockdelta
 	    | Waiting(tm,None) ->
 		begin
 		  match par with
-		  | None -> raise Not_found (*** should not happen ***)
+		  | None -> (*** genesis node, parent implicitly valid ***)
+		      let (blkdel,_) = sei_blockdelta seis r in
+		      begin (*** excessive logging while testing ***)
+			let s = Buffer.create 10000 in
+			seosbf (seo_blockdelta seosb blkdel (s,None));
+			Printf.fprintf !log "got blockdelta %s:\n%s\n" (hashval_hexstring h) (Hashaux.string_hexstring (Buffer.contents s));
+		      end;
+		      validate_block_of_node newnode None None (!genesiscurrentstakemod,!genesisfuturestakemod,!genesistarget) 1L h blkdel cs
 		  | Some(BlocktreeNode(_,_,_,thyroot,sigroot,_,tinf,_,_,blkhght,vsp,_,_)) ->
 		      match !vsp with
 		      | InvalidBlock -> raise Not_found (*** questionable if this can happen ***)
