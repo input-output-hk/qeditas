@@ -964,9 +964,7 @@ let dumpblocktreestate sa =
 
 Hashtbl.add msgtype_handler GetCheckpoint
     (fun (sin,sout,cs,ms) ->
-      Printf.fprintf !log "Processing GetCheckpoint\n";
       let (h,_) = sei_hashval seis (ms,String.length ms,None,0,0) in
-      Printf.fprintf !log "Processing GetCheckpoint %s\n" (hashval_hexstring h);
       let i = int_of_msgtype GetCheckpoint in
       if not (List.mem (i,h) cs.sentinv) then (*** don't resend ***)
 	try
