@@ -222,12 +222,37 @@ If the parent node has not yet been validated,
 then the block delta is deserialized and stored (along with the connection state of the peer)
 with the {\constr{Waiting}} status. In principle it will be validated after its ancestors
 have been validated.
-\item {\constr{GetTx}}: 
-\item {\constr{Tx}}: 
-\item {\constr{GetTxSignatures}}: 
-\item {\constr{TxSignatures}}: 
-\item {\constr{GetCheckpoint}}: 
-\item {\constr{Checkpoint}}: 
+\item {\constr{GetTx}}: The payload is a hash value which should be a transaction id.
+Unless the transaction has already been sent to the peer, the (unsigned) transaction
+is looked up in {\var{stxpool}} or {\module{DbTx}} and sent as a {\constr{Tx}} message.
+\item {\constr{Tx}}: The payload is a hash value $h$ followed by an unsigned transaction (of type {\type{tx}}).
+If $h$ is the transaction id of a transaction in the {\module{DbTx}} database, we ignore it.
+Likewise, if the transaction was not explicitly requested from the peer, we ignore it.
+Otherwise, we deserialize the transaction and check that it hashes to $h$ and
+put it into the {\module{DbTx}} database.
+\item {\constr{GetTxSignatures}}: The payload is a hash value which should be a transaction id.
+Unless the transaction signatures have already been sent to the peer, the transaction signatures
+are looked up in {\var{stxpool}} or {\module{DbTxSignatures}} and sent as a {\constr{TxSignatures}} message.
+\item {\constr{TxSignatures}}: The payload is a hash value $h$ and a collection of transaction signatures (see Chapter~\ref{chap:assetstx}).
+If $h$ is the transaction id of a transaction in the {\module{DbTxSignatures}} database, we ignore the message.
+Likewise, if the transaction signatures were not explicitly requested from the peer, we ignore the message.
+Otherwise, the signatures are deserialized and checked to be complete and valid (for some block height).
+Assuming the signatures are complete and valid, the signatures are saved in {\module{DbTxSignatures}}
+and added to the transaction in {\var{stxpool}}.
+\item {\constr{GetCheckpoint}}: The payload is a hash value, which should be the hash of a block header which has
+been signed as a checkpoint.
+If the checkpoint exists and has not previously been sent to the peer,
+it is sent as a {\constr{Checkpoint}} message.
+\item {\constr{Checkpoint}}: The payload is a hash value $h$ (identifying a block header), a block height $i$ and a signature $\sigma$.
+The signature $\sigma$ is checked to be a valid signature of $h$ for the public key for checkpoints.
+Assuming it is valid, the pair $(i,\sigma)$ is added to {\var{checkpoints}}.
+If the hash value $h$ was previously blacklisted in {\module{DbBlacklist}}, the entry is removed from the blacklist.
+Assume there is a node $n$ corresponding to $h$ in the block tree.
+If the node $n$ is marked as blacklisted, this is reset to {\val{false}}
+while all the siblings of $n$ (if there are any) are marked as blacklisted.
+The node is set to have validation status {\constr{Valid}} (independent of whether a block delta was ever received).
+If there is no node corresponding to $h$ in the block tree,
+a node is simply created (with no parent).\footnote{This could cause confusing with the genesis node in some parts of the code, and should probably be handled differently.}
 \end{itemize}
 
 \section{Dumping the State}

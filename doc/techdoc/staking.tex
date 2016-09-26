@@ -1,10 +1,42 @@
-The file {\file{qeditasstk.ml}} has code to execute a staking process.
-It creates an executable {\exec{qeditasstk}}
-which is started by {\exec{qeditasd}}
-and runs in an independent process. It is sent the block height, target information
-and stake modifier through standard input. It is also sent a list of assets
-which can be used for staking
-and storage assets which can be used to enhance staking.
-The process then keeps checking to see if one of the
-assets leads to a ``hit.'' When it finds a ``hit'' it reports this to
-the parent via standard out.
+The staking code is part of the top level file {\file{qeditas.ml}}.
+A thread is created via the function {\func{stakingthread}}
+if the configuration variable {\var{staking}} is set to {\val{true}}.
+{\func{stakingthread}} is a loop which takes the current
+value of {\val{bestnode}} and tries to find an asset which
+can stake the next block within the next hour or two.
+
+The hash table {\val{nextstakechances}} associates block header hash values with
+information about the next chance to stake on top of the corresponding block.
+The information is of type {\type{nextstakeinfo}} which has to constructors:
+\begin{itemize}
+\item ${\constr{NextStake}}(i,\alpha,h,b,\omega,v,c)$ meaning the next chance to stake
+is at type $i$ with the currency asset worth $v$ cants with id $h$, birthday $b$ and obligation $\omega$ held at (p2pkh) address $\alpha$
+and that the resulting block will have cumulative stake $c$.
+\item ${\constr{NoStakeUpTo}}(i)$ meaning there is no chance to stake up to time $i$.
+\end{itemize}
+The entries in {\var{nextstakechances}} are computed
+by the function {\func{compute\_staking\_chances}}.
+{\func{compute\_staking\_chances}} takes a {\type{blocktree}} node $n$ 
+and two integers $t_0$ and $t_1$ giving the starting time and ending time and searches for the first
+$i\in [t_0,t_1]$ where some held currency asset can stake.
+First, it collects the assets held at p2pkh addresses where either a private key
+or an endorsement is in the wallet. These assets are put into {\val{stakingassets}}
+from the {\module{commands}} module.
+If {\func{compute\_staking\_chances}} finds an asset that can stake, the relevant information is put into {\val{nextstakechances}}.
+If none is found, ${\constr{NoStakeUpTo}}(t_1)$ is put into {\val{nextstakechances}}.
+
+Assume there is an asset which can stake.
+If the next chance to stake is greater than 10 seconds away, the thread sleeps for a minute
+and checks again (in case the best node has changed in the past minute).
+If it is within 10 seconds of the time to stake, the block header and delta are constructed
+and published.\footnote{A final validity check is done before publishing the block. In principle
+all blocks constructed should be valid, but in practice sometimes invalid blocks are constructed.
+This is presumably due to bugs.}
+
+If no asset can stake within the next hour, the thread continues sleeping for 1 minute
+before rechecking the current state. Eventually either the best node changes or
+enough time has past that we call {\func{compute\_staking\_chances}} again for more information.
+
+In some cases the exception {\exc{StakingProblemPause}} is raised. If this happens,
+it is considered a problem caused by a bug. The staking thread deals with this by pausing
+the thread for an hour and then trying to stake again in the new state.

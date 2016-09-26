@@ -462,6 +462,8 @@ and (possibly) the number of cants being forfeited.
 \item The transformation of the current theory tree by $o$ must have hash root $\field{newtheoryroot}$.
 \item The transformation of the current signature tree by $o$ must have hash root $\field{newsignatroot}$.
 \end{itemize}
+Upon success, {\func{valid\_block}} returns the transformed theory tree and the transformed signature tree.
+Upon failure, either {\val{None}} is returned or an exception is raised.
 \end{enumerate}
 \end{itemize}
 

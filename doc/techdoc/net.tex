@@ -135,7 +135,8 @@ The variable {\var{netlistenerth}} contains the thread in case it is required la
 The function {\var{netlistener}} is an infinite loop accepting connections
 and
 removing dead connections (those with no connection state) using {\func{remove\_dead\_conns}}.
-A connection is accepted if there are fewer than {\var{maxconns}} connections on {\var{netconns}}.
+A connection is accepted if it is not a self-connect (as judged by the value of {\var{this\_nodes\_nonce}})
+and if there are fewer than {\var{maxconns}} connections on {\var{netconns}}.
 An initial connection state ({\type{connstate}}) is created with {\field{handshakestep}} set to $1$.
 A connection listener thread is created calling {\func{connlistener}}
 and a connection sender thread is created calling {\func{connsender}}.
@@ -196,18 +197,33 @@ meaning the messages will lead to a {\exc{Failure}} exception being raised.
 \section{Network Seeker}
 
 The function {\func{netseeker}} is used to start a thread
-which tries to use known knowns or fallback nodes to initiate
+which tries to use known peers (from past connections stored in a {\file{peers}} file)
+or fallback nodes (see {\var{testnetfallbacknodes}} and {\var{fallbacknodes}}
+which are currently empty) to initiate
 new connections.
 The main code is in {\func{netseeker\_loop}}.
 The thread is stored in {\var{netseekerth}}
 in case it is needed later.
 
-\section{Other Exported Network Functions}
+\section{Other Exported Network Functions and Data}
 
 There are a few important functions called by other modules in order to
 communicate with peers.
 
 \begin{itemize}
+\item {\func{peeraddr}}: return the address of an optional given {\type{connstate}} as a string.
+\item {\func{tryconnectpeer}}: given an address of a peer, try to connect to the peer, adding it to {\var{netconns}} if successful.
+Upon success, return the triple added to {\var{netconns}}.
+Upon failure, return {\val{None}}.
+\item {\func{addknownpeer}}: update the hash table {\var{knownpeers}} to either add the new peer or to update the latest connection time of an already known peer.
+\item {\func{removeknownpeer}}: remove a given peer from the {\var{knownpeers}} hash table.
+\item {\func{getknownpeers}}: iterated over the {\var{knownpeers}} hash table and collect the first 1000 peers which have been active in the past week.
+\item {\func{loadknownpeers}}: load the {\file{peers}} file (if it exists) and add the peers which have been active in the past week to the {\var{knownpeers}} hash table.
+\item {\func{saveknownpeers}}: create a new {\file{peers}} file consisting of the contents of the {\var{knownpeers}} hash table (as a text file with the peer's address followed by the last time the connection was active).
+\item {\exc{BannedPeer}} is an exception which is raised when trying to connect to a banned peer.
+\item {\var{bannedpeers}} is a hash table remembering the addresses of banned peers to prevent reconnection.
+\item {\func{banpeer}} adds an address to {\var{bannedpeers}}.
+\item {\func{clearbanned}} removes all addresses from {\var{bannedpeers}}.
 \item {\func{network\_time}}: returns the current local time modified by the median skew time of all connected nodes.
 \item {\func{queue\_msg}}: puts a non-reply message onto the {\field{sendqueue}} of a connection.
 \item {\func{queue\_reply}}: puts a reply message onto the {\field{sendqueue}} of a connection.

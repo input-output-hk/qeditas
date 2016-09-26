@@ -1,0 +1,77 @@
+The {\module{commands}} module ({\file{commands.ml}} and {\file{commands.mli}})
+contains code for handling top level commands (from the command line interface).
+
+The module {\module{commands}} is intended to support a variety of commands a user may need.
+At the moment it only supports limited wallet and transaction creation commands.
+Some state information is held in this module (although it likely should be moved elsewhere).
+\begin{itemize}
+\item {\var{walletkeys}} contains the private keys in the wallet.
+More specifically it is a list of values of the form $(k,b,(x,y),w,h,a)$
+where $k$ is the private key, $b$ is a boolean indicating if it is for the compressed public key,
+$(x,y)$ is the public key, $w$ is the string base-58 WIF format, $h$ is the 20-byte hash value
+corresponding to the p2pkh address and $a$ is the string base-58 Qeditas p2pkh address.
+\item {\var{walletp2shs}} contains entries of the form $(h,a,\overline{b})$
+where $h$ is the 20-byte hash value of a p2sh address, $a$ is the base-58 Qeditas p2sh address
+and $\overline{b}$ is the sequence of bytes giving the script corresponding to $h$.
+Note that this does not directly give a way of ``signing'' for the p2sh address.
+\item {\var{walletendorsements}} contains the endorsements in the wallet.
+In particular it is a list of values of the form $(\alpha,\beta,(x,y),b,\sigma)$
+where $\alpha$ and $\beta$ are pay addresses,\footnote{Actually, in what is implemented we assume they are both p2pkh addresses. In principle endorsements involving p2sh addresses are supported by the code in {\module{sigant}} and {\module{script}}, but support has not been implemented in {\module{commands}}.}
+$(x,y)$ is the public key for $\alpha$,
+$b$ is a boolean indicating if $\alpha$ is the address for the compressed public key
+and $\sigma$ is a signature for a
+Bitcoin message of the form ``endorse $\beta$''
+(or ``testnet:endorse $\beta$'' in the testnet)
+signed with the private key for $\alpha$.
+The private key for $\beta$ should be in {\var{walletkeys}}
+and this private key along with the endorsement means the wallet can sign for $\alpha$.\footnote{The endorsement mechanism gives Bitcoin users a way to claim their part of the initial distribution without revealing their private keys.}
+\item {\var{walletwatchaddrs}}
+contains addresses to ``watch.'' 
+\item {\var{stakingassets}}
+contains a list of assets which the node can stake. This changes as {\var{bestnode}} from {\module{blocktree}} changes.
+\item {\var{storagetrmassets}}
+is intended contain a list of assets at term addresses which the node can use as proof-of-storage to improve the chances of staking.
+Currently it is unused.
+\item {\var{storagedocassets}}
+is intended to contain a list of documents at publication assets which the node can use as proof-of-storage to improve the chances of staking.
+Currently it is unused.
+\item {\var{txpool}} is a hash table associating hash values (transaction ids)
+with signed transactions. This is loaded and saved to the file {\file{txpool}}.
+The intention is that this holds transactions which have been published
+but are not yet included in a block.
+\end{itemize}
+
+The following functions are for loading and saving the state in certain files.
+\begin{itemize}
+\item {\func{load\_txpool}} sets {\var{txpool}} by loading the contents fo {\file{txpool}}.
+\item {\func{load\_wallet}} sets {\var{walletkeys}}, {\var{walletp2shs}},
+{\var{walletendorsements}}
+and {\var{walletwatchaddrs}}
+by loading the file {\file{wallet}}.
+\item {\func{save\_wallet}} saves the current wallet contents
+(the values of {\var{walletkeys}}, {\var{walletp2shs}},
+{\var{walletendorsements}}
+and {\var{walletwatchaddrs}})
+in {\file{wallet}}.
+\item {\func{printassets}} prints the assets from the current ledger tree (the ledger tree with root in the current best node) at the addresses
+mentioned in the wallet.
+\item {\func{printassets\_in\_ledger}} prints the assets in a ledger with an explicitly given ledger root
+at the addresses mentioned in the wallet.
+\item {\func{printctreeinfo}} prints a summary of information about the compact tree with the given hash root.
+\item {\func{printctreeelt}} prints the ctree element (complete information for exactly 9 levels) with the given hash root.
+\item {\func{printhconselt}} prints the hcons element with the given hash root, meaning it prints the asset id and optionally the root for the next hcons element.
+\item {\func{printasset}} prints the asset with the given asset id.
+\item {\func{printtx}} prints the transaction with the given hash root.
+\item {\func{btctoqedaddr}} parses a Bitcoin address (base-58 representation) and prints the corresponding Qeditas address (base-58 representation).
+\item {\func{importprivkey}} imports a private key given in Qeditas WIF.
+\item {\func{importbtcprivkey}} imports a private key given in Bitcoin WIF.
+\item {\func{importendorsement}} imports an endorsement.
+\item {\func{importwatchaddr}} imports a Qeditas address to watch.
+\item {\func{importwatchbtcaddr}} imports a Bitcoin address in order to watch the corresponding Qeditas address.
+\item {\func{createsplitlocktx}} creates a transaction to split an asset
+into several assets with a given lock height.
+\item {\func{signtx}} signs a transaction.
+\item {\func{savetxtopool}} saves a transaction to the local transaction pool (without publishing it).
+\item {\func{sendtx}} publishes a transaction by sending it to peers.
+\end{itemize}
+

@@ -1,15 +1,8 @@
-{\bf{Warning:}} The top level code is only partially written and may possibly be rewritten completely.
-The information is this chapter is subject to changes in the near future.
-
 The file {\file{qeditas.ml}} is
 used to create an executable
 {\exec{qeditas}}.
 This executable starts several threads for networking, staking (optionally)
 and finally for a console-style interface.
-The module {\module{commands}} handles commands called using the command line
-interface.
-
-\section{Main Executable}
 
 To understand what the executable {\exec{qeditas}} does,
 see the code near the end of the file {\file{qeditas.ml}}.
@@ -20,13 +13,12 @@ Next the function {\func{initnetwork}} is called,
 see Section~\ref{sec:initnetwork}.
 If the configuration variable {\var{staking}} is set to {\val{true}},
 then a thread is created which calls the function {\func{stakingthread}},
-see Section~\ref{sec:stakingthread}.
+see Chapter~\ref{chap:stk}.
 Finally, a main loop begins for reading and processing commands
 from the console begins,
 see Section~\ref{sec:mainloop}.
 
-
-\subsection{Initialization}\label{sec:init}
+\section{Initialization}\label{sec:init}
 
 The {\func{initialize}} function begins by checking the command line arguments for an option
 of the form \verb+-datadir=...+
@@ -36,10 +28,22 @@ It then reads the config file {\file{qeditas.conf}} in the data directory.
 This may override some default values in the {\module{config}} module.
 It then reads the other command line arguments which may again override
 some values in the {\module{config}} module.
-If the {\var{testnet}} configuration variable is {\val{true}},
+If the {\var{testnet}} configuration variable is {\val{true}} (which is mandatory at the moment),
 then the {\dir{testnet}} subdirectory of the main data directory is used.
 This implies the testnet will have its own databases, its own wallet, and so on.
 The database directory is set and configured and a log file is opened.
+
+If there is a {\file{.lock}} file in the data directory,
+then Qeditas exits to prevent two instances of Qeditas from using the same data directory.
+Otherwise, Qeditas creates a {\file{.lock}} file in the data directory
+and sets the variable {\var{exitfn}} to a function which calls {\func{saveknownpeers}}
+(to remember the peers discovered during the session) and remove the {\file{.lock}} file.
+At this point, the only way Qeditas should exit is via a call to {\var{exitfn}}.
+
+The database is initialized by calling {\func{dbconfig}} with a {\dir{db}} subdirectory of the data directory
+and then calling {\func{dbinit}} on each database.
+
+Next the {\file{log}} file is opened (via {\func{openlog}}).
 
 The code then checks if either the {\var{seed}} variable in {\module{config}}
 has been set to a nonempty string. (It should be a 40 character hex string.)
@@ -63,21 +67,22 @@ that a checkpoint has been set so that a node can begin following the block chai
 from that checkpoint. (The full history is not required. Each ledger tree contains
 the full information required to continue.)
 
+The function {\func{initblocktree}} from the {\module{blocktree}} module
+is called. In particular, this processes all currently known headers in the database
+to build a block tree and determine the current best node (and hence block chain).
+
 If the {\var{testnet}} configuration variable is set, then the difficulty is decreased significantly
-(setting {\var{genesistarget}} $2^{200}$ so that finding a hit to stake is not difficult
-and setting {\var{max\_target}} $2^{230}$, practically as high as possible).
+(setting {\var{genesistarget}} to $2^{200}$ so that finding a hit to stake is not difficult
+and setting {\var{max\_target}} to $2^{208}$).
 
-The function {\func{initblocktree}} from the {\module{net}} module
-is called.\footnote{The blocktree code is not yet fully written or documented. It is intended to store the headers giving the best block chain in addition to orphaned headers.}
+Next the wallet and the transaction pool are loaded using {\func{load\_wallet}} and {\func{load\_txpool}} from the {\module{commands}} module (see Chapter~\ref{chap:commands}).
 
-Next the wallet is loaded using {\func{load\_wallet}} in the {\module{commands}} module see Section~\ref{sec:commands}.
-
-A random 64-bit nonce is obtained from {\file{/dev/urandom}} in order to prevent
+A random 64-bit nonce is generated in order to prevent
 the node from connecting to itself.
-The variable {\var{this\_nodes\_nonce]} from the {\module{net}} module
+The variable {\var{this\_nodes\_nonce} from the {\module{net}} module
 is set to the nonce.
 
-\subsection{Initialization of the Network}\label{sec:initnetwork}
+\section{Initialization of the Network}\label{sec:initnetwork}
 
 The {\func{initnetwork}} function starts several threads to
 handle connections to the network.
@@ -92,25 +97,12 @@ and calls {\func{netseeker\_loop}}.
 The loop tries to connect to peers
 every 10 minutes, unless the maximum number of connections has been reached.
 
-Each time a connection is created, a thread is created for that thread
-(using {\func{connlistener}} for message handling)
-and the corresponding information is added to a global {\func{netconns}}.
+Each time a connection is created, threads are created for 
+listening to the peer and for sending messages to the peer.
+Most of this networking code is in the {\module{net}} module
+which is described in Chapter~\ref{chap:net}.
 
-Most of this networking code is in the {\module{net}} module, which is
-currently only partially written.
-
-\subsection{Staking}\label{sec:stakingthread}
-
-The function {\func{stakingthread}} loops
-and once a minute checks to see if
-the next chances to stake have been calculated
-for the current best block.
-If not, {\func{compute\_staking\_chances}}
-is called to compute the chances to stake
-(based on the staking assets in the wallet)
-for the next 1 or 2 hours.
-
-\subsection{Main Loop}\label{sec:mainloop}
+\section{Main Loop}\label{sec:mainloop}
 
 This main loop prints a prompt (see the configuration variable {\var{prompt}}),
 reads a line and sends this line to {\func{do\_command}}.
@@ -121,12 +113,12 @@ A command may also raise the exception {\exc{Exit}} which will be silently ignor
 and the loop continues, issuing prompt and waiting for the next command.
 All other exceptions are displayed to the user before the loop continues.
 
-The supported commands are still in the process of being implemented.
+The supported commands are not fully implemented.
 The code for executing most commands is in the {\module{commands}} module
-which we describe in Section~\ref{sec:commands}.
+(see Chapter~\ref{chap:commands}).
 Here are a few that are currently supported:
 \begin{itemize}
-\item {\command{exit}} - exit qeditas.
+\item {\command{exit}} - exit qeditas. (CTRL-D also exits.)
 \item {\command{printassets}} {\it{[ledger root in hex]}} - print the assets held at the addresses in the wallet in the ledger with the given root. This only prints the visible assets. Some assets will be missing if the local approximation of the compact tree does not include the assets explicitly. If the ledger root is omitted, then the ledger root of the most recent best block is used.
 \item {\command{importprivkey}} - import a private key in Qeditas WIF format.
 \item {\command{importbtcprivkey}} - import a private key in Bitcoin WIF format.
@@ -134,74 +126,41 @@ Here are a few that are currently supported:
 \item {\command{importwatchbtcaddr}} - import a Bitcoin address as a Qeditas address for watching assets, without importing the corresponding private key.
 \item {\command{importendorsement}} - import a Bitcoin signed message to allow a Qeditas private key (held in the wallet) to sign for a corresponding Bitcoin address. This is the safe way to claim assets in the initial distribution.
 \item {\command{btctoqedaddr}} - give the Qeditas address that corresponds to a given Bitcoin address.
-\end{itemize}
-
-\section{Commands}\label{sec:commands}
-
-The module {\module{commands}} is intended to support a variety of commands a user may need.
-At the moment it only supports limited wallet and transaction creation commands.
-Some state information is held in this module (although it likely should be moved elsewhere).
-\begin{itemize}
-\item {\var{walletkeys}} contains the private keys in the wallet.
-More specifically it is a list of values of the form $(k,b,(x,y),w,h,a)$
-where $k$ is the private key, $b$ is a boolean indicating if it is for the compressed public key,
-$(x,y)$ is the public key, $w$ is the string base-58 WIF format, $h$ is the 20-byte hash value
-corresponding to the p2pkh address and $a$ is the string base-58 Qeditas p2pkh address.
-\item {\var{walletp2shs}} contains entries of the form $(h,a,\overline{b})$
-where $h$ is the 20-byte hash value of a p2sh address, $a$ is the base-58 Qeditas p2sh address
-and $\overline{b}$ is the sequence of bytes giving the script corresponding to $h$.
-Note that this does not directly give a way of ``signing'' for the p2sh address.
-\item {\var{walletendorsements}} contains the endorsements in the wallet.
-In particular it is a list of values of the form $(\alpha,\beta,(x,y),b,\sigma)$
-where $\alpha$ and $\beta$ are pay addresses,\footnote{Actually, in what is implemented we assume they are both p2pkh addresses. In principle endorsements involving p2sh addresses are supported by the code in {\module{sigant}} and {\module{script}}, but support has not been implemented in {\module{commands}}.}
-$(x,y)$ is the public key for $\alpha$,
-$b$ is a boolean indicating if $\alpha$ is the address for the compressed public key
-and $\sigma$ is a signature for a
-Bitcoin message of the form ``endorse $\beta$''
-(or ``testnet:endorse $\beta$'' in the testnet)
-signed with the private key for $\alpha$.
-The private key for $\beta$ should be in {\var{walletkeys}}
-and this private key along with the endorsement means the wallet can sign for $\alpha$.\footnote{The endorsement mechanism gives Bitcoin users a way to claim their part of the initial distribution without revealing their private keys.}
-\item {\var{walletwatchaddrs}}
-contains addresses to ``watch.'' 
-\item {\var{stakingassets}}
-contains a list of assets which the node can stake.
-\item {\var{storagetrmassets}}
-is intended contain a list of assets at term addresses which the node can use as proof-of-storage to improve the chances of staking.
-Currently it is unused.
-\item {\var{storagedocassets}}
-is intended to contain a list of documents at publication assets which the node can use as proof-of-storage to improve the chances of staking.
-Currently it is unused.
-\item {\var{recenttxs}} is a hash table associating hash values (transaction ids)
-with signed transactions. This is loaded and saved to the file {\file{recenttxs}}.
-The intention is that this holds transactions which have been created but
-are not yet published (and may only be partially signed).
-\item {\var{txpool}} is a hash table associating hash values (transaction ids)
-with signed transactions. This is loaded and saved to the file {\file{txpool}}.
-The intention is that this holds transactions which have been published
-but are not yet included in a block.
-\end{itemize}
-
-The following functions are for loading and saving the state in certain files.
-\begin{itemize} % todo: update this to correspond to the current state of commands
-\item {\func{load\_recenttxs}} sets {\var{recenttxs}} by loading the contents fo {\file{recenttxs}}.
-\item {\func{load\_txpool}} sets {\var{txpool}} by loading the contents fo {\file{txpool}}.
-\item {\func{load\_wallet}} sets {\var{walletkeys}}, {\var{walletp2shs}},
-{\var{walletendorsements}}
-and {\var{walletwatchaddrs}}
-by loading the file {\file{wallet}}.
-\item {\func{save\_wallet}} saves the current wallet contents
-(the values of {\var{walletkeys}}, {\var{walletp2shs}},
-{\var{walletendorsements}}
-and {\var{walletwatchaddrs}})
-in {\file{wallet}}.
-\item {\func{printassets}} prints the assets from the current ledger tree at the addresses
-mentioned in the wallet.
-\item {\func{btctoqedaddr}} parses a Bitcoin address (base-58 representation) and prints the corresponding Qeditas address (base-58 representation).
-\item {\func{importprivkey}} imports a private key given in Qeditas WIF.
-\item {\func{importbtcprivkey}} imports a private key given in Bitcoin WIF.
-\item {\func{importendorsement}} imports an endorsement.
-\item {\func{importwatchaddr}} imports a Qeditas address to watch.
-\item {\func{importwatchbtcaddr}} imports a Bitcoin address in order to watch the corresponding Qeditas address.
+\item {\command{addnode}} {\it{ip:port}} {\it{[add|remove|onetry]}} - explicitly add or remove a connection to a node.
+\item {\command{clearbanned}} - call {\func{clearbanned}} in {\module{net}} to clear all banned nodes from memory.
+\item {\command{listbanned}} - list all banned nodes in {\var{bannedpeers}} from {\module{net}}.
+\item {\command{bannode}} {\it{ip:port}} - call {\func{bannode}} in {\module{net}} to add the given node to the set of banned nodes.
+\item {\command{getpeerinfo}} - list all current connections.
+\item {\command{nettime}} - print the current network time and median skew.
+\item {\command{printtx}} {\it{txid}} - call {\func{printtx}} in {\module{commands}}
+      to print the tx with the given id.
+\item {\command{printasset}} {\it{assetid}} - call {\func{printasset}} in {\module{commands}}
+      to print the asset with the given id.
+\item {\command{printhconselt}} {\it{hconseltroot}} - call {\func{printhconselt}} in {\module{commands}}
+      to print the hcons element with the given root.
+\item {\command{printctreeelt}} {\it{ctreeeltroot}} - call {\func{printctreeelt}} in {\module{commands}}
+      to print the ctree element with the given root.
+\item {\command{printctreeinfo}} {\it{ctreehashroot}} - call {\func{printctreeinfo}} in {\module{commands}}
+      to print information about the ctree with the given root.
+\item {\command{createsplitlocktx}} {\it{address assetid numouts lockheight fee [newaddress [newobligationaddress [ledgerroot]]]}} - 
+      create a transaction with the given asset at the given address as the only input,
+      with the number of outputs indicated
+      where each output has the given lockheight.
+      The values in the outputs are evenly divided (except possibly the last output) after the fee has been subtracted.
+      If no {\it newaddress} is given, then the output is to the same address and the same address is used in the new obligations.
+      If {\it newaddress} is given and {\it newobligationaddress} is not, then the outputs
+      are to {\it newaddress} and {\it newaddress} is used in the obligations.
+      If {\it newaddress} and {\it newobligationaddress} are given, then the outputs
+      are to {\it newaddress} and {\it newobligationaddress} is used in the obligations.
+      If {\it ledgerroot} is given, then the corresponding ctree is used to look up the asset for the input.
+      (By default, the ledger root of the current best node is used.)
+      Most of the work is done by the function {\func{createsplitlocktx}} in {\module{commands}}.\footnote{The purpose of this specialized command is to easily split one large asset into several smaller assets which can stake independently. Ultimately, there would need to be a more general command for creating transactions.}
+\item {\command{signtx}} {\it{txinhex}} - call {\func{signtx}} in {\module{commands}} to (partially or completely) sign the transaction, giving the signed transaction in hex as output.
+\item {\command{savetxtopool}} {\it{txinhex}} - call {\func{savetxtopool}} in {\module{commands}} to save the transaction to the local pool.
+\item {\command{sendtx}} {\it{txinhex}} - call {\func{sendtx}} in {\module{commands}} to send the given transaction to peers.
+\item {\command{bestblock}} - print information about the current best node ({\var{bestnode}} from {\module{blocktree}}).
+\item {\command{difficulty}} - print the difficulty target of the current best node ({\var{bestnode}} from {\module{blocktree}}).
+\item {\command{blockchain}} - print the header hash and ledger root of the last 1000 blocks of the current block chain.
+\item {\command{dumpstate}} {\it{filename}} - dump information about the current state to the given file, as a text file. This is for debugging purposes.
 \end{itemize}
 

@@ -551,10 +551,33 @@ and an {\type{addr\_preasset}} list (a list of addresses associated with an obli
 type tx = addr_assetid list * addr_preasset list
 \end{verbatim}
 
-The type {\type{stx}} of signed transactions is a transaction associated
-with two lists of generalized signatures ({\type{gensignat}}).
+In order to avoid needing to give multiple signatures corresponding to the same address,
+we allow transaction signatures to reference already given signatures.
+This is accomplished using the type {\type{gensignat\_or\_ref}} defined as follows:
 \begin{verbatim}
-type stx = tx * (gensignat list * gensignat list)
+type gensignat_or_ref = GenSignatReal of gensignat
+                      | GenSignatRef of int
+\end{verbatim}
+The idea is that we can have a list such at $[\sigma_1,\sigma_2,0,1]$
+where $\sigma_1$ and $\sigma_2$ are of type {\type{gensignat}} giving real signatures
+and $0$ and $1$ are references to $\sigma_2$ and $\sigma_1$, respectively.
+The function {\func{getsig}} is used to determine the signature given a {\type{gensignat\_or\_ref}}
+and a list of signatures.
+In practice, the list of signatures given to {\func{getsig}} will be a list of the
+previous signatures.
+In the example $[\sigma_1,\sigma_2,0,1]$ the initial list of previous signatures is empty.
+In this case {\func{getsig}} is first called with the signature $\sigma_1$ returns $\sigma_1$ and the list $[\sigma_1]$.
+The next call to {\func{getsig}} would be with $\sigma_2$ and the list $[\sigma_1]$
+returning $\sigma_2$ and the list $[\sigma_2;\sigma_1]$.
+The third call to {\func{getsig}} would be with the reference $0$ and the list $[\sigma_2;\sigma_1]$
+and return $\sigma_2$ (as element $0$ on the list) and the unchanged list $[\sigma_2;\sigma_1]$.
+The fourth call to {\func{getsig}} would be with the reference $1$ and the list $[\sigma_2;\sigma_1]$
+and return $\sigma_1$ (as element $1$ on the list) and the unchanged list $[\sigma_2;\sigma_1]$.
+
+The type {\type{stx}} of signed transactions is a transaction associated
+with two lists of generalized signatures ({\type{gensignat}}) or references to other signatures.
+\begin{verbatim}
+type stx = tx * (gensignat_or_ref list * gensignat_or_ref list)
 \end{verbatim}
 The first list gives ``input'' signatures and the second list gives the ``output'' signatures.
 The ``input'' signatures are required to spend or move the assets in the input.
@@ -617,6 +640,9 @@ Essentially this allows the ``movement'' of an asset out of an address to a new 
 \item {\func{check\_tx\_out\_signatures}} ensures the authors of all publications
 have signed the transaction. Note that the asset list is not required here.
 \end{itemize}
+\item {\func{tx\_signatures\_valid\_asof\_blkh}} is like {\func{tx\_signatures\_valid}}
+but not given a block height. Instead it finds the minimum block height at which the
+signatures are valid and returns this block height (or {\val{None}} if there is no such block height).
 \item {\func{txout\_update\_ottree}} takes a transaction output list
 and uses it to update the current (possibly empty) {\type{ttree}} by including any new
 theories created by publishing theory specifications.
