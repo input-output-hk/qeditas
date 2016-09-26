@@ -79,8 +79,6 @@ type connstate = {
 
 val peeraddr : connstate option -> string
 
-val connectpeer : string -> int -> Unix.file_descr
-val connectpeer_socks4 : int -> string -> int -> Unix.file_descr * in_channel * out_channel
 val tryconnectpeer : string -> (Thread.t * Thread.t * (Unix.file_descr * in_channel * out_channel * connstate option ref)) option
 
 val addknownpeer : int64 -> string -> unit
