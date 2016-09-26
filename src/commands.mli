@@ -19,13 +19,11 @@ val walletwatchaddrs : addr list ref
 val stakingassets : (p2pkhaddr * hashval * int64 * obligation * int64) list ref
 val storagetrmassets : (hashval option * tm * tp * hashval * hashval) list ref
 val storagedocassets : (pubaddr * hashval * hashval option * pdoc * hashval * hashval) list ref
-val recenttxs : (hashval,Tx.stx) Hashtbl.t
 val unconfirmed_spent_assets : (hashval,hashval) Hashtbl.t
 
 val add_to_txpool : hashval -> Tx.stx -> unit
 val remove_from_txpool : hashval -> unit
 
-val load_recenttxs : unit -> unit
 val load_txpool : unit -> unit
 val load_wallet : unit -> unit
 val save_wallet : unit -> unit

@@ -25,23 +25,6 @@ let stakingassets = ref []
 let storagetrmassets = ref []
 let storagedocassets = ref []
 
-let recenttxs : (hashval,Tx.stx) Hashtbl.t = Hashtbl.create 100
-
-let load_recenttxs () =
-  let fn = Filename.concat (datadir()) "recenttxs" in
-  if Sys.file_exists fn then
-    let ch = open_in_bin fn in
-    try
-      while true do
-	let ((txid,stau),_) = sei_prod sei_hashval Tx.sei_stx seic (ch,None) in
-	Hashtbl.add recenttxs txid stau
-      done
-    with
-    | End_of_file -> close_in ch
-    | exc ->
-	Printf.printf "Problem in recenttxs file: %s\n" (Printexc.to_string exc);
-	close_in ch;;
-
 let unconfirmed_spent_assets : (hashval,hashval) Hashtbl.t = Hashtbl.create 100
 
 let add_to_txpool txid stau =
