@@ -6,8 +6,19 @@ such as leveldb.
 However, integrating leveldb with the OCaml code has proven challenging.
 Instead (at least for the moment) the database has been implemented
 by simply using files in directories.
-The particular implementation has been abstracted using a module type
-so that the implementation of the module can be easily replaced.\footnote{Trent Russell was responsible for the initial implementation of the database code. His original implementation {\module{Dbbasic}} was modified to create {\module{Dbbasic2}} described below. The main difference is that the original {\module{Dbbasic}} implementation kept sorted index files whereas {\module{Dbbasic2}} simply appends to index files while keeping the indexing data in RAM in a hash table. The initial load of the indexing data is handled by a new function {\func{dbinit}} called at startup.}
+The particular implementation has been abstracted using a module type ({\moduletype{dbtype}})
+so that the implementation of the module can be easily replaced.
+The first implementation, {\module{Dbbasic}}, was due to Trent Russell in early 2016.
+Since {\module{Dbbasic}} requires many file operations (to keep index files sorted),
+a modified version {\module{Dbbasic2}} was added by Bill White later in 2016.
+{\module{Dbbasic2}} requires significantly more RAM as index files are loaded into RAM
+upon initialization,\footnote{The initial load of the indexing data is handled by a function {\func{dbinit}} called at startup, which was not in the first version of {\moduletype{dbtype}}.}
+but can simply append new keys to index files since they do not need to
+remain sorted in the file.
+Both implementations are still included in the {\module{db}} module
+and each database can use whichever implementation seems more appropriate.
+At the moment, all use {\module{Dbbasic}} except the database for headers (since this requires
+an additional function to iterate over keys).
 
 The module type {\moduletype{dbtype}} is actually a functor type.
 It depends on a signature with
@@ -28,10 +39,10 @@ In addition there is a module type {\moduletype{dbtypekeyiter}} which requires t
 The function {\func{dbkeyiter}} applies a function to every key in the database.
 This is used in practice to initialize headers on startup.
 
-There is a functor {\module{Dbbasic2}} which returns
+The two functors {\module{Dbbasic}} and {\module{Dbbasic2}} return
 a module implementing {\moduletype{dbtype}}, given an implementation of {\tt{t}}, {\tt{basedir}}, {\tt{seival}} and {\tt{seoval}}.
-The implementation of {\module{Dbbasic2}}
-uses subdirectories of {\tt{basedir}}
+The implementation of both {\module{Dbbasic}} and {\module{Dbbasic2}}
+use subdirectories of {\tt{basedir}}
 with three files: {\file{index}},
 {\file{data}}
 and {\file{deleted}}.
@@ -51,19 +62,78 @@ created (if necessary) and this subdirectory is used, unless it is also full.
 
 Some auxiliary functions are used:
 \begin{itemize}
+\item {\func{find\_in\_deleted}} checks if a key is in the {\file{deleted}} file of a directory.
+\item {\func{find\_in\_index}}
+searches for a key
+by loading the {\file{index}} file and doing a binary search.
+If it is found, then the position of the value in the {\file{data}}
+file is returned. Otherwise, {\exc{Not\_found}} is raised.
+\item {\func{load\_index}} loads the index file as a list of pairs of hash values and positions.
+This is only used by {\module{Dbbasic}} (not by {\module{Dbbasic2}}) and assumes the index file is sorted,
+in which case it returns the list reverse sorted by the hash values.
 \item {\func{load\_index\_to\_hashtable}} takes a hash table and a directory $d$.
 Assuming an {\file{index}} file is in the directory, each entry is inserted into the hash table.
 That is, for each key $k$ and integer $p$ (giving the position of the data in the {\file{data}} file
 in the directory), the hash table associates the key $k$ with the directory $d$ and position $p$.
+\item {\func{count\_index}} gives the number of entries in the {\file{index}} file of a directory.
 \item {\func{load\_deleted\_to\_hashtable}} takes a hash table and a directory.
 Assuming a {\file{deleted}} file is in the directory, each key $k$ in the file is added to the hash table.
 \item {\func{load\_deleted}} loads all the hash values (keys) in the {\file{deleted}} file of a directory.
 \item {\func{undelete}} removes a key from the {\file{deleted}} file of a directory
 by loading all the deleted keys and then recreating the {\file{deleted}} file without given the key.
-\item {\func{count\_index}} gives the number of entries in the {\file{index}} file of a directory.
+\item {\func{count\_deleted}} gives the number of entries in the {\file{deleted}} file of a directory.
+\item {\func{dbfind}} and {\func{dbfind\_a}}
+are used to search for a subdirectory where the {\func{index}} file
+contains a given key, returning the directory and value position
+if one is found. If none is found, {\exc{Not\_found}}
+is raised.
 \item {\func{dbfind\_next\_space}}, {\func{dbfind\_next\_space\_a}} and {\func{dbfind\_next\_space\_b}}
 are used to find the next appropriate subdirectory and position where a key
 can be included.
+\item {\func{defrag}} cleans up by actually deleting key-value pairs which have been deleted. (This is only called by {\module{Dbbasic}}.)
+\end{itemize}
+
+The implementation of {\module{Dbbasic}} works as follows:
+\begin{itemize}
+\item There are two hash table {\val{cache1}} and {\val{cache2}}
+which store (roughly) the last 128 to 256 entries looked up
+so that these can be returned again quickly.
+(When one cache has 128 entries, the other is cleared and begins
+to be filled.)
+The internal functions {\func{add\_to\_cache}} and {\func{del\_from\_cache}}
+handle adding and removing key-value pairs from the cache.
+\item {\func{dbget}} tries to find the key in the cache.
+If it is not in the cache, {\func{dbfind}} is called to 
+try to find a subdirectory and value position.
+If one is found and the key has not been deleted, then
+the value is deserialized from the {\file{data}} file starting at the position
+and returned.
+Otherwise, {\exc{Not\_found}} is raised.
+\item {\func{dbexists}} is analogous to {\func{dbget}} except it
+does not deserialize the value if it is found.
+Instead it returns {\val{true}} if a subdirectory and value position were found
+(and the key is not marked as deleted),
+and returns {\val{false}} otherwise.
+\item {\func{dbput}} takes a key $k$ and value $v$.
+The function {\func{dbfind}} is called to find an entry for $k$ if one exists.
+If one is found and it has been marked as deleted, then undelete it.
+If one is found and it has not been deleted, then simply return -- as the
+key value pair already exists.
+Otherwise, call {\func{dbfind\_next\_space}} to find the next subdirectory
+and position where the new value can be stored (which is at the end of the {\file{data}} file,
+or $0$ if no {\file{data}} file yet exists).
+The function {\func{load\_index}} at this subdirectory is used
+to get a reverse sorted list of the current keys and positions.
+The list is reversed and the new key and position are merged into the list.
+This new list is stored in {\file{index}} replacing the previous contents.
+The value is deserialized and appended to the end of the {\file{data}} file.
+\item {\func{dbdelete}} takes a key and uses {\func{dbfind}} to find a subdirectory
+where the corresponding {\file{index}} file contains the key.
+If none is found, then do nothing.
+Assume a subdirectory is found.
+If the key is already in the {\file{deleted}} file of this subdirectory, then do nothing.
+Otherwise, append the key to the {\file{deleted}} file.
+If the number of deleted entries in this subdirectory exceeds 1024, then {\func{defrag}} is called.
 \end{itemize}
 
 The implementation of {\module{Dbbasic2}} works as follows:
@@ -115,14 +185,14 @@ which takes a function $f$ and calls it on every key in the hash table {\val{ind
 unless the key is in {\val{deletedtable}}.
 
 Two simple database modules {\module{DbBlacklist}} and {\module{DbArchived}}
-are defined by giving {\module{Dbbasic2}} the type {\type{bool}} and 
+are defined by giving {\module{Dbbasic}} the type {\type{bool}} and 
 base directories {\dir{blacklist}} and {\dir{archived}}, respectively.
 {\module{DbBlacklist}} is intended to save keys corresponding to some blacklisted data that
 should not be requested from peers.
 {\module{DbArchived}} is intended to save keys corresponding to old data the node no longer wishes
 to store or receive.
 
-Other instances of {\module{Dbbasic2}}
+Other instances of {\module{Dbbasic}}
 occur where the corresponding data types are defined.
 For assets this is in {\module{assets}}
 and
@@ -135,8 +205,13 @@ this is in {\module{ctre}}
 For block deltas,
 this is in {\module{block}}
 (see Chapter~\ref{chap:block}).
-Block headers use {\module{Dbbasic2keyiter}} instead of {\module{Dbbasic2}}
+Block headers use {\module{Dbbasic2keyiter}} instead of {\module{Dbbasic}}
 so that hashes of all block headers can be processed during initialization.
 The corresponding database {\module{DbBlockHeader}}
 is defined in {\module{block}}
 (see Chapter~\ref{chap:block}).
+
+Users can change each use of {\module{Dbbasic}} to be {\module{Dbbasic2}},
+as desired, and Qeditas should still work. Note, however, that
+trying to change back from {\module{Dbbasic2}} to {\module{Dbbasic}}
+may not work, as the index files in the relevant database may no longer be sorted.

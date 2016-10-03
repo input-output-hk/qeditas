@@ -22,11 +22,13 @@ module type dbtypekeyiter = functor (M:sig type t val basedir : string val seiva
     val dbkeyiter : (hashval -> unit) -> unit
   end
 
+module Dbbasic : dbtype
 module Dbbasic2 : dbtype
 module Dbbasic2keyiter : dbtypekeyiter
 
 module DbBlacklist :
   sig
+    val dbinit : unit -> unit
     val dbget : hashval -> bool
     val dbexists : hashval -> bool
     val dbput : hashval -> bool -> unit
@@ -35,6 +37,7 @@ module DbBlacklist :
 
 module DbArchived :
   sig
+    val dbinit : unit -> unit
     val dbget : hashval -> bool
     val dbexists : hashval -> bool
     val dbput : hashval -> bool -> unit
