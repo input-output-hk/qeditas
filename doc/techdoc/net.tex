@@ -198,8 +198,7 @@ meaning the messages will lead to a {\exc{Failure}} exception being raised.
 
 The function {\func{netseeker}} is used to start a thread
 which tries to use known peers (from past connections stored in a {\file{peers}} file)
-or fallback nodes (see {\var{testnetfallbacknodes}} and {\var{fallbacknodes}}
-which are currently empty) to initiate
+or fallback nodes (see {\var{testnetfallbacknodes}} and {\var{fallbacknodes}}) to initiate
 new connections.
 The main code is in {\func{netseeker\_loop}}.
 The thread is stored in {\var{netseekerth}}
