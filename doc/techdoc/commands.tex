@@ -55,6 +55,11 @@ and {\var{walletwatchaddrs}})
 in {\file{wallet}}.
 \item {\func{printassets}} prints the assets from the current ledger tree (the ledger tree with root in the current best node) at the addresses
 mentioned in the wallet.
+If some of the relevant parts of the ledger are missing and there are connections to peers, an attempt is made to request
+the relevant information from peers. If this is taking too long, it may give up and print partial information
+(meaning that balances appear smaller than they are).
+Calling {\func{printassets}} multiple times with sufficient peers should eventually fetch enough information about the
+ledger to give all assets and the full balance.
 \item {\func{printassets\_in\_ledger}} prints the assets in a ledger with an explicitly given ledger root
 at the addresses mentioned in the wallet.
 \item {\func{printctreeinfo}} prints a summary of information about the compact tree with the given hash root.
