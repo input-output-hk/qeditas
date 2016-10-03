@@ -425,7 +425,7 @@ and signature specifications.
 The module {\module{DbAsset}} implements a database for storing assets
 (see Chapter~\ref{chap:db}).
 At the moment, this uses the basic file storage implementation {\module{Dbbasic2}}.
-The function {\func{get\_asset}} takes a hash value (an asset id) and
+The function {\func{get\_asset}} takes a hash value (an asset hash) and
 uses {\func{dbget}} to try to look up the asset from the database.
 If it is not found in the database,
 then the asset is requested from network peers\footnote{This is not currently implemented. Some earlier code to do this is commented out.}
@@ -433,6 +433,8 @@ and the exception {\exc{GettingRemoteData}} is raised.
 The idea is that the next time ${\constr{get\_asset}}$ is
 called the asset
 may have been put into the database after it was received from a peer.
+
+{\bf{Note:}} The keys to the assets in the database are the asset hash (given by {\func{hashasset}}), not the asset id (given by {\func{assetid}}).
 
 \subsection{Creation of Objects and Propositions}\label{sec:outputcreates}
 

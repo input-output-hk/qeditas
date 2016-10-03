@@ -479,9 +479,9 @@ let printassets () =
 let printasset h =
   try
     let (aid,bday,obl,u) = DbAsset.dbget h in
-    Printf.printf "%s [%Ld] %s %s\n" (hashval_hexstring aid) bday (preasset_string u) (obligation_string obl)
+    Printf.printf "%s: %s [%Ld] %s %s\n" (hashval_hexstring h) (hashval_hexstring aid) bday (preasset_string u) (obligation_string obl)
   with Not_found ->
-    Printf.printf "No asset %s found\n" (hashval_hexstring h)
+    Printf.printf "No asset with hash %s found. (Did you give the asset id instead of the asset hash?)\n" (hashval_hexstring h)
 
 let printhconselt h =
   try

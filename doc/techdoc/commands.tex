@@ -65,7 +65,7 @@ at the addresses mentioned in the wallet.
 \item {\func{printctreeinfo}} prints a summary of information about the compact tree with the given hash root.
 \item {\func{printctreeelt}} prints the ctree element (complete information for exactly 9 levels) with the given hash root.
 \item {\func{printhconselt}} prints the hcons element with the given hash root, meaning it prints the asset id and optionally the root for the next hcons element.
-\item {\func{printasset}} prints the asset with the given asset id.
+\item {\func{printasset}} prints the asset with the given asset hash. Note: the hash of the asset must be given, not the asset id. The keys to the assets in the database are the asset hash (given by {\func{hashasset}}), not the asset id (given by {\func{assetid}}).
 \item {\func{printtx}} prints the transaction with the given hash root.
 \item {\func{btctoqedaddr}} parses a Bitcoin address (base-58 representation) and prints the corresponding Qeditas address (base-58 representation).
 \item {\func{importprivkey}} imports a private key given in Qeditas WIF.

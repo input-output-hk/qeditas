@@ -158,67 +158,67 @@ let rec print_hlist_gen f hl g =
   | HNil -> ()
   | HCons((aid,bday,obl,Currency(v)) as a,hr) ->
       begin
-	Printf.fprintf f "%s [%Ld] Currency %s fraenk%s (%Ld cant%s)\n" (hashval_hexstring aid) bday (fraenks_of_cants v) (if v = 100000000000L then "" else "s") v (if v = 1L then "" else "s");
+	Printf.fprintf f "%s: %s [%Ld] Currency %s fraenk%s (%Ld cant%s)\n" (hashval_hexstring (hashasset a)) (hashval_hexstring aid) bday (fraenks_of_cants v) (if v = 100000000000L then "" else "s") v (if v = 1L then "" else "s");
 	g a;
 	print_hlist_gen f hr g
       end
   | HCons((aid,bday,obl,Bounty(v)) as a,hr) ->
       begin
-	Printf.fprintf f "%s [%Ld] Bounty %s fraenk%s (%Ld cant%s)\n" (hashval_hexstring aid) bday (fraenks_of_cants v) (if v = 100000000000L then "" else "s") v (if v = 1L then "" else "s");
+	Printf.fprintf f "%s: %s [%Ld] Bounty %s fraenk%s (%Ld cant%s)\n" (hashval_hexstring (hashasset a)) (hashval_hexstring aid) bday (fraenks_of_cants v) (if v = 100000000000L then "" else "s") v (if v = 1L then "" else "s");
 	g a;
 	print_hlist_gen f hr g
       end
   | HCons((aid,bday,obl,OwnsObj(gamma,Some(r))) as a,hr) ->
       begin
-	Printf.fprintf f "%s [%Ld] OwnsObj %s royalty fee %s fraenk%s\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma)) (fraenks_of_cants r) (if r = 100000000000L then "" else "s");
+	Printf.fprintf f "%s: %s [%Ld] OwnsObj %s royalty fee %s fraenk%s\n" (hashval_hexstring (hashasset a)) (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma)) (fraenks_of_cants r) (if r = 100000000000L then "" else "s");
 	g a;
 	print_hlist_gen f hr g
       end
   | HCons((aid,bday,obl,OwnsObj(gamma,None)) as a,hr) ->
       begin
-	Printf.fprintf f "%s [%Ld] OwnsObj %s None\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma));
+	Printf.fprintf f "%s: %s [%Ld] OwnsObj %s None\n" (hashval_hexstring (hashasset a)) (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma));
 	g a;
 	print_hlist_gen f hr g
       end
   | HCons((aid,bday,obl,OwnsProp(gamma,Some(r))) as a,hr) ->
       begin
-	Printf.fprintf f "%s [%Ld] OwnsProp %s royalty fee %s fraenk%s\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma)) (fraenks_of_cants r) (if r = 100000000000L then "" else "s");
+	Printf.fprintf f "%s: %s [%Ld] OwnsProp %s royalty fee %s fraenk%s\n" (hashval_hexstring (hashasset a)) (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma)) (fraenks_of_cants r) (if r = 100000000000L then "" else "s");
 	g a;
 	print_hlist_gen f hr g
       end
   | HCons((aid,bday,obl,OwnsProp(gamma,None)) as a,hr) ->
       begin
-	Printf.fprintf f "%s [%Ld] OwnsProp %s None\n" (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma));
+	Printf.fprintf f "%s: %s [%Ld] OwnsProp %s None\n" (hashval_hexstring (hashasset a)) (hashval_hexstring aid) bday (addr_qedaddrstr (payaddr_addr gamma));
 	g a;
 	print_hlist_gen f hr g
       end
   | HCons((aid,bday,obl,OwnsNegProp) as a,hr) ->
       begin
-	Printf.fprintf f "%s [%Ld] OwnsNegProp\n" (hashval_hexstring aid) bday;
+	Printf.fprintf f "%s: %s [%Ld] OwnsNegProp\n" (hashval_hexstring (hashasset a)) (hashval_hexstring aid) bday;
 	g a;
 	print_hlist_gen f hr g
       end
   | HCons((aid,bday,obl,RightsObj(gamma,r)) as a,hr) ->
       begin
-	Printf.fprintf f "%s [%Ld] RightsObj %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (termaddr_addr gamma)) r;
+	Printf.fprintf f "%s: %s [%Ld] RightsObj %s %Ld\n" (hashval_hexstring (hashasset a)) (hashval_hexstring aid) bday (addr_qedaddrstr (termaddr_addr gamma)) r;
 	g a;
 	print_hlist_gen f hr g
       end
   | HCons((aid,bday,obl,RightsProp(gamma,r)) as a,hr) ->
       begin
-	Printf.fprintf f "%s [%Ld] RightsProp %s %Ld\n" (hashval_hexstring aid) bday (addr_qedaddrstr (termaddr_addr gamma)) r;
+	Printf.fprintf f "%s: %s [%Ld] RightsProp %s %Ld\n" (hashval_hexstring (hashasset a)) (hashval_hexstring aid) bday (addr_qedaddrstr (termaddr_addr gamma)) r;
 	g a;
 	print_hlist_gen f hr g
       end
   | HCons((aid,bday,obl,v) as a,hr) ->
       begin
-	Printf.fprintf f "%s [%Ld]\n" (hashval_hexstring aid) bday;
+	Printf.fprintf f "%s: %s [%Ld]\n" (hashval_hexstring (hashasset a)) (hashval_hexstring aid) bday;
 	g a;
 	print_hlist_gen f hr g
       end
   | HConsH(ah,hr) ->
       begin
-	Printf.fprintf f "%s *\n" (hashval_hexstring ah);
+	Printf.fprintf f "%s: *\n" (hashval_hexstring ah);
 	print_hlist_gen f hr g
       end
 

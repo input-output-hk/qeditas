@@ -663,7 +663,7 @@ let do_command l =
       begin
 	match al with
 	| [h] -> Commands.printasset (hexstring_hashval h)
-	| _ -> raise (Failure "printasset <assetid>")
+	| _ -> raise (Failure "printasset <assethash>")
       end
   | "printhconselt" ->
       begin
