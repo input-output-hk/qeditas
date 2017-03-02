@@ -676,13 +676,23 @@ let ensure_dir_exists d =
 exception FoundHashval of hashval
 
 module DbHConsElt =
-  Dbbasic
+  Dbbasic2
     (struct
       type t = hashval * hashval option
       let basedir = "hconselt"
       let seival = sei_prod sei_hashval (sei_option sei_hashval) seic
       let seoval = seo_prod seo_hashval (seo_option seo_hashval) seoc
     end)
+
+module DbHConsEltH =
+  Dbbasic2
+    (struct
+      type t = hashval * hashval option
+      let basedir = "hconselth"
+      let seival = sei_prod sei_hashval (sei_option sei_hashval) seic
+      let seoval = seo_prod seo_hashval (seo_option seo_hashval) seoc
+    end)
+
 
 let get_hcons_element h =
   try
@@ -805,13 +815,24 @@ let nehlist_lookup_neg_prop_owner exp req hl =
   | None -> false
 
 module DbCTreeElt =
-  Dbbasic
+  Dbbasic2
     (struct
       type t = ctree
       let basedir = "ctreeelt"
       let seival = sei_ctree seic
       let seoval = seo_ctree seoc
     end)
+
+
+module DbCTreeEltH =
+  Dbbasic2keyiter
+    (struct
+      type t = ctree
+      let basedir = "ctreeelth"
+      let seival = sei_ctree seic
+      let seoval = seo_ctree seoc
+    end)
+
 
 let rec ctree_element_a tr i =
   if i > 0 then

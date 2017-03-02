@@ -1,6 +1,8 @@
-opt: bin/qeditas
-
+opt: bin/qeditas bin/fixinitledger
 bytecode: bin/qeditasbc
+
+bin/fixinitledger: bin/fixinitledger.cmx bin/config.cmx bin/hashaux.cmx bin/sha256.cmx bin/ripemd160.cmx bin/version.cmx bin/utils.cmx bin/ser.cmx bin/hash.cmx bin/htree.cmx bin/db.cmx bin/mathdata.cmx bin/assets.cmx bin/tx.cmx bin/ctre.cmx bin/ctregraft.cmx bin/secp256k1.cmx bin/cryptocurr.cmx bin/signat.cmx bin/script.cmx bin/block.cmx bin/net.cmx bin/blocktree.cmx bin/setconfig.cmx bin/commands.cmx
+	$(OCAMLOPT) $(OCAMLOPTARGS) -I bin -I +threads -o bin/fixinitledger unix.cmxa threads.cmxa nums.cmxa config.cmx version.cmx utils.cmx ser.cmx hashaux.cmx sha256.cmx ripemd160.cmx hash.cmx htree.cmx net.cmx db.cmx secp256k1.cmx cryptocurr.cmx signat.cmx script.cmx mathdata.cmx assets.cmx tx.cmx ctre.cmx ctregraft.cmx block.cmx blocktree.cmx setconfig.cmx commands.cmx fixinitledger.cmx
 
 bin/qeditas: bin/qeditas.cmx bin/config.cmx bin/hashaux.cmx bin/sha256.cmx bin/ripemd160.cmx bin/version.cmx bin/utils.cmx bin/ser.cmx bin/hash.cmx bin/htree.cmx bin/db.cmx bin/mathdata.cmx bin/assets.cmx bin/tx.cmx bin/ctre.cmx bin/ctregraft.cmx bin/secp256k1.cmx bin/cryptocurr.cmx bin/signat.cmx bin/script.cmx bin/block.cmx bin/net.cmx bin/blocktree.cmx bin/setconfig.cmx bin/commands.cmx
 	$(OCAMLOPT) $(OCAMLOPTARGS) -I bin -I +threads -o bin/qeditas unix.cmxa threads.cmxa nums.cmxa config.cmx version.cmx utils.cmx ser.cmx hashaux.cmx sha256.cmx ripemd160.cmx hash.cmx htree.cmx net.cmx db.cmx secp256k1.cmx cryptocurr.cmx signat.cmx script.cmx mathdata.cmx assets.cmx tx.cmx ctre.cmx ctregraft.cmx block.cmx blocktree.cmx setconfig.cmx commands.cmx qeditas.cmx
@@ -155,6 +157,9 @@ bin/commands.cmx: src/commands.ml bin/commands.cmi bin/config.cmx bin/ser.cmx bi
 bin/qeditas.cmx: src/qeditas.ml bin/assets.cmx bin/tx.cmx bin/ctre.cmx bin/block.cmx bin/version.cmx bin/utils.cmx bin/net.cmx bin/setconfig.cmx bin/commands.cmx bin/db.cmx bin/blocktree.cmx
 	$(OCAMLOPT) $(OCAMLOPTARGS) -I bin -I +threads -o bin/qeditas.cmx -c src/qeditas.ml
 
+bin/fixinitledger.cmx: src/fixinitledger.ml bin/assets.cmx bin/tx.cmx bin/ctre.cmx bin/block.cmx bin/version.cmx bin/utils.cmx bin/net.cmx bin/setconfig.cmx bin/commands.cmx bin/db.cmx bin/blocktree.cmx
+	$(OCAMLOPT) $(OCAMLOPTARGS) -I bin -I +threads -o bin/fixinitledger.cmx -c src/fixinitledger.ml
+
 bin/version.cmo: src/version.ml bin/version.cmi
 	$(OCAMLC) -I bin -o bin/version.cmo -c src/version.ml
 
@@ -229,6 +234,9 @@ bin/commands.cmo: src/commands.ml bin/commands.cmi bin/config.cmo bin/ser.cmo bi
 
 bin/qeditas.cmo: src/qeditas.ml bin/assets.cmo bin/tx.cmo bin/ctre.cmo bin/block.cmo bin/version.cmo bin/utils.cmo bin/net.cmo bin/setconfig.cmo bin/commands.cmo bin/db.cmo bin/blocktree.cmo
 	$(OCAMLC) -I bin -I +threads -o bin/qeditas.cmo -c src/qeditas.ml
+
+bin/fixinitledger.cmo: src/fixinitledger.ml bin/assets.cmo bin/tx.cmo bin/ctre.cmo bin/block.cmo bin/version.cmo bin/utils.cmo bin/net.cmo bin/setconfig.cmo bin/commands.cmo bin/db.cmo bin/blocktree.cmo
+	$(OCAMLC) -I bin -I +threads -o bin/fixinitledger.cmo -c src/fixinitledger.ml
 
 clean:
 	rm bin/*

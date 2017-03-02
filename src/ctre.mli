@@ -50,6 +50,15 @@ module DbHConsElt :
       val dbdelete : Hash.hashval -> unit
     end
 
+module DbHConsEltH :
+    sig
+      val dbinit : unit -> unit
+      val dbget : Hash.hashval -> hashval * hashval option
+      val dbexists : Hash.hashval -> bool
+      val dbput : Hash.hashval -> hashval * hashval option -> unit
+      val dbdelete : Hash.hashval -> unit
+    end
+
 module DbCTreeElt :
     sig
       val dbinit : unit -> unit
@@ -58,6 +67,17 @@ module DbCTreeElt :
       val dbput : Hash.hashval -> ctree -> unit
       val dbdelete : Hash.hashval -> unit
     end
+
+module DbCTreeEltH :
+    sig
+      val dbinit : unit -> unit
+      val dbget : Hash.hashval -> ctree
+      val dbexists : Hash.hashval -> bool
+      val dbput : Hash.hashval -> ctree -> unit
+      val dbdelete : Hash.hashval -> unit
+      val dbkeyiter : (Hash.hashval -> unit) -> unit
+    end
+
 
 val save_hlist_elements : hlist -> hashval option
 val save_nehlist_elements : nehlist -> hashval
