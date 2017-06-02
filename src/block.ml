@@ -8,6 +8,7 @@ open Hash
 open Net
 open Db
 open Big_int
+open Logic
 open Mathdata
 open Assets
 open Signat
@@ -158,7 +159,7 @@ let sei_targetinfo i c =
   sei_prod3 sei_stakemod sei_stakemod sei_big_int_256 i c
 
 type postor =
-  | PostorTrm of hashval option * tm * tp * hashval
+  | PostorTrm of hashval option * trm * stp * hashval
   | PostorDoc of payaddr * hashval * hashval option * pdoc * hashval
 
 let hashpostor r =
@@ -415,21 +416,16 @@ let check_postor_tm tm csm mtar alpha beta m =
 (*** d should be a proof with everything abbreviated except for one leaf ***)
 let rec check_postor_pf_r d =
   match d with
-  | Gpa(_) -> raise InappropriatePostor
   | Hyp(i) -> hashpf d
   | Known(h) -> hashpf d
-  | PLam(TmH(_),d) -> check_postor_pf_r d
-  | PLam(m,Gpa(_)) -> check_postor_tm_r m
-  | PLam(_,_) -> raise InappropriatePostor
-  | TLam(_,d) -> check_postor_pf_r d
-  | PTmAp(Gpa(_),m) -> check_postor_tm_r m
-  | PTmAp(d,TmH(_)) -> check_postor_pf_r d
-  | PTmAp(_,_) -> raise InappropriatePostor
-  | PPfAp(Gpa(_),d) -> check_postor_pf_r d
-  | PPfAp(d,Gpa(_)) -> check_postor_pf_r d
-  | PPfAp(_,_) -> raise InappropriatePostor
-  | PTpAp(d,_) -> check_postor_pf_r d
-  | PTpLam(d) -> check_postor_pf_r d
+  | PrLa(TmH(_),d) -> check_postor_pf_r d
+  | PrLa(_,_) -> raise InappropriatePostor
+  | TmLa(_,d) -> check_postor_pf_r d
+  | TmAp(d,TmH(_)) -> check_postor_pf_r d
+  | TmAp(_,_) -> raise InappropriatePostor
+  | PrAp(_,_) -> raise InappropriatePostor
+  | TpAp(d,_) -> check_postor_pf_r d
+  | TpLa(d) -> check_postor_pf_r d
 
 (*** ensure there's no extra information: nil or hash of the rest ***)
 let check_postor_pdoc_e d =
@@ -463,9 +459,6 @@ let rec check_postor_pdoc_r d =
   | PDocPfOf(TmH(_),d,dr) ->
       check_postor_pdoc_e dr;
       check_postor_pf_r d
-  | PDocPfOf(m,Gpa(_),dr) ->
-      check_postor_pdoc_e dr;
-      check_postor_tm_r m
   | PDocPfOf(_,_,dr) -> raise InappropriatePostor
   | PDocPfOfHash(h,dr) -> check_postor_pdoc_r dr
 

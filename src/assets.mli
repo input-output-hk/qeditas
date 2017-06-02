@@ -5,6 +5,8 @@
 open Hash
 open Db
 open Mathdata
+open Logic
+open Checking
 
 type obligation = (payaddr * int64 * bool) option
 

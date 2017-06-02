@@ -5,7 +5,7 @@
 let log : out_channel ref = ref stderr
 
 let openlog () =
-  log := open_out_gen [Open_wronly;Open_creat;Open_append] 0o644 (!Config.datadir ^ (if !Config.testnet then "/testnet/log" else "/log"))
+  log := open_out_gen [Open_wronly;Open_creat;Open_append] 0o644 ("/testnet/log")
 
 let closelog () =
   close_out !log
@@ -29,17 +29,7 @@ let maxblockdeltasize blkh = 250000 lsl (era blkh)
 let random_initialized : bool ref = ref false;;
 
 let initialize_random_seed () =
-  match !Config.randomseed with
-  | Some(s) ->
-      let l = String.length s in
-      let a = Array.make l 0 in
-      for i = 0 to l-1 do
-	a.(i) <- Char.code s.[i]
-      done;
-      Random.full_init a;
-      random_initialized := true
-  | None ->
-      if Sys.file_exists "/dev/random" then
+    if Sys.file_exists "/dev/random" then
 	let r = open_in_bin "/dev/random" in
 	let a = Array.make 32 0 in
 	Printf.printf "Computing random seed, this may take a while.\n"; flush stdout;

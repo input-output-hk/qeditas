@@ -9,6 +9,7 @@ open Hash
 open Net
 open Db
 open Mathdata
+open Checking
 open Assets
 open Cryptocurr
 open Tx
@@ -1564,8 +1565,10 @@ let ctree_supports_tx_2 exp req tht sigt blkh tx aal al tr =
 	  begin
 	    ensure_addr_empty alpha; (*** make sure the publication is new because otherwise publishing it is pointless ***)
 	    try
-	      reset_resource_limits();
-	      ignore (check_theoryspec thy);
+	     ignore (match check_theoryspec thy with
+           | None -> raise CheckingFailure
+           | _ -> ()
+         );
 	      match hashtheory (theoryspec_theory thy) with
 	      | Some(thyh) ->
 		  let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce thyh)) in
@@ -1605,8 +1608,10 @@ let ctree_supports_tx_2 exp req tht sigt blkh tx aal al tr =
 		| None -> false
 	      in
 	      let thy = ottree_lookup tht th in
-	      reset_resource_limits();
-	      ignore (check_signaspec gvtp gvkn th thy sigt sl);
+        ignore (match check_signaspec gvtp gvkn th thy sigt sl with
+           | None -> raise CheckingFailure
+           | _ -> ()
+         );
 	      let slh = hashsigna (signaspec_signa sl) in
 	      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th slh))) in
 	      begin
@@ -1644,8 +1649,10 @@ let ctree_supports_tx_2 exp req tht sigt blkh tx aal al tr =
 		| None -> false
 	      in
 	      let thy = ottree_lookup tht th in
-	      reset_resource_limits();
-	      ignore (check_doc gvtp gvkn th thy sigt dl);
+        ignore (match check_doc gvtp gvkn th thy sigt dl with
+           | None -> raise CheckingFailure
+           | _ -> ()
+         );
 	      let beta = hashval_pub_addr (hashpair (hashaddr (payaddr_addr gamma)) (hashpair nonce (hashopair2 th (hashdoc dl)))) in
 	      begin
 		match

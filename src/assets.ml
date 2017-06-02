@@ -8,6 +8,8 @@ open Net
 open Db
 open Cryptocurr
 open Mathdata
+open Checking 
+open Logic 
 
 (*** If the obligation is Some(alpha,n,r), then the way to spend the asset is for alpha to sign after block n.
  If r is true then the asset was a reward and can be forfeited as a consequence of double signing.
