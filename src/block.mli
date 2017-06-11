@@ -5,6 +5,7 @@
 open Hash
 open Big_int
 open Mathdata
+open Logic
 open Assets
 open Signat
 open Tx
@@ -40,7 +41,7 @@ val rewfn : int64 -> int64
 val hitval : int64 -> hashval -> stakemod -> big_int
 
 type postor =
-  | PostorTrm of hashval option * tm * tp * hashval
+  | PostorTrm of hashval option * trm * stp * hashval
   | PostorDoc of payaddr * hashval * hashval option * pdoc * hashval
 
 val seo_postor : (int -> int -> 'a -> 'a) -> postor -> 'a -> 'a
@@ -117,7 +118,7 @@ val coinstake : block -> tx
 val incrstake : int64 -> int64
 
 exception InappropriatePostor
-val check_postor_tm_r : tm -> hashval
+val check_postor_tm_r : trm -> hashval
 val check_postor_pdoc_r : pdoc -> hashval
 
 val check_hit_b : int64 -> int64 -> obligation -> int64

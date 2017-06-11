@@ -403,7 +403,7 @@ module Dbbasic : dbtype = functor (M:sig type t val basedir : string val seival 
       Hashtbl.remove !cache1 k;
       Hashtbl.remove !cache2 k
 
-    let dbinit () = () (*** does nothing in Dbbasic; on the contrary Dbbasic loads the index into RAM ***)
+    let dbinit () = () (*** does nothing in Dbbasic; on the contrary Dbbasic2 loads the index into RAM ***)
 
     let dbexists k =
       try

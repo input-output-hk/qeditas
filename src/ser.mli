@@ -56,6 +56,9 @@ val sei_prod : ((int -> 'a -> int * 'a) -> 'a -> 'b * 'a) -> ((int -> 'a -> int 
 val seo_prod3 : ((int -> int -> 'a -> 'a) -> 'b -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'c -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'd -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'b * 'c * 'd -> 'a -> 'a)
 val sei_prod3 : ((int -> 'a -> int * 'a) -> 'a -> 'b * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'c * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'd * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> ('b * 'c * 'd) * 'a)
 
+val seo_prod_prod : ((int -> int -> 'a -> 'a) -> 'b -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'c -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'd -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> ('b * 'c) * 'd -> 'a -> 'a)
+val sei_prod_prod : ((int -> 'a -> int * 'a) -> 'a -> 'b * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'c * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'd * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> (('b * 'c) * 'd) * 'a)
+
 val seo_prod4 : ((int -> int -> 'a -> 'a) -> 'b -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'c -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'd -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'e -> 'a -> 'a) -> ((int -> int -> 'a -> 'a) -> 'b * 'c * 'd * 'e -> 'a -> 'a)
 val sei_prod4 : ((int -> 'a -> int * 'a) -> 'a -> 'b * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'c * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'd * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> 'e * 'a) -> ((int -> 'a -> int * 'a) -> 'a -> ('b * 'c * 'd * 'e) * 'a)
 

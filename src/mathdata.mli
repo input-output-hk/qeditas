@@ -1,97 +1,33 @@
-(* Copyright (c) 2015 The Qeditas developers *)
-(* Distributed under the MIT software license, see the accompanying
-   file COPYING or http://www.opensource.org/licenses/mit-license.php. *)
-
-(*** Significant portions of this code consists of modified from the proof checker Egal.
- The main difference in the syntax is Qeditas provides explicit support for type variables.
- ***)
-
 open Hash
+open Logic
 open Htree
-
-(*** TpVar x is the de Bruijn index x as a type variable with corresponding binder TpAll. ***)
-type tp = TpVar of int | Prop | Base of int | Ar of tp * tp | TpAll of tp
-
-type tm =
-  | DB of int
-  | TmH of hashval
-  | Prim of int
-  | Ap of tm * tm
-  | Lam of tp * tm
-  | Imp of tm * tm
-  | All of tp * tm
-  | TTpAp of tm * tp
-  | TTpLam of tm
-  | TTpAll of tm
-
-type pf =
-  | Gpa of hashval
-  | Hyp of int
-  | Known of hashval
-  | PTmAp of pf * tm
-  | PPfAp of pf * pf
-  | PLam of tm * pf
-  | TLam of tp * pf
-  | PTpAp of pf * tp
-  | PTpLam of pf
-
-type theoryitem =
-  | ThyPrim of tp
-  | ThyDef of tp * tm
-  | ThyAxiom of tm
-
-type theoryspec = theoryitem list
-
-type theory = tp list * hashval list
-
-type signaitem =
-  | SignaSigna of hashval
-  | SignaParam of hashval * tp
-  | SignaDef of tp * tm
-  | SignaKnown of tm
-
-type signaspec = signaitem list
-
-type gsigna = (hashval * tp * tm option) list * (hashval * tm) list
-
-type signa = hashval list * gsigna
-
-type docitem =
-  | DocSigna of hashval
-  | DocParam of hashval * tp
-  | DocDef of tp * tm
-  | DocKnown of tm
-  | DocConj of tm
-  | DocPfOf of tm * pf
-
-type doc = docitem list
 
 (** ** pdoc: partical doc, approximating a doc with enough information to compute the hashroot **)
 type pdoc =
   | PDocNil
   | PDocHash of hashval
   | PDocSigna of hashval * pdoc
-  | PDocParam of hashval * tp * pdoc
+  | PDocParam of hashval * stp * pdoc
   | PDocParamHash of hashval * pdoc
-  | PDocDef of tp * tm * pdoc
+  | PDocDef of stp * trm * pdoc
   | PDocDefHash of hashval * pdoc
-  | PDocKnown of tm * pdoc
-  | PDocConj of tm * pdoc
-  | PDocPfOf of tm * pf * pdoc
+  | PDocKnown of trm * pdoc
+  | PDocConj of trm * pdoc
+  | PDocPfOf of trm * pf * pdoc
   | PDocPfOfHash of hashval * pdoc
 
 (** * serialization code ***)
 
-val seo_tp : (int -> int -> 'a -> 'a) -> tp -> 'a -> 'a
-val sei_tp : (int -> 'a -> int * 'a) -> 'a -> tp * 'a
+val seo_tp : (int -> int -> 'a -> 'a) -> stp -> 'a -> 'a
+val sei_tp : (int -> 'a -> int * 'a) -> 'a -> stp * 'a
 
-val hashtp : tp -> hashval
+val hashtp : stp -> hashval
 
-val seo_tm : (int -> int -> 'a -> 'a) -> tm -> 'a -> 'a
-val sei_tm : (int -> 'a -> int * 'a) -> 'a -> tm * 'a
+val seo_tm : (int -> int -> 'a -> 'a) -> trm -> 'a -> 'a
+val sei_tm : (int -> 'a -> int * 'a) -> 'a -> trm * 'a
 
-val hashtm : tm -> hashval
-val tm_hashroot : tm -> hashval
+val hashtm : trm -> hashval
+val tm_hashroot : trm -> hashval
 
 val seo_pf : (int -> int -> 'a -> 'a) -> pf -> 'a -> 'a
 val sei_pf : (int -> 'a -> int * 'a) -> 'a -> pf * 'a
@@ -124,6 +60,7 @@ val sei_doc : (int -> 'a -> int * 'a) -> 'a -> doc * 'a
 val seo_pdoc : (int -> int -> 'a -> 'a) -> pdoc -> 'a -> 'a
 val sei_pdoc : (int -> 'a -> int * 'a) -> 'a -> pdoc * 'a
 
+
 val hashdoc : doc -> hashval
 val doc_hashroot : doc -> hashval
 
@@ -150,29 +87,15 @@ val ostree_hashroot : stree option -> hashval option
 
 val ottree_lookup : ttree option -> hashval option -> theory
 
-(** * operations including type checking and proof checking ***)
-
-val beta_count : int ref
-val term_count : int ref
-
-val reset_resource_limits : unit -> unit
-
 exception CheckingFailure
 exception NotKnown of hashval option * hashval
-exception UnknownTerm of hashval option * hashval * tp
+exception UnknownTerm of hashval option * hashval * stp
 exception UnknownSigna of hashval
 exception NonNormalTerm
 exception BetaLimit
 exception TermLimit
 
-val check_theoryspec : theoryspec -> theory * gsigna
+val import_signatures : hashval option -> stree -> hashval list -> gsign -> hashval list -> (gsign * hashval list) option
 
-val check_signaspec :
-    (hashval option -> hashval -> tp -> bool)
-  -> (hashval option -> hashval -> bool)
-  -> hashval option -> theory -> stree option -> signaspec -> gsigna
-
-val check_doc :
-    (hashval option -> hashval -> tp -> bool)
-  -> (hashval option -> hashval -> bool)
-  -> hashval option -> theory -> stree option -> doc -> gsigna
+val print_trm : int -> stp list -> gsign -> trm -> stp list -> unit
+val print_tp : int -> stp -> int -> unit

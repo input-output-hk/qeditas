@@ -8,6 +8,7 @@ open Mathdata
 open Assets
 open Signat
 open Ctre
+open Logic
 
 (***
 val addnode : string -> int -> bool
@@ -17,7 +18,7 @@ val walletkeys : (big_int * bool * (big_int * big_int) * string * hashval * stri
 val walletendorsements : (payaddr * payaddr * (big_int * big_int) * int * bool * signat) list ref
 val walletwatchaddrs : addr list ref
 val stakingassets : (p2pkhaddr * hashval * int64 * obligation * int64) list ref
-val storagetrmassets : (hashval option * tm * tp * hashval * hashval) list ref
+val storagetrmassets : (hashval option * trm * stp * hashval * hashval) list ref
 val storagedocassets : (pubaddr * hashval * hashval option * pdoc * hashval * hashval) list ref
 val unconfirmed_spent_assets : (hashval,hashval) Hashtbl.t
 

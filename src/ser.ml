@@ -323,6 +323,19 @@ let sei_prod3 s1 s2 s3 i c =
   let (k,c) = s3 i c in
   ((m,n,k),c)
 
+
+let seo_prod_prod s1 s2 s3 o ((m,n),k) c =
+  let c = s1 o m c in
+  let c = s2 o n c in
+  let c = s3 o k c in
+  c
+
+let sei_prod_prod s1 s2 s3 i c =
+  let (m,c) = s1 i c in
+  let (n,c) = s2 i c in
+  let (k,c) = s3 i c in
+  (((m,n),k),c)
+
 let seo_prod4 s1 s2 s3 s4 o (m,n,k,l) c =
   let c = s1 o m c in
   let c = s2 o n c in
